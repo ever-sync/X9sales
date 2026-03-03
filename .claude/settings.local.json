@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir:*)",
+      "Bash(powershell -Command:*)",
+      "Bash(ls:*)",
+      "Bash(npm create:*)",
+      "Bash(xcopy \"C:\\\\Users\\\\rapha\\\\OneDrive\\\\Documentos\\\\MonitoraIA-temp\\\\*\" \"C:\\\\Users\\\\rapha\\\\OneDrive\\\\Documentos\\\\MonitoraIA\"\" /E /Y /I 2>&1 && rmdir /S /Q \"C:UsersraphaOneDriveDocumentosMonitoraIA-temp \")",
+      "Bash(xcopy:*)",
+      "Bash(npm install:*)",
+      "Bash(wmic:*)",
+      "Bash(fsutil volume diskfree:*)",
+      "Bash(npm cache clean:*)",
+      "Bash(Out-Null)",
+      "Bash(npx tsc:*)",
+      "Bash(npx vite build:*)",
+      "Bash(grep -n \"ALTER TABLE app.messages\\\\|CREATE POLICY.*messages\" /c/Users/rapha/OneDrive/Documentos/MonitoraIA/supabase/migrations/*.sql)",
+      "Bash(grep -l \"messages\" /c/Users/rapha/OneDrive/Documentos/MonitoraIA/supabase/migrations/*.sql)",
+      "Bash(done)"
+    ]
+  }
+}

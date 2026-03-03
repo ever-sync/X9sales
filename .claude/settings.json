@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep -l \"AppEvent\\\\|events\")",
+      "WebFetch(domain:docs.uazapi.com)",
+      "WebFetch(domain:www.postman.com)"
+    ]
+  }
+}

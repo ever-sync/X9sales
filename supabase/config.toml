@@ -1,0 +1,23 @@
+project_id = "tcamppydxvmkxhxveeaf"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["app", "raw"]
+extra_search_path = ["app"]
+
+[db]
+port = 54322
+major_version = 17
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
