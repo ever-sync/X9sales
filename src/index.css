@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap");
 @import "tailwindcss";
 
 @theme {
@@ -35,65 +36,65 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 194 52% 12%;
+    --background: 60 5% 96%; /* #F5F5F4 */
+    --foreground: 222.2 47.4% 11.2%; /* #0f172a */
 
     --card: 0 0% 100%;
-    --card-foreground: 194 52% 12%;
+    --card-foreground: 222.2 47.4% 11.2%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 194 52% 12%;
+    --popover-foreground: 222.2 47.4% 11.2%;
 
-    --primary: 180 99% 47%;
-    --primary-foreground: 194 52% 12%;
+    --primary: 69 99% 55%; /* #D3FE18 */
+    --primary-foreground: 222.2 47.4% 11.2%; /* Dark text for contrast on lime */
 
-    --secondary: 192 23% 93%;
-    --secondary-foreground: 194 52% 12%;
+    --secondary: 247 98% 63%; /* #5945FD */
+    --secondary-foreground: 0 0% 100%; /* White text on purple */
 
-    --muted: 192 20% 96%;
-    --muted-foreground: 194 26% 32%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
 
-    --accent: 180 72% 90%;
-    --accent-foreground: 194 52% 12%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 194 22% 87%;
-    --input: 194 22% 87%;
-    --ring: 180 99% 47%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 167 36% 41%;
 
-    --radius: 0.5rem;
+    --radius: 1rem;
   }
 
   .dark {
-    --background: 194 52% 12%;
-    --foreground: 0 0% 100%;
+    --background: 240 10% 8%; /* #141418 */
+    --foreground: 210 20% 96%;
 
-    --card: 194 47% 15%;
-    --card-foreground: 0 0% 100%;
+    --card: 240 9% 11%; /* #1A1A20 */
+    --card-foreground: 210 20% 96%;
 
-    --popover: 194 47% 15%;
-    --popover-foreground: 0 0% 100%;
+    --popover: 240 9% 11%;
+    --popover-foreground: 210 20% 96%;
 
-    --primary: 180 99% 47%;
-    --primary-foreground: 194 52% 12%;
+    --primary: 69 99% 55%; /* #D3FE18 */
+    --primary-foreground: 222.2 47.4% 11.2%;
 
-    --secondary: 194 36% 18%;
-    --secondary-foreground: 180 26% 86%;
+    --secondary: 247 98% 63%; /* #5945FD */
+    --secondary-foreground: 0 0% 100%;
 
-    --muted: 194 33% 20%;
-    --muted-foreground: 188 23% 74%;
+    --muted: 240 7% 15%;
+    --muted-foreground: 220 10% 68%;
 
-    --accent: 194 40% 22%;
-    --accent-foreground: 0 0% 100%;
+    --accent: 240 8% 14%;
+    --accent-foreground: 210 20% 96%;
 
-    --destructive: 0 62.8% 30.6%;
+    --destructive: 0 72% 42%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 194 30% 25%;
-    --input: 194 30% 25%;
-    --ring: 180 99% 47%;
+    --border: 240 8% 19%;
+    --input: 240 8% 19%;
+    --ring: 247 98% 63%;
   }
 
   * {
@@ -101,12 +102,103 @@
   }
   body {
     @apply bg-background text-foreground;
+    margin: 0;
+    min-width: 320px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-image:
+      radial-gradient(
+        70rem 38rem at 105% -5%,
+        color-mix(in oklab, #5945fd 8%, transparent),
+        transparent
+      ),
+      radial-gradient(
+        42rem 30rem at -10% 115%,
+        color-mix(in oklab, #d3fe18 10%, transparent),
+        transparent
+      );
+    background-attachment: fixed;
   }
 
   .dark body {
     background-image:
-      radial-gradient(70rem 40rem at 110% -10%, color-mix(in oklab, #02EFF0 18%, transparent), transparent),
-      radial-gradient(45rem 30rem at -10% 110%, color-mix(in oklab, #02EFF0 12%, transparent), transparent);
+      radial-gradient(
+        70rem 40rem at 110% -10%,
+        color-mix(in oklab, #5945fd 18%, transparent),
+        transparent
+      ),
+      radial-gradient(
+        45rem 30rem at -10% 110%,
+        color-mix(in oklab, #d3fe18 10%, transparent),
+        transparent
+      );
     background-attachment: fixed;
+  }
+}
+
+@media (max-width: 768px) {
+  body {
+    background-image:
+      radial-gradient(
+        38rem 24rem at 110% -10%,
+        color-mix(in oklab, #5945fd 7%, transparent),
+        transparent
+      ),
+      radial-gradient(
+        28rem 18rem at -10% 108%,
+        color-mix(in oklab, #d3fe18 8%, transparent),
+        transparent
+      );
+  }
+}
+
+/* Marketing Landing Specific Styles */
+.noise-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.05;
+}
+
+.btn-magnetic {
+  transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.btn-magnetic:hover {
+  transform: scale(1.03);
+}
+
+.btn-hover-slide {
+  position: relative;
+  overflow: hidden;
+}
+.btn-hover-slide::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.1);
+  transition: left 0.4s ease;
+}
+.btn-hover-slide:hover::after {
+  left: 0;
+}
+
+.link-lift {
+  transition: transform 0.2s ease;
+  display: inline-block;
+}
+.link-lift:hover {
+  transform: translateY(-1px);
+}
+
+@layer utilities {
+  .text-primary {
+    color: hsl(var(--foreground)) !important;
   }
 }

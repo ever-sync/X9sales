@@ -23,7 +23,13 @@ export async function aggregateDailyMetrics(): Promise<void> {
     }
   }
 
-  console.log('[DailyAggregator] Aggregation complete.');
+  console.log('[DailyAggregator] Aggregation complete. Refreshing materialized views...');
+  const { error: refreshError } = await supabase.rpc('refresh_dashboard_views');
+  if (refreshError) {
+    console.error('[DailyAggregator] Failed to refresh views:', refreshError.message);
+  } else {
+    console.log('[DailyAggregator] Views refreshed.');
+  }
 }
 
 async function aggregateCompanyDaily(companyId: string, date: string): Promise<void> {

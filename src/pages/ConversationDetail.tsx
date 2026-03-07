@@ -1,3 +1,4 @@
+import React from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../integrations/supabase/client';
@@ -7,6 +8,7 @@ import type {
   DealSignal,
   Message as ConversationMessage,
   PlaybookRule,
+  AIConversationAnalysis,
 } from '../types';
 import { CACHE } from '../config/constants';
 import { MetricCard } from '../components/dashboard/MetricCard';
@@ -28,6 +30,14 @@ import {
   Copy,
   Sparkles,
   CheckCircle2,
+  Brain,
+  Target,
+  Search,
+  ChevronDown,
+  ChevronUp,
+  ThumbsUp,
+  ThumbsDown,
+  Eye,
 } from 'lucide-react';
 
 function eventIcon(eventType: string) {
@@ -152,6 +162,24 @@ export default function ConversationDetail() {
     enabled: !!conv?.company_id,
     staleTime: CACHE.STALE_TIME,
   });
+
+  const { data: aiAnalysis } = useQuery<AIConversationAnalysis | null>({
+    queryKey: ['conversation-ai-analysis', id],
+    queryFn: async () => {
+      if (!id) return null;
+      const { data, error } = await supabase
+        .from('ai_conversation_analysis')
+        .select('*')
+        .eq('conversation_id', id)
+        .maybeSingle();
+      if (error) throw error;
+      return (data as AIConversationAnalysis | null) ?? null;
+    },
+    enabled: !!id,
+    staleTime: CACHE.STALE_TIME,
+  });
+
+  const [expandedPillar, setExpandedPillar] = React.useState<string | null>(null);
 
   const coachingActionMutation = useMutation({
     mutationFn: async ({
@@ -388,6 +416,246 @@ export default function ConversationDetail() {
         </div>
       </div>
 
+      {/* AI Quality Analysis */}
+      {aiAnalysis && (
+        <div className="rounded-2xl border border-border bg-card p-6 space-y-5">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+              <Brain className="h-5 w-5 text-primary" />
+              Analise de Qualidade IA
+            </h3>
+            <span className="text-xs text-muted-foreground">
+              {aiAnalysis.prompt_version} · {formatDateTime(aiAnalysis.analyzed_at)}
+            </span>
+          </div>
+
+          {/* Score + Weighted Breakdown */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="flex items-center gap-4">
+              <div className={cn(
+                'h-20 w-20 rounded-full flex items-center justify-center text-white font-bold text-2xl shrink-0',
+                (aiAnalysis.quality_score ?? 0) >= 80 ? 'bg-primary' :
+                (aiAnalysis.quality_score ?? 0) >= 60 ? 'bg-yellow-500' : 'bg-red-500'
+              )}>
+                {aiAnalysis.quality_score ?? '—'}
+              </div>
+              <div>
+                <p className="text-sm font-medium text-foreground">Score Geral Ponderado</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Comunicacao 30% · Investigacao 25% · Conducao 20% · Objecoes 15% · Fechamento 10%
+                </p>
+              </div>
+            </div>
+
+            {aiAnalysis.structured_analysis?.weighted_breakdown && (
+              <div className="space-y-2">
+                {[
+                  { label: 'Comunicacao', value: aiAnalysis.structured_analysis.weighted_breakdown.communication_weighted, max: 30 },
+                  { label: 'Investigacao', value: aiAnalysis.structured_analysis.weighted_breakdown.investigation_weighted, max: 25 },
+                  { label: 'Conducao', value: aiAnalysis.structured_analysis.weighted_breakdown.steering_weighted, max: 20 },
+                  { label: 'Objecoes', value: aiAnalysis.structured_analysis.weighted_breakdown.objections_weighted, max: 15 },
+                  { label: 'Fechamento', value: aiAnalysis.structured_analysis.weighted_breakdown.closing_weighted, max: 10 },
+                ].map((item) => (
+                  <div key={item.label} className="flex items-center gap-2 text-xs">
+                    <span className="w-24 text-muted-foreground">{item.label}</span>
+                    <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-primary rounded-full"
+                        style={{ width: `${Math.min(100, (item.value / item.max) * 100)}%` }}
+                      />
+                    </div>
+                    <span className="w-12 text-right font-medium text-foreground">{item.value}/{item.max}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Diagnosis */}
+          {aiAnalysis.structured_analysis?.diagnosis && aiAnalysis.structured_analysis.diagnosis.conversation_type && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Diagnostico</p>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <span className="rounded-full bg-accent px-2.5 py-1 font-medium text-primary">
+                  Tipo: {aiAnalysis.structured_analysis.diagnosis.conversation_type}
+                </span>
+                <span className="rounded-full bg-accent px-2.5 py-1 font-medium text-primary">
+                  Estagio: {aiAnalysis.structured_analysis.diagnosis.sales_stage}
+                </span>
+                <span className="rounded-full bg-accent px-2.5 py-1 font-medium text-primary">
+                  Intencao: {aiAnalysis.structured_analysis.diagnosis.customer_intent}
+                </span>
+                <span className={cn(
+                  'rounded-full px-2.5 py-1 font-medium',
+                  aiAnalysis.structured_analysis.diagnosis.interest_level === 'alto' ? 'bg-green-100 text-green-700' :
+                  aiAnalysis.structured_analysis.diagnosis.interest_level === 'medio' ? 'bg-yellow-100 text-yellow-700' :
+                  'bg-red-100 text-red-700'
+                )}>
+                  Interesse: {aiAnalysis.structured_analysis.diagnosis.interest_level}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Pillar Scores Grid */}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Scores por Pilar</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              {[
+                { label: 'Empatia', value: aiAnalysis.score_empathy, key: 'empathy' },
+                { label: 'Profissionalismo', value: aiAnalysis.score_professionalism, key: 'professionalism' },
+                { label: 'Clareza', value: aiAnalysis.score_clarity, key: 'clarity' },
+                { label: 'Investigacao', value: aiAnalysis.score_investigation, key: 'investigation' },
+                { label: 'Cond. Comercial', value: aiAnalysis.score_commercial_steering, key: 'commercial_steering' },
+                { label: 'Objecoes', value: aiAnalysis.score_objection_handling, key: 'objection_handling' },
+                { label: 'Rapport', value: aiAnalysis.score_rapport, key: 'rapport' },
+                { label: 'Urgencia', value: aiAnalysis.score_urgency, key: 'urgency' },
+                { label: 'Proposta Valor', value: aiAnalysis.score_value_proposition, key: 'value_proposition' },
+                { label: 'Resolucao Conflito', value: aiAnalysis.score_conflict_resolution, key: 'conflict_resolution' },
+              ].filter(p => p.value != null).map((pillar) => {
+                const evidence = aiAnalysis.structured_analysis?.pillar_evidence?.[pillar.key];
+                const isExpanded = expandedPillar === pillar.key;
+                return (
+                  <div
+                    key={pillar.key}
+                    className={cn(
+                      'rounded-xl border border-border p-3 transition-colors',
+                      evidence ? 'cursor-pointer hover:bg-muted/50' : ''
+                    )}
+                    onClick={() => evidence && setExpandedPillar(isExpanded ? null : pillar.key)}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[11px] text-muted-foreground">{pillar.label}</span>
+                      {evidence && (isExpanded ? <ChevronUp className="h-3 w-3 text-muted-foreground" /> : <ChevronDown className="h-3 w-3 text-muted-foreground" />)}
+                    </div>
+                    <div className="flex items-end gap-1">
+                      <span className={cn(
+                        'text-lg font-bold',
+                        (pillar.value ?? 0) >= 8 ? 'text-primary' :
+                        (pillar.value ?? 0) >= 6 ? 'text-yellow-600' : 'text-red-500'
+                      )}>
+                        {pillar.value}
+                      </span>
+                      <span className="text-xs text-muted-foreground mb-0.5">/10</span>
+                    </div>
+                    <div className="h-1.5 bg-muted rounded-full overflow-hidden mt-1.5">
+                      <div
+                        className={cn(
+                          'h-full rounded-full',
+                          (pillar.value ?? 0) >= 8 ? 'bg-primary' :
+                          (pillar.value ?? 0) >= 6 ? 'bg-yellow-500' : 'bg-red-500'
+                        )}
+                        style={{ width: `${(pillar.value ?? 0) * 10}%` }}
+                      />
+                    </div>
+                    {isExpanded && evidence && (
+                      <div className="mt-2 pt-2 border-t border-border">
+                        <p className="text-[11px] text-muted-foreground flex items-start gap-1">
+                          <Eye className="h-3 w-3 mt-0.5 shrink-0" />
+                          <span className="italic">&quot;{evidence}&quot;</span>
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Strengths & Improvements */}
+          {aiAnalysis.structured_analysis && (aiAnalysis.structured_analysis.strengths.length > 0 || aiAnalysis.structured_analysis.improvements.length > 0) && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {aiAnalysis.structured_analysis.strengths.length > 0 && (
+                <div className="rounded-xl border border-green-200 bg-green-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-green-700 mb-2 flex items-center gap-1">
+                    <ThumbsUp className="h-3.5 w-3.5" /> Pontos Fortes
+                  </p>
+                  <ul className="space-y-1.5">
+                    {aiAnalysis.structured_analysis.strengths.map((s, i) => (
+                      <li key={i} className="text-sm text-green-800 flex items-start gap-1.5">
+                        <span className="text-green-500 mt-1">•</span> {s}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {aiAnalysis.structured_analysis.improvements.length > 0 && (
+                <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-orange-700 mb-2 flex items-center gap-1">
+                    <ThumbsDown className="h-3.5 w-3.5" /> Pontos a Melhorar
+                  </p>
+                  <ul className="space-y-1.5">
+                    {aiAnalysis.structured_analysis.improvements.map((s, i) => (
+                      <li key={i} className="text-sm text-orange-800 flex items-start gap-1.5">
+                        <span className="text-orange-500 mt-1">•</span> {s}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Missed Opportunities */}
+          {aiAnalysis.structured_analysis?.missed_opportunities && aiAnalysis.structured_analysis.missed_opportunities.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1">
+                <Target className="h-3.5 w-3.5" /> Oportunidades Perdidas
+              </p>
+              <div className="space-y-2">
+                {aiAnalysis.structured_analysis.missed_opportunities.map((opp, i) => (
+                  <div key={i} className="rounded-xl border border-border bg-muted/50 p-3">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Turno #{opp.turn}
+                      </span>
+                      <span className={cn(
+                        'text-[10px] font-semibold uppercase rounded-full px-2 py-0.5',
+                        opp.impact === 'high' ? 'bg-red-100 text-red-700' :
+                        opp.impact === 'medium' ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-muted text-muted-foreground'
+                      )}>
+                        Impacto {opp.impact}
+                      </span>
+                    </div>
+                    {opp.agent_message && (
+                      <blockquote className="text-xs text-muted-foreground italic border-l-2 border-border pl-2 mb-1.5">
+                        &quot;{opp.agent_message}&quot;
+                      </blockquote>
+                    )}
+                    <p className="text-sm text-foreground flex items-start gap-1">
+                      <Search className="h-3.5 w-3.5 mt-0.5 shrink-0 text-primary" />
+                      {opp.missed_action}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Coaching Tips & Tags */}
+          {(aiAnalysis.coaching_tips?.length || aiAnalysis.training_tags?.length || aiAnalysis.structured_analysis?.failure_tags?.length) && (
+            <div className="flex flex-wrap gap-2">
+              {aiAnalysis.coaching_tips?.map((tip, i) => (
+                <span key={`tip-${i}`} className="text-xs bg-accent text-primary rounded-full px-2.5 py-1">
+                  {tip}
+                </span>
+              ))}
+              {aiAnalysis.training_tags?.map((tag, i) => (
+                <span key={`tag-${i}`} className="text-xs bg-muted text-muted-foreground rounded-full px-2.5 py-1">
+                  {tag}
+                </span>
+              ))}
+              {aiAnalysis.structured_analysis?.failure_tags?.map((tag, i) => (
+                <span key={`ftag-${i}`} className="text-xs bg-red-100 text-red-700 rounded-full px-2.5 py-1">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Revenue Copilot + Playbook checklist */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="rounded-2xl border border-border bg-card p-6">
@@ -440,7 +708,7 @@ export default function ConversationDetail() {
                   type="button"
                   onClick={handleApplySuggestion}
                   disabled={coachingActionMutation.isPending}
-                  className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
+                  className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
                 >
                   <CheckCircle2 className="h-3.5 w-3.5" />
                   Marcar como aplicada
@@ -520,8 +788,8 @@ export default function ConversationDetail() {
                       isSystem
                         ? 'bg-muted text-muted-foreground border-border'
                         : isAgent
-                          ? 'bg-primary text-white border-primary'
-                          : 'bg-card text-foreground border-border'
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'bg-accent/40 text-muted-foreground border-transparent hover:bg-accent/80 hover:text-foreground'
                     )}
                   >
                     <p className="text-xs font-medium opacity-80 mb-1">

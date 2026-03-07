@@ -6,7 +6,7 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatSeconds(seconds: number | null): string {
-  if (seconds == null) return '—';
+  if (seconds == null) return '--';
   if (seconds < 60) return `${seconds}s`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}min`;
   const hours = Math.floor(seconds / 3600);
@@ -15,7 +15,7 @@ export function formatSeconds(seconds: number | null): string {
 }
 
 export function formatPercent(value: number | null): string {
-  if (value == null) return '—';
+  if (value == null) return '--';
   return `${value.toFixed(1)}%`;
 }
 

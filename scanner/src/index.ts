@@ -8,6 +8,7 @@ import { processRevenueCopilotJobs } from './processors/revenue-copilot';
 import { processManagerFeedbackJobs } from './processors/manager-feedback';
 import { sendDailyDigest } from './processors/daily-digest';
 import { sendWeeklyAgentFeedback } from './processors/weekly-agent-feedback';
+import { syncAgentAvatars } from './processors/avatar-sync';
 
 let isProcessing = false;
 let isAggregating = false;
@@ -17,6 +18,7 @@ let isRevenueCopilot = false;
 let isManagerCopilot = false;
 let isDigesting = false;
 let isWeeklyFeedback = false;
+let isAvatarSync = false;
 
 console.log('=== MonitoraIA Scanner Agent ===');
 console.log(`Message processing cron: ${config.scannerCron}`);
@@ -147,6 +149,19 @@ cron.schedule(config.dailyDigestCron, async () => {
   }
 });
 
+// Avatar sync: runs every 6 hours to refresh agent profile pictures from UazApi
+cron.schedule('0 */6 * * *', async () => {
+  if (isAvatarSync) return;
+  isAvatarSync = true;
+  try {
+    await syncAgentAvatars();
+  } catch (err) {
+    console.error('[Scheduler] Avatar sync failed:', err);
+  } finally {
+    isAvatarSync = false;
+  }
+});
+
 // Weekly Agent Feedback (Gamification): runs every Sunday at 10:00
 cron.schedule('0 10 * * 0', async () => {
   if (isWeeklyFeedback) {
@@ -174,6 +189,7 @@ cron.schedule('0 10 * * 0', async () => {
     await processAiAnalysisJobs();
     await processRevenueCopilotJobs();
     await processManagerFeedbackJobs();
+    await syncAgentAvatars();
   } catch (err) {
     console.error('[Startup] Initial processing failed:', err);
   }

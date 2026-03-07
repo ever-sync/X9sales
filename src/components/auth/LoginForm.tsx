@@ -1,69 +1,77 @@
-import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
+import { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { Input } from '../ui/input';
-import { Button } from '../ui/button';
-import { Brain, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import logoLight from '../../../img-site/Group 129.svg';
+import logoDark from '../../../img-site/Group 128.svg';
 
-type Mode = 'login' | 'signup';
+// ── shared input style ────────────────────────────────────────────────────────
 
-interface LoginFormProps {
-  initialMode?: Mode;
+function inputCls(dark: boolean) {
+  return cn(
+    'w-full h-12 px-4 text-sm rounded-xl outline-none transition-all',
+    dark
+      ? 'bg-white/5 border border-white/10 text-white placeholder-white/30 focus:border-[#D3FE18] focus:ring-2 focus:ring-[#D3FE18]/20'
+      : 'bg-white border border-[#E8E8E7] text-[#111] placeholder-[#aaa] focus:border-[#D3FE18] focus:ring-2 focus:ring-[#D3FE18]/20',
+  );
 }
 
-export function LoginForm({ initialMode = 'login' }: LoginFormProps) {
-  const { signIn, signUp } = useAuth();
-  const [mode, setMode] = useState<Mode>(initialMode);
+const GoogleIcon = () => (
+  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+  </svg>
+);
+
+const AppleIcon = () => (
+  <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+    <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98l-.09.06c-.22.14-2.18 1.27-2.16 3.79.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.84M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+  </svg>
+);
+
+function SocialButtons({ dark }: { dark: boolean }) {
+  const cls = cn(
+    'flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-semibold border transition-all hover:opacity-80',
+    dark ? 'bg-white/5 border-white/10 text-white' : 'bg-white border-[#E8E8E7] text-[#111]',
+  );
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <button type="button" className={cls}><GoogleIcon /> Google</button>
+      <button type="button" className={cls}><AppleIcon /> Apple</button>
+    </div>
+  );
+}
+
+function Divider({ dark }: { dark: boolean }) {
+  return (
+    <div className="relative flex items-center gap-3">
+      <div className={cn('flex-1 h-px', dark ? 'bg-white/10' : 'bg-black/10')} />
+      <span className={cn('text-xs font-medium', dark ? 'text-white/30' : 'text-[#aaa]')}>ou autorize com</span>
+      <div className={cn('flex-1 h-px', dark ? 'bg-white/10' : 'bg-black/10')} />
+    </div>
+  );
+}
+
+// ── login panel ───────────────────────────────────────────────────────────────
+
+function LoginPanel() {
+  const { signIn } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-
-  useEffect(() => {
-    setMode(initialMode);
-    setError(null);
-    setSuccess(null);
-    setPassword('');
-    setConfirmPassword('');
-  }, [initialMode]);
-
-  const switchMode = (newMode: Mode) => {
-    setMode(newMode);
-    setError(null);
-    setSuccess(null);
-    setPassword('');
-    setConfirmPassword('');
-  };
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    setSuccess(null);
-
-    if (mode === 'signup' && password !== confirmPassword) {
-      setError('As senhas não coincidem.');
-      return;
-    }
-
     setLoading(true);
     try {
-      if (mode === 'login') {
-        const { error: signInError } = await signIn(email, password);
-        if (signInError) {
-          setError('E-mail ou senha inválidos. Por favor, tente novamente.');
-        }
-      } else {
-        const { error: signUpError } = await signUp(email, password);
-        if (signUpError) {
-          setError(signUpError.message || 'Erro ao criar conta.');
-        } else {
-          setSuccess('Conta criada! Verifique seu e-mail para confirmar o cadastro, depois faça login.');
-        }
-      }
+      const { error: err } = await signIn(email, password);
+      if (err) setError('E-mail ou senha inválidos. Tente novamente.');
     } catch {
       setError('Ocorreu um erro. Verifique sua conexão.');
     } finally {
@@ -72,203 +80,186 @@ export function LoginForm({ initialMode = 'login' }: LoginFormProps) {
   };
 
   return (
-    <div className="min-h-screen grid lg:grid-cols-2 bg-background font-sans antialiased overflow-hidden">
-      {/* Visual Side */}
-      <div className="relative hidden lg:flex flex-col justify-between p-12 overflow-hidden bg-[#0F282F]">
-        <div className="absolute inset-0 z-0">
-          <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-primary/20 blur-[120px] rounded-full animate-pulse" />
-          <div className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[60%] bg-primary/10 blur-[120px] rounded-full animate-pulse delay-700" />
+    <div className="flex-1 flex items-center justify-center p-8 bg-[#F5F5F4]">
+      <div className="w-full max-w-[360px] space-y-7">
+        <img src={logoLight} alt="MonitoraIA" className="h-4 w-auto" />
+
+        <div className="space-y-1.5">
+          <h1 className="text-xl font-bold text-[#111]">Entrar na MonitoraIA</h1>
+          <p className="text-sm text-[#888] leading-relaxed">Monitore e otimize o desempenho da sua equipe.</p>
         </div>
 
-        <div className="relative z-10 flex items-center gap-2 text-white/90">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary shadow-lg shadow-primary/20">
-            <Brain className="h-6 w-6 text-white" />
+        {error && (
+          <div className="text-sm rounded-xl p-3 border bg-red-50 border-red-100 text-red-500">{error}</div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <input
+            type="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            required
+            placeholder="Seu e-mail"
+            className={inputCls(false)}
+          />
+          <div className="relative">
+            <input
+              type={showPwd ? 'text' : 'password'}
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              required
+              placeholder="Sua senha"
+              className={cn(inputCls(false), 'pr-12')}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPwd(v => !v)}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-[#bbb] hover:text-[#666] transition-colors"
+            >
+              {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
           </div>
-          <span className="text-xl font-bold tracking-tight">MonitoraIA.</span>
-        </div>
 
-        <div className="relative z-10 space-y-6">
-          <h2 className="text-5xl font-extrabold tracking-tight text-white leading-[1.1]">
-            A inteligência que seu <br />
-            <span className="text-transparent bg-clip-text bg-linear-to-r from-primary to-primary/70">
-              time de atendimento
-            </span> <br />
-            precisava.
-          </h2>
-          <p className="max-w-[440px] text-lg text-muted-foreground leading-relaxed font-light">
-            Monitore KPIs em tempo real, use IA para analisar sentimentos e reduza drasticamente o tempo de resposta do seu suporte.
-          </p>
+          <button
+            type="submit"
+            disabled={loading}
+            style={{ backgroundColor: '#5945FD', color: '#fff' }}
+            className="w-full h-12 rounded-xl text-sm font-bold tracking-tight transition-all hover:brightness-95 active:scale-[0.98] disabled:opacity-60 flex items-center justify-center gap-2"
+          >
+            {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Validando...</> : 'Entrar'}
+          </button>
+        </form>
 
-          <div className="flex items-center gap-8 pt-4">
-            <div className="space-y-1">
-              <p className="text-white font-bold text-2xl">98%</p>
-              <p className="text-muted-foreground text-xs uppercase tracking-wider font-semibold">SLA de Precisão</p>
-            </div>
-            <div className="w-px h-10 bg-secondary" />
-            <div className="space-y-1">
-              <p className="text-white font-bold text-2xl">+45%</p>
-              <p className="text-muted-foreground text-xs uppercase tracking-wider font-semibold">Produtividade</p>
-            </div>
-          </div>
-        </div>
+        <button type="button" className="text-sm font-medium text-[#888] hover:text-[#333] transition-colors w-full text-center">
+          Esqueceu a senha?
+        </button>
 
-        <div className="relative z-10 flex items-center gap-4 text-xs text-muted-foreground/60 font-medium">
-          <span>&copy; 2026 MonitoraIA Tech.</span>
-          <div className="h-1 w-1 rounded-full bg-secondary/80" />
-          <span>Privacidade</span>
-          <div className="h-1 w-1 rounded-full bg-secondary/80" />
-          <span>Termos</span>
-        </div>
+        <Divider dark={false} />
+        <SocialButtons dark={false} />
       </div>
+    </div>
+  );
+}
 
-      {/* Form Side */}
-      <div className="flex items-center justify-center p-6 lg:p-12 bg-muted/50">
-        <div className="w-full max-w-[420px] space-y-8">
-          <div className="flex lg:hidden flex-col items-center gap-4 mb-8">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary shadow-xl shadow-primary/30">
-              <Brain className="h-7 w-7 text-white" />
-            </div>
-            <div className="text-center">
-              <h1 className="text-2xl font-bold text-foreground">MonitoraIA</h1>
-              <p className="text-sm text-muted-foreground">Dashboard de Atendimento Inteligente</p>
-            </div>
-          </div>
+// ── signup panel ──────────────────────────────────────────────────────────────
 
-          {/* Mode Toggle */}
-          <div className="flex rounded-xl bg-muted p-1 gap-1">
-            <button
-              type="button"
-              onClick={() => switchMode('login')}
-              className={cn(
-                'flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all',
-                mode === 'login'
-                  ? 'bg-card text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              Login
-            </button>
-            <button
-              type="button"
-              onClick={() => switchMode('signup')}
-              className={cn(
-                'flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all',
-                mode === 'signup'
-                  ? 'bg-card text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              Cadastro
-            </button>
-          </div>
+function SignupPanel() {
+  const { signUp } = useAuth();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
-          <div className="space-y-2 lg:text-left text-center">
-            <h1 className="text-3xl font-extrabold tracking-tight text-foreground">
-              {mode === 'login' ? 'Seja bem-vindo de volta.' : 'Crie sua conta.'}
-            </h1>
-            <p className="text-muted-foreground font-medium leading-relaxed">
-              {mode === 'login'
-                ? 'Entre com suas credenciais para gerenciar sua operação.'
-                : 'Preencha os dados abaixo para começar a usar o MonitoraIA.'}
-            </p>
-          </div>
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+    if (password !== confirm) { setError('As senhas não coincidem.'); return; }
+    setLoading(true);
+    try {
+      const { error: err } = await signUp(email, password);
+      if (err) setError(err.message || 'Erro ao criar conta.');
+      else setSuccess('Conta criada! Verifique seu e-mail para confirmar o cadastro.');
+    } catch {
+      setError('Ocorreu um erro. Verifique sua conexão.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {error && (
-              <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm rounded-xl p-4 flex items-center gap-3">
-                <div className="h-2 w-2 rounded-full bg-red-600 shrink-0" />
-                {error}
-              </div>
-            )}
-            {success && (
-              <div className="bg-accent/80 border border-primary/25 text-primary text-sm rounded-xl p-4 flex items-center gap-3">
-                <div className="h-2 w-2 rounded-full bg-primary shrink-0" />
-                {success}
-              </div>
-            )}
+  return (
+    <div className="flex-1 flex items-center justify-center p-8 bg-[#0D0D0D]">
+      <div className="w-full max-w-[360px] space-y-7">
+        <img src={logoDark} alt="MonitoraIA" className="h-4 w-auto" />
 
-            <div className="space-y-4">
-              <div className="space-y-2 group">
-                <label htmlFor="email" className="text-sm font-semibold text-foreground transition-colors group-focus-within:text-primary">
-                  E-mail corporativo
-                </label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  required
-                  placeholder="voce@empresa.com"
-                  className="h-12 px-4 rounded-xl border-border focus:border-primary focus:ring-4 focus:ring-ring/20 transition-all outline-none text-foreground bg-card"
-                />
-              </div>
-
-              <div className="space-y-2 group">
-                <div className="flex items-center justify-between">
-                  <label htmlFor="password" className="text-sm font-semibold text-foreground transition-colors group-focus-within:text-primary">
-                    Senha
-                  </label>
-                  {mode === 'login' && (
-                    <button type="button" className="text-xs font-semibold text-primary hover:text-primary transition-colors">
-                      Esqueceu a senha?
-                    </button>
-                  )}
-                </div>
-                <div className="relative">
-                  <Input
-                    id="password"
-                    type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    required
-                    placeholder="••••••"
-                    className="h-12 px-4 pr-12 rounded-xl border-border focus:border-primary focus:ring-4 focus:ring-ring/20 transition-all outline-none text-foreground bg-card"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                  </button>
-                </div>
-              </div>
-
-              {mode === 'signup' && (
-                <div className="space-y-2 group">
-                  <label htmlFor="confirmPassword" className="text-sm font-semibold text-foreground transition-colors group-focus-within:text-primary">
-                    Confirmar senha
-                  </label>
-                  <Input
-                    id="confirmPassword"
-                    type="password"
-                    value={confirmPassword}
-                    onChange={e => setConfirmPassword(e.target.value)}
-                    required
-                    placeholder="••••••"
-                    className="h-12 px-4 rounded-xl border-border focus:border-primary focus:ring-4 focus:ring-ring/20 transition-all outline-none text-foreground bg-card"
-                  />
-                </div>
-              )}
-            </div>
-
-            <Button
-              type="submit"
-              disabled={loading}
-              className={cn(
-                'w-full h-12 rounded-xl text-md font-bold transition-all shadow-lg',
-                loading ? 'bg-primary/90' : 'bg-primary hover:bg-black hover:shadow-primary/20 active:scale-[0.98]'
-              )}
-            >
-              {loading ? (
-                <div className="flex items-center gap-2">
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  <span>{mode === 'login' ? 'Validando...' : 'Criando conta...'}</span>
-                </div>
-              ) : mode === 'login' ? 'Acessar Dashboard' : 'Criar Conta'}
-            </Button>
-          </form>
+        <div className="space-y-1.5">
+          <h1 className="text-xl font-bold text-white">Criar sua conta</h1>
+          <p className="text-sm text-white/50 leading-relaxed">Comece a usar o poder da IA no seu atendimento.</p>
         </div>
+
+        {error && (
+          <div className="text-sm rounded-xl p-3 border bg-red-500/10 border-red-500/20 text-red-400">{error}</div>
+        )}
+        {success && (
+          <div className="text-sm rounded-xl p-3 border bg-[#D3FE18]/10 border-[#D3FE18]/20 text-[#D3FE18]">{success}</div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <input
+            type="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            required
+            placeholder="Seu e-mail"
+            className={inputCls(true)}
+          />
+          <div className="relative">
+            <input
+              type={showPwd ? 'text' : 'password'}
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              required
+              placeholder="Criar senha"
+              className={cn(inputCls(true), 'pr-12')}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPwd(v => !v)}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60 transition-colors"
+            >
+              {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+          <input
+            type="password"
+            value={confirm}
+            onChange={e => setConfirm(e.target.value)}
+            required
+            placeholder="Confirmar senha"
+            className={inputCls(true)}
+          />
+
+          <button
+            type="submit"
+            disabled={loading}
+            style={{ backgroundColor: '#D3FE18', color: '#000' }}
+            className="w-full h-12 rounded-xl text-sm font-bold tracking-tight transition-all hover:brightness-95 active:scale-[0.98] disabled:opacity-60 flex items-center justify-center gap-2"
+          >
+            {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Criando conta...</> : 'Criar Conta Grátis'}
+          </button>
+        </form>
+
+        <p className="text-center text-xs text-white/30 leading-relaxed">
+          Ao criar sua conta você concorda com os{' '}
+          <span className="text-white/50 underline cursor-pointer">Termos de Uso</span>
+          {' '}e{' '}
+          <span className="text-white/50 underline cursor-pointer">Política de Privacidade</span>.
+        </p>
+
+        <Divider dark={true} />
+        <SocialButtons dark={true} />
+      </div>
+    </div>
+  );
+}
+
+// ── export ────────────────────────────────────────────────────────────────────
+
+export function LoginForm({ initialMode: _initialMode = 'login' }: { initialMode?: 'login' | 'signup' }) {
+  return (
+    <div className="min-h-screen flex font-sans antialiased overflow-hidden">
+      {/* Left — Login */}
+      <LoginPanel />
+
+      {/* Divider */}
+      <div className="w-px bg-black/10 hidden lg:block shrink-0" />
+
+      {/* Right — Signup */}
+      <div className="hidden lg:flex flex-1">
+        <SignupPanel />
       </div>
     </div>
   );

@@ -16,7 +16,30 @@
       "Bash(npx vite build:*)",
       "Bash(grep -n \"ALTER TABLE app.messages\\\\|CREATE POLICY.*messages\" /c/Users/rapha/OneDrive/Documentos/MonitoraIA/supabase/migrations/*.sql)",
       "Bash(grep -l \"messages\" /c/Users/rapha/OneDrive/Documentos/MonitoraIA/supabase/migrations/*.sql)",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(grep -n \"CREATE TABLE.*ai_conversation_analysis\" \"c:/Users/rapha/OneDrive/Documentos/X9Sales/supabase/migrations\"/*.sql)",
+      "Bash(npm run build)",
+      "Bash(grep -n \"quality_score\\\\|temperature\\\\|lead_temp\\\\|sentiment\" supabase/migrations/*.sql)",
+      "Bash(grep -n \"lead_temperature\\\\|temperature\\\\|spam_score\\\\|sentiment\" supabase/migrations/*.sql)",
+      "Bash(grep -n \"conversations.*ai_conversation\\\\|ai_conversation.*conversation\" supabase/migrations/*.sql)",
+      "Bash(grep -n \"CREATE TABLE.*metrics_conversation\\\\|CREATE TABLE.*ai_conversation\" supabase/migrations/*.sql)",
+      "Bash(grep -rn \"ranking\\\\|mv_agent_ranking\" supabase/migrations/*.sql)",
+      "Bash(grep -n \"REFRESH\\\\|cron\\\\|pg_cron\\\\|refresh\" supabase/migrations/*.sql)",
+      "Bash(xargs grep -l \"refresh\\\\|aggregat\")",
+      "Bash(grep -rn \"alert_type\\\\|severity\\\\|INSERT.*alert\\\\|create.*alert\" supabase/migrations/*.sql scanner/src/)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:uazapi.dev)",
+      "WebFetch(domain:developer.z-api.io)",
+      "WebFetch(domain:wasenderapi.com)",
+      "WebFetch(domain:support.whapi.cloud)",
+      "WebFetch(domain:docs.codechat.dev)",
+      "WebFetch(domain:glama.ai)",
+      "Bash(curl -s \"https://eversync2.uazapi.com/instance/fetchInstances\" -H \"apikey: JEptcvj1tzbJQNBQ1sjGzpb01Tx51fv7zEi83YAKC12RNIO77p\")",
+      "Bash(curl -s \"https://eversync2.uazapi.com/instances\" -H \"apikey: JEptcvj1tzbJQNBQ1sjGzpb01Tx51fv7zEi83YAKC12RNIO77p\")",
+      "Bash(curl -s \"https://eversync2.uazapi.com/\" -H \"apikey: JEptcvj1tzbJQNBQ1sjGzpb01Tx51fv7zEi83YAKC12RNIO77p\")",
+      "Bash(# Check the UazApi docs site to discover available endpoints curl -s \"\"https://docs.uazapi.com/api.json\"\")",
+      "Bash(python3 -m json.tool)",
+      "Bash(python3 -c \":*)"
     ]
   }
 }

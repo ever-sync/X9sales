@@ -149,6 +149,30 @@ export default function AgentDetail() {
   const avgClarity = scoredAnalyses.length > 0
     ? +(scoredAnalyses.reduce((s, a) => s + (a.score_clarity ?? 0), 0) / scoredAnalyses.length).toFixed(1)
     : null;
+  const avgInvestigation = scoredAnalyses.length > 0
+    ? +(scoredAnalyses.filter(a => a.score_investigation != null).reduce((s, a) => s + (a.score_investigation ?? 0), 0) / Math.max(scoredAnalyses.filter(a => a.score_investigation != null).length, 1)).toFixed(1)
+    : null;
+  const avgSteering = scoredAnalyses.length > 0
+    ? +(scoredAnalyses.filter(a => a.score_commercial_steering != null).reduce((s, a) => s + (a.score_commercial_steering ?? 0), 0) / Math.max(scoredAnalyses.filter(a => a.score_commercial_steering != null).length, 1)).toFixed(1)
+    : null;
+  const avgObjHandling = scoredAnalyses.length > 0
+    ? +(scoredAnalyses.filter(a => a.score_objection_handling != null).reduce((s, a) => s + (a.score_objection_handling ?? 0), 0) / Math.max(scoredAnalyses.filter(a => a.score_objection_handling != null).length, 1)).toFixed(1)
+    : null;
+
+  // Aggregate top strengths & improvements from structured_analysis
+  const strengthCounts = new Map<string, number>();
+  const improvementCounts = new Map<string, number>();
+  for (const a of scoredAnalyses) {
+    if (!a.structured_analysis) continue;
+    for (const s of a.structured_analysis.strengths ?? []) {
+      strengthCounts.set(s, (strengthCounts.get(s) ?? 0) + 1);
+    }
+    for (const s of a.structured_analysis.improvements ?? []) {
+      improvementCounts.set(s, (improvementCounts.get(s) ?? 0) + 1);
+    }
+  }
+  const topStrengths = [...strengthCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
+  const topImprovements = [...improvementCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
 
   const needsCoachingList = aiAnalyses?.filter(a => a.needs_coaching) ?? [];
 
@@ -267,6 +291,18 @@ export default function AgentDetail() {
                   <span className="text-xs text-muted-foreground w-28">Clareza</span>
                   <div className="flex-1"><ScoreBar value={avgClarity} /></div>
                 </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground w-28">Investigacao</span>
+                  <div className="flex-1"><ScoreBar value={avgInvestigation} /></div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground w-28">Cond. Comercial</span>
+                  <div className="flex-1"><ScoreBar value={avgSteering} /></div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground w-28">Objecoes</span>
+                  <div className="flex-1"><ScoreBar value={avgObjHandling} /></div>
+                </div>
               </div>
             </div>
 
@@ -298,6 +334,40 @@ export default function AgentDetail() {
             )}
           </div>
 
+          {/* Aggregated Strengths / Improvements */}
+          {(topStrengths.length > 0 || topImprovements.length > 0) && (
+            <div className="px-6 pb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              {topStrengths.length > 0 && (
+                <div className="rounded-xl border border-green-200 bg-green-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-green-700 mb-2">Pontos Fortes Recorrentes</p>
+                  <ul className="space-y-1">
+                    {topStrengths.map(([text, count]) => (
+                      <li key={text} className="text-xs text-green-800 flex items-start gap-1.5">
+                        <span className="text-green-500 mt-0.5">•</span>
+                        <span>{text}</span>
+                        <span className="text-green-500 ml-auto">({count}x)</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {topImprovements.length > 0 && (
+                <div className="rounded-xl border border-orange-200 bg-orange-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-orange-700 mb-2">Melhorias Recorrentes</p>
+                  <ul className="space-y-1">
+                    {topImprovements.map(([text, count]) => (
+                      <li key={text} className="text-xs text-orange-800 flex items-start gap-1.5">
+                        <span className="text-orange-500 mt-0.5">•</span>
+                        <span>{text}</span>
+                        <span className="text-orange-500 ml-auto">({count}x)</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Recent AI analyses table */}
           <div className="border-t border-border overflow-x-auto">
             <table className="w-full text-sm">
@@ -308,6 +378,8 @@ export default function AgentDetail() {
                   <th className="px-6 py-3 text-right">Empatia</th>
                   <th className="px-6 py-3 text-right">Prof.</th>
                   <th className="px-6 py-3 text-right">Clareza</th>
+                  <th className="px-6 py-3 text-right">Invest.</th>
+                  <th className="px-6 py-3 text-right">Cond.</th>
                   <th className="px-6 py-3">Coaching</th>
                   <th className="px-6 py-3">Data</th>
                 </tr>
@@ -342,6 +414,8 @@ export default function AgentDetail() {
                       <td className="px-6 py-3 text-right text-muted-foreground">{analysis.score_empathy ?? '—'}</td>
                       <td className="px-6 py-3 text-right text-muted-foreground">{analysis.score_professionalism ?? '—'}</td>
                       <td className="px-6 py-3 text-right text-muted-foreground">{analysis.score_clarity ?? '—'}</td>
+                      <td className="px-6 py-3 text-right text-muted-foreground">{analysis.score_investigation ?? '—'}</td>
+                      <td className="px-6 py-3 text-right text-muted-foreground">{analysis.score_commercial_steering ?? '—'}</td>
                       <td className="px-6 py-3">
                         {analysis.needs_coaching ? (
                           <span className="text-xs bg-accent text-primary px-2 py-0.5 rounded-full">Sim</span>

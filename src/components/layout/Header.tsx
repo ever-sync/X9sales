@@ -11,9 +11,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
-import { Search, Bell, LayoutGrid, ChevronDown, Settings as SettingsIcon, LogOut, Moon, Sun } from 'lucide-react';
+import { Search, Bell, LayoutGrid, ChevronDown, Settings as SettingsIcon, LogOut, Moon, Sun, PanelLeft } from 'lucide-react';
 
-export function Header() {
+export function Header({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const { user, signOut } = useAuth();
   const { company } = useCompany();
   const { role } = usePermissions();
@@ -27,84 +27,92 @@ export function Header() {
   };
 
   return (
-    <header className="h-16 bg-card dark:bg-card border-b border-border dark:border-border flex items-center justify-between px-6 sticky top-0 z-30">
-      <div className="flex items-center gap-2 min-w-0">
+    <header className="shrink-0 z-30 flex h-[64px] items-center justify-between border-b border-border bg-background px-4 sm:px-5 lg:px-8">
+      <div className="flex min-w-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={onOpenSidebar}
+          className="flex h-10 w-10 items-center justify-center rounded-2xl border border-border bg-card text-foreground shadow-sm transition-colors hover:bg-muted lg:hidden"
+          aria-label="Abrir menu"
+        >
+          <PanelLeft className="h-4.5 w-4.5" />
+        </button>
         {company && (
-          <span className="text-sm font-semibold text-muted-foreground dark:text-muted-foreground truncate hidden sm:block">
+          <span className="hidden truncate text-sm font-semibold text-muted-foreground sm:block dark:text-muted-foreground">
             {company.name}
           </span>
         )}
       </div>
 
-      <div className="flex-1 max-w-sm mx-6">
+      <div className="mx-3 hidden max-w-xl flex-1 md:block lg:mx-6">
         <div className="relative flex items-center">
-          <Search className="absolute left-3 h-4 w-4 text-muted-foreground dark:text-muted-foreground pointer-events-none" />
+          <Search className="absolute left-4 h-4.5 w-4.5 text-muted-foreground pointer-events-none" />
           <input
             type="text"
-            placeholder="Buscar..."
-            className="w-full pl-9 pr-16 py-2 text-sm bg-muted dark:bg-secondary border border-border dark:border-border rounded-lg text-foreground dark:text-foreground placeholder-muted-foreground dark:placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-primary transition-all"
+            placeholder="Buscar conversas, clientes ou atendentes"
+            className="w-full rounded-full border border-border/70 bg-card/90 py-3 pl-11 pr-20 text-sm text-foreground shadow-sm transition-all placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
-          <span className="absolute right-3 flex items-center gap-0.5 text-[10px] font-semibold text-muted-foreground dark:text-muted-foreground bg-secondary dark:bg-secondary/80 px-1.5 py-0.5 rounded pointer-events-none">
+          <span className="pointer-events-none absolute right-3 flex items-center gap-0.5 rounded-full border border-border bg-background px-2 py-1 text-[10px] font-semibold text-muted-foreground shadow-sm">
             CTRL F
           </span>
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5">
-        <button className="h-9 w-9 flex items-center justify-center rounded-lg text-muted-foreground dark:text-muted-foreground hover:bg-muted dark:hover:bg-secondary hover:text-muted-foreground dark:hover:text-muted-foreground transition-colors">
+      <div className="flex items-center gap-1.5 sm:gap-2">
+        <button className="hidden h-10 w-10 items-center justify-center rounded-2xl border border-transparent text-muted-foreground transition-colors hover:bg-muted dark:text-muted-foreground dark:hover:bg-accent md:flex dark:hover:text-foreground">
           <LayoutGrid className="h-4.5 w-4.5" />
         </button>
 
         <button
           onClick={toggleTheme}
-          className="h-9 w-9 flex items-center justify-center rounded-lg text-muted-foreground dark:text-muted-foreground hover:bg-muted dark:hover:bg-secondary hover:text-muted-foreground dark:hover:text-muted-foreground transition-colors"
+          className="flex h-10 w-10 items-center justify-center rounded-2xl border border-transparent text-muted-foreground transition-colors hover:bg-muted dark:text-muted-foreground dark:hover:bg-accent dark:hover:text-foreground"
           aria-label={theme === 'dark' ? 'Ativar modo claro' : 'Ativar modo escuro'}
           title={theme === 'dark' ? 'Modo claro' : 'Modo escuro'}
         >
           {theme === 'dark' ? <Sun className="h-4.5 w-4.5" /> : <Moon className="h-4.5 w-4.5" />}
         </button>
 
-        <button className="relative h-9 w-9 flex items-center justify-center rounded-lg text-muted-foreground dark:text-muted-foreground hover:bg-muted dark:hover:bg-secondary hover:text-muted-foreground dark:hover:text-muted-foreground transition-colors">
+        <button className="relative flex h-10 w-10 items-center justify-center rounded-2xl border border-transparent text-muted-foreground transition-colors hover:bg-muted dark:text-muted-foreground dark:hover:bg-accent dark:hover:text-foreground">
           <Bell className="h-4.5 w-4.5" />
           <span className="absolute top-2 right-2 w-1.5 h-1.5 bg-red-500 rounded-full" />
         </button>
 
-        <div className="w-px h-5 bg-secondary dark:bg-secondary/80 mx-1" />
+        <div className="mx-1 hidden h-5 w-px bg-secondary/30 dark:bg-border sm:block" />
 
         <DropdownMenu>
-          <DropdownMenuTrigger className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-muted dark:hover:bg-secondary transition-colors outline-none group">
-            <Avatar className="h-8 w-8 border border-border dark:border-border">
-              <AvatarFallback className="bg-linear-to-br from-[#0F282F] to-primary text-white font-bold text-xs">
+          <DropdownMenuTrigger className="group flex items-center gap-2 rounded-full border border-border/70 bg-card/85 px-1.5 py-1.5 shadow-sm outline-none transition-colors hover:bg-muted/50 sm:gap-3 sm:px-2">
+            <Avatar className="h-9 w-9 border border-border shadow-sm">
+              <AvatarFallback className="bg-primary/10 text-primary font-bold text-sm">
                 {user?.email?.charAt(0).toUpperCase() ?? '?'}
               </AvatarFallback>
             </Avatar>
             <div className="text-left hidden sm:block">
-              <p className="text-[13px] font-semibold text-foreground dark:text-foreground leading-none">
+              <p className="text-[13px] font-semibold text-foreground leading-none">
                 {user?.email?.split('@')[0]}
               </p>
               {role && (
-                <p className="text-[11px] text-muted-foreground dark:text-muted-foreground leading-none mt-0.5">
+                <p className="text-[11px] text-muted-foreground leading-none mt-1">
                   {roleLabels[role] ?? role}
                 </p>
               )}
             </div>
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground dark:text-muted-foreground group-aria-expanded:rotate-180 transition-transform hidden sm:block" />
+            <ChevronDown className="h-4 w-4 text-muted-foreground group-aria-expanded:rotate-180 transition-transform hidden sm:block" />
           </DropdownMenuTrigger>
 
-          <DropdownMenuContent align="end" className="w-60 p-1.5 rounded-xl border-border dark:border-border shadow-xl bg-card dark:bg-card">
+          <DropdownMenuContent align="end" className="w-60 rounded-xl border border-border bg-card p-1.5 shadow-xl">
             <DropdownMenuLabel className="px-3 py-2">
-              <p className="text-sm font-bold text-foreground dark:text-foreground leading-none">Minha Conta</p>
-              <p className="text-xs text-muted-foreground dark:text-muted-foreground truncate mt-1">{user?.email}</p>
+              <p className="text-sm font-bold leading-none text-foreground">Minha Conta</p>
+              <p className="mt-1 truncate text-xs text-muted-foreground">{user?.email}</p>
             </DropdownMenuLabel>
-            <DropdownMenuSeparator className="bg-muted dark:bg-secondary" />
-            <DropdownMenuItem className="flex items-center gap-2 px-3 py-2 rounded-lg text-muted-foreground dark:text-muted-foreground hover:bg-muted dark:hover:bg-secondary text-[13px] font-medium cursor-pointer">
+            <DropdownMenuSeparator className="bg-border" />
+            <DropdownMenuItem className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-[13px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground">
               <SettingsIcon className="h-4 w-4" />
               Configuracoes de Perfil
             </DropdownMenuItem>
-            <DropdownMenuSeparator className="bg-muted dark:bg-secondary" />
+            <DropdownMenuSeparator className="bg-border" />
             <DropdownMenuItem
               onSelect={signOut}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-destructive/10 text-[13px] font-semibold cursor-pointer outline-none transition-colors focus:bg-red-50 dark:focus:bg-destructive/10"
+              className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-[13px] font-semibold text-red-600 outline-none transition-colors hover:bg-destructive/10 focus:bg-destructive/10 dark:text-red-400"
             >
               <LogOut className="h-4 w-4" />
               Sair da Conta

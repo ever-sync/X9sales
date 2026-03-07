@@ -1,3 +1,10 @@
+# X9Sales
+
+## Producao do Scanner
+
+Guia completo para deixar o scanner 24/7 no Railway:
+[`docs/scanner-production-railway.md`](docs/scanner-production-railway.md)
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.

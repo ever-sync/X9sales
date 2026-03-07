@@ -395,6 +395,45 @@ export default function AIInsights() {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10);
 
+  // Failure heatmap: agent -> failure_tag -> count
+  const failureByAgent = new Map<string, { name: string; tags: Map<string, number>; total: number }>();
+  const allFailureTags = new Map<string, number>();
+  for (const analysis of analyses ?? []) {
+    if (!analysis.agent_id || !analysis.agent) continue;
+    const ftags = analysis.structured_analysis?.failure_tags;
+    if (!ftags || ftags.length === 0) continue;
+
+    const agentName = (analysis.agent as { name?: string }).name ?? '--';
+    if (!failureByAgent.has(analysis.agent_id)) {
+      failureByAgent.set(analysis.agent_id, { name: agentName, tags: new Map(), total: 0 });
+    }
+    const entry = failureByAgent.get(analysis.agent_id)!;
+
+    for (const tag of ftags) {
+      entry.tags.set(tag, (entry.tags.get(tag) ?? 0) + 1);
+      entry.total += 1;
+      allFailureTags.set(tag, (allFailureTags.get(tag) ?? 0) + 1);
+    }
+  }
+
+  const topFailureTags = Array.from(allFailureTags.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([tag]) => tag);
+
+  const failureHeatmapRows = Array.from(failureByAgent.entries())
+    .map(([agentId, data]) => ({ agentId, ...data }))
+    .sort((a, b) => b.total - a.total);
+
+  const failureTagMaxes = new Map<string, number>();
+  for (const tag of topFailureTags) {
+    let max = 0;
+    for (const row of failureHeatmapRows) {
+      max = Math.max(max, row.tags.get(tag) ?? 0);
+    }
+    failureTagMaxes.set(tag, max);
+  }
+
   const selectedAgentName = useMemo(() => {
     if (!agents || !effectiveAgentId) return null;
     return agents.find((agent) => agent.id === effectiveAgentId)?.name ?? null;
@@ -672,6 +711,69 @@ export default function AIInsights() {
               </div>
             </div>
           )}
+
+          {failureHeatmapRows.length > 0 && topFailureTags.length > 0 && (
+            <div className="rounded-2xl border border-border bg-card p-6">
+              <h3 className="mb-4 text-lg font-semibold text-foreground">
+                Heatmap de Falhas Recorrentes
+              </h3>
+              <p className="mb-3 text-xs text-muted-foreground">
+                Intensidade de cor indica frequencia da falha por atendente. Ajuda a identificar padroes ruins repetidos.
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-left">
+                      <th className="px-3 py-2 text-muted-foreground font-medium">Atendente</th>
+                      {topFailureTags.map((tag) => (
+                        <th key={tag} className="px-2 py-2 text-center font-medium text-muted-foreground whitespace-nowrap">
+                          {tag.replace(/_/g, ' ')}
+                        </th>
+                      ))}
+                      <th className="px-3 py-2 text-right text-muted-foreground font-medium">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {failureHeatmapRows.map((row) => (
+                      <tr key={row.agentId} className="hover:bg-muted/50">
+                        <td className="px-3 py-2">
+                          <Link
+                            to={`/agents/${row.agentId}`}
+                            className="font-medium text-primary hover:underline"
+                          >
+                            {row.name}
+                          </Link>
+                        </td>
+                        {topFailureTags.map((tag) => {
+                          const count = row.tags.get(tag) ?? 0;
+                          const maxForTag = failureTagMaxes.get(tag) ?? 1;
+                          const opacity = count > 0 ? Math.max(0.15, count / maxForTag) : 0;
+                          return (
+                            <td key={tag} className="px-2 py-2 text-center">
+                              {count > 0 ? (
+                                <span
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-xs font-semibold"
+                                  style={{
+                                    backgroundColor: `rgba(239, 68, 68, ${opacity})`,
+                                    color: opacity > 0.5 ? 'white' : 'rgb(185, 28, 28)',
+                                  }}
+                                >
+                                  {count}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                        <td className="px-3 py-2 text-right font-semibold text-foreground">{row.total}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -874,7 +976,7 @@ export default function AIInsights() {
                   <button
                     type="submit"
                     disabled={startManualAnalysisMutation.isPending}
-                    className="flex-1 rounded-xl bg-primary py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
+                    className="flex-1 rounded-xl bg-primary py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
                   >
                     {startManualAnalysisMutation.isPending ? 'Iniciando...' : 'Iniciar analise'}
                   </button>
@@ -1002,7 +1104,7 @@ export default function AIInsights() {
                   <button
                     type="button"
                     onClick={closeModal}
-                    className="flex-1 rounded-xl bg-primary py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90"
+                    className="flex-1 rounded-xl bg-primary py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                   >
                     Fechar
                   </button>

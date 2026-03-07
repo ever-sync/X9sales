@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { config, supabase } from '../config';
 
 const MODEL = 'claude-haiku-4-5-20251001';
-const PROMPT_VERSION = 'v2-manual-jobs';
+const PROMPT_VERSION = 'v3-enhanced';
 const OPENAI_EMBEDDING_MODEL = 'text-embedding-3-small';
 const MAX_ERROR_MESSAGE_LENGTH = 2000;
 
@@ -73,6 +73,28 @@ interface KnowledgeBaseMatch {
   content: string;
 }
 
+interface MissedOpportunity {
+  turn: number;
+  agent_message: string;
+  missed_action: string;
+  impact: string;
+}
+
+interface ConversationDiagnosis {
+  conversation_type: string;
+  sales_stage: string;
+  customer_intent: string;
+  interest_level: string;
+}
+
+interface WeightedBreakdown {
+  communication_weighted: number;
+  investigation_weighted: number;
+  steering_weighted: number;
+  objections_weighted: number;
+  closing_weighted: number;
+}
+
 interface AIAnalysisResult {
   quality_score: number | null;
   predicted_csat: number | null;
@@ -85,6 +107,8 @@ interface AIAnalysisResult {
   score_urgency: number | null;
   score_value_proposition: number | null;
   score_objection_handling: number | null;
+  score_investigation: number | null;
+  score_commercial_steering: number | null;
   used_rapport: boolean;
   used_urgency: boolean;
   used_value_proposition: boolean;
@@ -92,6 +116,12 @@ interface AIAnalysisResult {
   needs_coaching: boolean;
   coaching_tips: string[];
   training_tags: string[];
+  missed_opportunities: MissedOpportunity[];
+  strengths: string[];
+  improvements: string[];
+  diagnosis: ConversationDiagnosis;
+  pillar_evidence: Record<string, string>;
+  failure_tags: string[];
 }
 
 interface ConversationForAnalysis {
@@ -154,6 +184,97 @@ function normalizeStringArray(value: unknown): string[] {
     .slice(0, 20);
 }
 
+function normalizeMissedOpportunities(value: unknown): MissedOpportunity[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+    .map((item) => ({
+      turn: typeof item.turn === 'number' ? item.turn : 0,
+      agent_message: typeof item.agent_message === 'string' ? item.agent_message.slice(0, 500) : '',
+      missed_action: typeof item.missed_action === 'string' ? item.missed_action.slice(0, 500) : '',
+      impact: ['low', 'medium', 'high'].includes(item.impact as string) ? (item.impact as string) : 'medium',
+    }))
+    .slice(0, 10);
+}
+
+function normalizeDiagnosis(value: unknown): ConversationDiagnosis {
+  const defaults: ConversationDiagnosis = {
+    conversation_type: '',
+    sales_stage: '',
+    customer_intent: '',
+    interest_level: '',
+  };
+  if (!value || typeof value !== 'object') return defaults;
+  const obj = value as Record<string, unknown>;
+  return {
+    conversation_type: typeof obj.conversation_type === 'string' ? obj.conversation_type : '',
+    sales_stage: typeof obj.sales_stage === 'string' ? obj.sales_stage : '',
+    customer_intent: typeof obj.customer_intent === 'string' ? obj.customer_intent : '',
+    interest_level: typeof obj.interest_level === 'string' ? obj.interest_level : '',
+  };
+}
+
+function normalizePillarEvidence(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object') return {};
+  const obj = value as Record<string, unknown>;
+  const result: Record<string, string> = {};
+  for (const [key, val] of Object.entries(obj)) {
+    if (typeof val === 'string' && val.trim()) {
+      result[key] = val.slice(0, 500);
+    }
+  }
+  return result;
+}
+
+const PILLAR_WEIGHTS = {
+  communication: 0.30,
+  investigation: 0.25,
+  steering: 0.20,
+  objections: 0.15,
+  closing: 0.10,
+} as const;
+
+function calculateWeightedScore(result: AIAnalysisResult): {
+  quality_score: number;
+  weighted_breakdown: WeightedBreakdown;
+} {
+  const commScores = [result.score_empathy, result.score_professionalism, result.score_clarity]
+    .filter((s): s is number => s != null);
+  const commAvg = commScores.length > 0
+    ? commScores.reduce((a, b) => a + b, 0) / commScores.length
+    : 5;
+
+  const investigation = result.score_investigation ?? 5;
+  const steering = result.score_commercial_steering ?? 5;
+  const objections = result.score_objection_handling ?? 5;
+
+  const closingScores = [result.score_rapport, result.score_urgency, result.score_value_proposition]
+    .filter((s): s is number => s != null);
+  const closingAvg = closingScores.length > 0
+    ? closingScores.reduce((a, b) => a + b, 0) / closingScores.length
+    : 5;
+
+  const raw =
+    commAvg * PILLAR_WEIGHTS.communication +
+    investigation * PILLAR_WEIGHTS.investigation +
+    steering * PILLAR_WEIGHTS.steering +
+    objections * PILLAR_WEIGHTS.objections +
+    closingAvg * PILLAR_WEIGHTS.closing;
+
+  const quality_score = Math.round(raw * 10);
+
+  return {
+    quality_score: Math.min(100, Math.max(0, quality_score)),
+    weighted_breakdown: {
+      communication_weighted: +(commAvg * PILLAR_WEIGHTS.communication * 10).toFixed(1),
+      investigation_weighted: +(investigation * PILLAR_WEIGHTS.investigation * 10).toFixed(1),
+      steering_weighted: +(steering * PILLAR_WEIGHTS.steering * 10).toFixed(1),
+      objections_weighted: +(objections * PILLAR_WEIGHTS.objections * 10).toFixed(1),
+      closing_weighted: +(closingAvg * PILLAR_WEIGHTS.closing * 10).toFixed(1),
+    },
+  };
+}
+
 function normalizeAnalysis(result: AIAnalysisResult): AIAnalysisResult {
   const isSales = normalizeBoolean(result.is_sales_conversation, false);
   return {
@@ -168,6 +289,8 @@ function normalizeAnalysis(result: AIAnalysisResult): AIAnalysisResult {
     score_urgency: normalizeSmallint(result.score_urgency, 0, 10),
     score_value_proposition: normalizeSmallint(result.score_value_proposition, 0, 10),
     score_objection_handling: normalizeSmallint(result.score_objection_handling, 0, 10),
+    score_investigation: normalizeSmallint(result.score_investigation, 0, 10),
+    score_commercial_steering: normalizeSmallint(result.score_commercial_steering, 0, 10),
     used_rapport: normalizeBoolean(result.used_rapport, false),
     used_urgency: normalizeBoolean(result.used_urgency, false),
     used_value_proposition: normalizeBoolean(result.used_value_proposition, false),
@@ -175,6 +298,12 @@ function normalizeAnalysis(result: AIAnalysisResult): AIAnalysisResult {
     needs_coaching: normalizeBoolean(result.needs_coaching, false),
     coaching_tips: normalizeStringArray(result.coaching_tips),
     training_tags: normalizeStringArray(result.training_tags),
+    missed_opportunities: normalizeMissedOpportunities(result.missed_opportunities),
+    strengths: normalizeStringArray(result.strengths).slice(0, 5),
+    improvements: normalizeStringArray(result.improvements).slice(0, 5),
+    diagnosis: normalizeDiagnosis(result.diagnosis),
+    pillar_evidence: normalizePillarEvidence(result.pillar_evidence),
+    failure_tags: normalizeStringArray(result.failure_tags).slice(0, 15),
   };
 }
 
@@ -354,7 +483,9 @@ async function analyzeCandidateConversation(candidate: CandidateConversation): P
 
   const kbContext = await fetchKnowledgeContext(transcript, conversation.company_id);
   const result = await callClaudeHaiku(transcript, (rawConv as RawConversation).channel ?? 'unknown', kbContext);
-  await saveAnalysis(conversation, result);
+  const { quality_score, weighted_breakdown } = calculateWeightedScore(result);
+  result.quality_score = quality_score;
+  await saveAnalysis(conversation, result, weighted_breakdown);
 
   if (result.needs_coaching && (result.quality_score ?? 100) < 70) {
     try {
@@ -455,8 +586,9 @@ async function callClaudeHaiku(
   const client = getAnthropicClient();
 
   const systemPrompt =
-    'Voce e um analista especialista em qualidade de atendimento ao cliente. ' +
-    'Retorne apenas JSON valido, sem texto adicional.';
+    'Voce e um analista especialista em qualidade de vendas e atendimento ao cliente. ' +
+    'Analise a conversa de forma estruturada seguindo as instrucoes exatas. ' +
+    'Retorne apenas JSON valido, sem texto adicional. Responda em portugues (pt-BR).';
 
   const contextBlock = kbContext
     ? `BASE DE CONHECIMENTO DA EMPRESA:\n${kbContext}\n\n`
@@ -467,34 +599,90 @@ async function callClaudeHaiku(
     contextBlock +
     `Transcript:\n${transcript}\n\n` +
     '---\n' +
-    'Avalie a conversa e retorne este JSON:\n' +
+    'Analise a conversa e retorne este JSON com avaliacao estruturada:\n\n' +
     '{\n' +
-    '  "quality_score": <numero 0-100>,\n' +
     '  "predicted_csat": <numero 1-5>,\n' +
     '  "is_sales_conversation": <true/false>,\n' +
+    '\n' +
+    '  // SCORES POR PILAR (0-10 cada)\n' +
     '  "score_empathy": <0-10>,\n' +
     '  "score_professionalism": <0-10>,\n' +
     '  "score_clarity": <0-10>,\n' +
     '  "score_conflict_resolution": <0-10 ou null>,\n' +
-    '  "score_rapport": <0-10 ou null>,\n' +
-    '  "score_urgency": <0-10 ou null>,\n' +
-    '  "score_value_proposition": <0-10 ou null>,\n' +
-    '  "score_objection_handling": <0-10 ou null>,\n' +
+    '  "score_rapport": <0-10 ou null se nao for venda>,\n' +
+    '  "score_urgency": <0-10 ou null se nao for venda>,\n' +
+    '  "score_value_proposition": <0-10 ou null se nao for venda>,\n' +
+    '  "score_objection_handling": <0-10 ou null se nao houver objecao>,\n' +
+    '  "score_investigation": <0-10, mede se o atendente investigou a dor, urgencia, contexto e objetivo do cliente antes de responder. 0=nao investigou nada, 10=diagnosticou profundamente>,\n' +
+    '  "score_commercial_steering": <0-10, mede se o atendente tomou controle da conversa, guiou para proximo passo, propos solucao e evitou conversa passiva. 0=totalmente passivo, 10=conduziu com maestria>,\n' +
+    '\n' +
+    '  // TECNICAS USADAS\n' +
     '  "used_rapport": <true/false>,\n' +
     '  "used_urgency": <true/false>,\n' +
     '  "used_value_proposition": <true/false>,\n' +
     '  "used_objection_handling": <true/false>,\n' +
+    '\n' +
+    '  // COACHING\n' +
     '  "needs_coaching": <true/false>,\n' +
-    '  "coaching_tips": [<ate 3 dicas em portugues>],\n' +
-    '  "training_tags": [<tags>]\n' +
-    '}';
+    '  "coaching_tips": [<ate 3 dicas praticas em portugues>],\n' +
+    '  "training_tags": [<tags de areas de treinamento>],\n' +
+    '\n' +
+    '  // DIAGNOSTICO DA CONVERSA\n' +
+    '  "diagnosis": {\n' +
+    '    "conversation_type": "<tipo: venda, suporte, pos-venda, informacao, reclamacao>",\n' +
+    '    "sales_stage": "<estagio: descoberta, proposta, objecao, fechamento, pos_venda, nao_aplicavel>",\n' +
+    '    "customer_intent": "<intencao do cliente em 1 frase curta>",\n' +
+    '    "interest_level": "<baixo, medio ou alto>"\n' +
+    '  },\n' +
+    '\n' +
+    '  // PONTOS FORTES E MELHORIAS\n' +
+    '  "strengths": [<2 a 4 pontos fortes observados, frases curtas e especificas>],\n' +
+    '  "improvements": [<2 a 4 pontos a melhorar, frases curtas e acionaveis>],\n' +
+    '\n' +
+    '  // OPORTUNIDADES PERDIDAS (momentos especificos onde o atendente poderia ter avancado)\n' +
+    '  "missed_opportunities": [\n' +
+    '    {\n' +
+    '      "turn": <numero da mensagem no transcript>,\n' +
+    '      "agent_message": "<trecho exato da mensagem do atendente>",\n' +
+    '      "missed_action": "<o que deveria ter feito naquele momento>",\n' +
+    '      "impact": "<low, medium ou high>"\n' +
+    '    }\n' +
+    '  ],\n' +
+    '\n' +
+    '  // EVIDENCIA POR PILAR (trecho da conversa que justifica cada score)\n' +
+    '  "pillar_evidence": {\n' +
+    '    "empathy": "<trecho da conversa que justifica o score>",\n' +
+    '    "professionalism": "<trecho>",\n' +
+    '    "clarity": "<trecho>",\n' +
+    '    "investigation": "<trecho que mostra se investigou ou nao>",\n' +
+    '    "commercial_steering": "<trecho que mostra conducao ou falta dela>",\n' +
+    '    "objection_handling": "<trecho ou null>"\n' +
+    '  },\n' +
+    '\n' +
+    '  // TAGS DE FALHA NORMALIZADAS (use apenas estas tags quando aplicavel)\n' +
+    '  // Tags possiveis: falta_investigacao, sem_proximo_passo, rapport_insuficiente,\n' +
+    '  // sem_proposta_valor, objecao_ignorada, resposta_generica, sem_conducao,\n' +
+    '  // perda_timing, falta_empatia, comunicacao_confusa, demora_resposta, passividade\n' +
+    '  "failure_tags": [<tags aplicaveis desta lista>]\n' +
+    '}\n' +
+    '\n' +
+    'IMPORTANTE:\n' +
+    '- NAO inclua quality_score no JSON (sera calculado automaticamente)\n' +
+    '- Seja especifico nos pontos fortes/melhorias, evite frases genericas como "foi educado"\n' +
+    '- Em missed_opportunities, cite o trecho real da conversa\n' +
+    '- Em pillar_evidence, cite trechos reais que comprovem o score dado\n' +
+    '- failure_tags devem usar APENAS as tags da lista fornecida';
 
   const response = await client.messages.create({
     model: MODEL,
-    max_tokens: 1024,
+    max_tokens: 2800,
     system: systemPrompt,
     messages: [{ role: 'user', content: userPrompt }],
   });
+
+  if (response.stop_reason === 'max_tokens') {
+    console.warn('[AIAnalyzer] Response truncated due to max_tokens limit. Consider increasing.');
+  }
 
   const content = response.content[0];
   if (content.type !== 'text') {
@@ -512,9 +700,20 @@ async function callClaudeHaiku(
 async function saveAnalysis(
   conversation: ConversationForAnalysis,
   result: AIAnalysisResult,
+  weightedBreakdown: WeightedBreakdown,
 ): Promise<void> {
   const normalized = normalizeAnalysis(result);
   const analyzedAt = new Date().toISOString();
+
+  const structuredAnalysis = {
+    missed_opportunities: normalized.missed_opportunities,
+    strengths: normalized.strengths,
+    improvements: normalized.improvements,
+    diagnosis: normalized.diagnosis,
+    pillar_evidence: normalized.pillar_evidence,
+    weighted_breakdown: weightedBreakdown,
+    failure_tags: normalized.failure_tags,
+  };
 
   const { error } = await supabase
     .schema('app')
@@ -535,6 +734,8 @@ async function saveAnalysis(
         score_urgency: normalized.score_urgency,
         score_value_proposition: normalized.score_value_proposition,
         score_objection_handling: normalized.score_objection_handling,
+        score_investigation: normalized.score_investigation,
+        score_commercial_steering: normalized.score_commercial_steering,
         used_rapport: normalized.used_rapport,
         used_urgency: normalized.used_urgency,
         used_value_proposition: normalized.used_value_proposition,
@@ -545,6 +746,7 @@ async function saveAnalysis(
         model_used: MODEL,
         prompt_version: PROMPT_VERSION,
         raw_ai_response: result as unknown as Record<string, unknown>,
+        structured_analysis: structuredAnalysis,
         analyzed_at: analyzedAt,
       },
       { onConflict: 'conversation_id' },

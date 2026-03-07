@@ -258,6 +258,38 @@ export interface SpamRiskEvent {
 // ============================================================
 // AI Analysis Types
 // ============================================================
+export interface MissedOpportunity {
+  turn: number;
+  agent_message: string;
+  missed_action: string;
+  impact: 'low' | 'medium' | 'high';
+}
+
+export interface ConversationDiagnosis {
+  conversation_type: string;
+  sales_stage: string;
+  customer_intent: string;
+  interest_level: string;
+}
+
+export interface WeightedBreakdown {
+  communication_weighted: number;
+  investigation_weighted: number;
+  steering_weighted: number;
+  objections_weighted: number;
+  closing_weighted: number;
+}
+
+export interface StructuredAnalysis {
+  missed_opportunities: MissedOpportunity[];
+  strengths: string[];
+  improvements: string[];
+  diagnosis: ConversationDiagnosis | null;
+  pillar_evidence: Record<string, string>;
+  weighted_breakdown: WeightedBreakdown;
+  failure_tags: string[];
+}
+
 export interface AIConversationAnalysis {
   id: string;
   company_id: string;
@@ -273,6 +305,8 @@ export interface AIConversationAnalysis {
   score_urgency: number | null;
   score_value_proposition: number | null;
   score_objection_handling: number | null;
+  score_investigation: number | null;
+  score_commercial_steering: number | null;
   used_rapport: boolean | null;
   used_urgency: boolean | null;
   used_value_proposition: boolean | null;
@@ -284,6 +318,7 @@ export interface AIConversationAnalysis {
   prompt_version: string;
   analyzed_at: string;
   created_at: string;
+  structured_analysis: StructuredAnalysis | null;
   // Joined
   conversation?: Conversation;
   agent?: Agent;

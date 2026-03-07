@@ -23,6 +23,7 @@ import Settings from './pages/Settings';
 import KnowledgeBase from './pages/KnowledgeBase';
 import RegisterBusiness from './pages/RegisterBusiness';
 import MarketingLanding from './pages/MarketingLanding';
+import Ranking from './pages/Ranking';
 
 function SetupScreen() {
   return (
@@ -103,6 +104,7 @@ function ProtectedRoutes() {
           />
           <Route path="agents/:id" element={<AgentDetail />} />
           <Route path="conversations" element={<Conversations />} />
+          <Route path="ranking" element={<Ranking />} />
           <Route path="conversations/:id" element={<ConversationDetail />} />
           <Route
             path="alerts"
