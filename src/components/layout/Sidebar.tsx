@@ -48,6 +48,7 @@ const navGroups: NavGroup[] = [
     label: 'PRINCIPAL',
     items: [
       { to: '/', icon: LayoutDashboard, label: 'Dashboard', permission: 'dashboard.view' },
+      { to: '/sales', icon: HandCoins, label: 'Vendas', permission: 'revenue.view' },
       { to: '/conversations', icon: MessageSquare, label: 'Conversas', permission: 'conversations.view_own' },
     ],
   },

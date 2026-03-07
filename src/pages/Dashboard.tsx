@@ -6,6 +6,8 @@ import {
   ResponsiveContainer,
   AreaChart,
   Area,
+  BarChart,
+  Bar,
   CartesianGrid,
   XAxis,
   YAxis,
@@ -14,19 +16,24 @@ import {
   Pie,
   Cell,
   LineChart,
-  Line
+  Line,
+  Legend,
 } from 'recharts';
 import {
   ChevronDown,
   Sparkles,
   ShoppingBag,
   ListTodo,
+  Trophy,
+  Target,
+  TrendingUp,
+  Medal,
 } from 'lucide-react';
 import { useDashboardOverview } from '../hooks/useDashboardMetrics';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../integrations/supabase/client';
 import { CACHE } from '../config/constants';
-import { formatPercent } from '../lib/utils';
+import { formatCurrency, formatPercent } from '../lib/utils';
 import type { AIConversationAnalysis } from '../types';
 
 type AuditPreview = Partial<AIConversationAnalysis> & {
@@ -57,6 +64,15 @@ type AgentSlaMetric = {
 type AgentScoreMetric = {
   quality_score?: number | null;
   agent?: { id?: string | null; name?: string | null; avatar_url?: string | null } | null;
+};
+
+type SalesDashboardRow = {
+  id: string;
+  sold_at: string;
+  quantity: number;
+  margin_amount: number;
+  store_name: string;
+  seller?: { id?: string | null; name?: string | null } | null;
 };
 
 const COLORS = {
@@ -252,6 +268,32 @@ export default function Dashboard() {
   });
   const { data: scoreMetrics = [] } = scoreMetricsQuery;
 
+  const salesRecordsQuery = useQuery<SalesDashboardRow[]>({
+    queryKey: ['dashboard-sales-records', company?.id, businessTimezone],
+    queryFn: async () => {
+      if (!company?.id) return [];
+
+      const since = new Date();
+      since.setDate(since.getDate() - 30);
+
+      const { data, error } = await supabase
+        .from('sales_records')
+        .select('id, sold_at, quantity, margin_amount, store_name, seller:agents(id, name)')
+        .eq('company_id', company.id)
+        .gte('sold_at', since.toISOString())
+        .order('sold_at', { ascending: true });
+
+      if (error) throw error;
+      return ((data ?? []) as any[]).map((row) => ({
+        ...row,
+        seller: firstRelation(row.seller),
+      })) as SalesDashboardRow[];
+    },
+    enabled: !!company?.id,
+    staleTime: CACHE.STALE_TIME,
+  });
+  const { data: salesRecords = [] } = salesRecordsQuery;
+
   const leadTrendData = useMemo(() => {
     const perDay = new Map<string, Set<string>>();
 
@@ -389,12 +431,94 @@ export default function Dashboard() {
     { name: 'Equipe', value: teamSla, color: COLORS.lime },
   ];
 
+  const salesThisWeek = useMemo(() => {
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const weekStart = new Date(today);
+    weekStart.setHours(0, 0, 0, 0);
+    weekStart.setDate(today.getDate() - diffToMonday);
+
+    return salesRecords.filter((sale) => new Date(sale.sold_at) >= weekStart);
+  }, [salesRecords]);
+
+  const weeklySalesCount = useMemo(
+    () => salesThisWeek.reduce((sum, sale) => sum + Number(sale.quantity ?? 0), 0),
+    [salesThisWeek],
+  );
+
+  const weeklyMargin = useMemo(
+    () => salesThisWeek.reduce((sum, sale) => sum + Number(sale.margin_amount ?? 0), 0),
+    [salesThisWeek],
+  );
+
+  const weeklyGoal = 30;
+  const weeklyGoalPct = weeklyGoal > 0 ? Math.min(100, Math.round((weeklySalesCount / weeklyGoal) * 100)) : 0;
+
+  const salesRanking = useMemo(() => {
+    const ranking = new Map<string, { agentId: string; agentName: string; totalPieces: number; totalMargin: number }>();
+
+    for (const sale of salesThisWeek) {
+      const agentId = sale.seller?.id ?? 'unknown';
+      const agentName = sale.seller?.name ?? 'Sem vendedor';
+      const current = ranking.get(agentId) ?? {
+        agentId,
+        agentName,
+        totalPieces: 0,
+        totalMargin: 0,
+      };
+      current.totalPieces += Number(sale.quantity ?? 0);
+      current.totalMargin += Number(sale.margin_amount ?? 0);
+      ranking.set(agentId, current);
+    }
+
+    return Array.from(ranking.values()).sort((a, b) => {
+      if (b.totalPieces !== a.totalPieces) return b.totalPieces - a.totalPieces;
+      return b.totalMargin - a.totalMargin;
+    });
+  }, [salesThisWeek]);
+
+  const salesLeader = salesRanking[0] ?? null;
+
+  const salesByDay = useMemo(() => {
+    const days: Array<{ date: string; shortDate: string }> = [];
+    for (let offset = 6; offset >= 0; offset -= 1) {
+      const day = new Date();
+      day.setDate(day.getDate() - offset);
+      const dateKey = formatDateKey(day, businessTimezone);
+      days.push({
+        date: dateKey,
+        shortDate: new Intl.DateTimeFormat('pt-BR', { weekday: 'short', day: '2-digit' }).format(day),
+      });
+    }
+
+    const sellerNames = Array.from(new Set(salesThisWeek.map((sale) => sale.seller?.name).filter(Boolean))) as string[];
+
+    return days.map((day) => {
+      const row: Record<string, string | number> = { shortDate: day.shortDate };
+      sellerNames.forEach((sellerName) => {
+        const total = salesThisWeek
+          .filter((sale) => formatDateKey(sale.sold_at, businessTimezone) === day.date && sale.seller?.name === sellerName)
+          .reduce((sum, sale) => sum + Number(sale.quantity ?? 0), 0);
+        row[sellerName] = total;
+      });
+      return row;
+    });
+  }, [salesThisWeek, businessTimezone]);
+
+  const salesLegend = useMemo(() => {
+    const sellerNames = Array.from(new Set(salesThisWeek.map((sale) => sale.seller?.name).filter(Boolean))) as string[];
+    const palette = ['#D3FE18', '#5945FD', '#0EA5E9', '#F97316', '#10B981', '#F43F5E', '#EAB308'];
+    return sellerNames.map((name, index) => ({ name, color: palette[index % palette.length] }));
+  }, [salesThisWeek]);
+
   const dashboardQueries = [
     overviewQuery,
     leadMessagesQuery,
     slaMetricsQuery,
     scoreMetricsQuery,
     auditItemsQuery,
+    salesRecordsQuery,
   ];
   const dashboardLoading = dashboardQueries.some((query) => query.isLoading);
   const dashboardError = dashboardQueries.some((query) => query.isError);
@@ -460,6 +584,106 @@ export default function Dashboard() {
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
           </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
+        <DashboardCard
+          title="Meta Semanal"
+          action={<div className="p-1.5 bg-muted rounded-full text-muted-foreground"><Target size={14} /></div>}
+        >
+          <div className="mt-1 flex items-end gap-2">
+            <span className="text-[32px] font-bold tracking-tight text-foreground">{weeklySalesCount}</span>
+            <span className="pb-1 text-sm font-semibold text-muted-foreground">/ {weeklyGoal}</span>
+          </div>
+          <p className="mt-2 text-sm font-medium text-muted-foreground">{weeklyGoalPct}% concluído</p>
+          <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full"
+              style={{ width: `${weeklyGoalPct}%`, background: COLORS.lime }}
+            />
+          </div>
+        </DashboardCard>
+
+        <DashboardCard
+          title="Margem da Semana"
+          action={<div className="p-1.5 bg-muted rounded-full text-muted-foreground"><TrendingUp size={14} /></div>}
+        >
+          <div className="mt-1 text-[32px] font-bold tracking-tight">{formatCurrency(weeklyMargin)}</div>
+          <p className="mt-2 text-sm font-medium text-muted-foreground">Margem acumulada nas vendas da semana.</p>
+        </DashboardCard>
+
+        <DashboardCard
+          title="Líder Atual"
+          action={<div className="p-1.5 bg-muted rounded-full text-muted-foreground"><Medal size={14} /></div>}
+        >
+          <div className="mt-1 text-[30px] font-bold uppercase tracking-tight text-foreground">
+            {salesLeader?.agentName ?? '—'}
+          </div>
+          <p className="mt-2 text-sm font-medium text-muted-foreground">
+            {salesLeader ? `${salesLeader.totalPieces} peça${salesLeader.totalPieces !== 1 ? 's' : ''} na semana` : 'Sem vendas registradas nesta semana'}
+          </p>
+        </DashboardCard>
+
+        <DashboardCard
+          title="Lojas Ativas"
+          action={<div className="p-1.5 bg-muted rounded-full text-muted-foreground"><ShoppingBag size={14} /></div>}
+        >
+          <div className="mt-1 text-[32px] font-bold tracking-tight">
+            {new Set(salesThisWeek.map((sale) => sale.store_name).filter(Boolean)).size}
+          </div>
+          <p className="mt-2 text-sm font-medium text-muted-foreground">Quantidade de lojas com venda na semana.</p>
+        </DashboardCard>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+        <div className="col-span-1 xl:col-span-8">
+          <DashboardCard title="Vendas por Dia" action={<span className="text-sm font-semibold rounded-full bg-muted/50 px-3 py-1 text-muted-foreground">Últimos 7 dias</span>}>
+            <div className="h-[300px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={salesByDay} margin={{ top: 8, right: 10, left: -20, bottom: 8 }}>
+                  <CartesianGrid vertical={false} strokeDasharray="4 4" stroke="#ECEBE8" />
+                  <XAxis dataKey="shortDate" tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: COLORS.soft }} />
+                  <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: COLORS.soft }} allowDecimals={false} />
+                  <Tooltip
+                    contentStyle={{ borderRadius: 16, border: `1px solid ${COLORS.line}`, boxShadow: '0 16px 40px rgba(0,0,0,0.08)' }}
+                    formatter={(value) => [`${Number(value ?? 0)} peça(s)`, 'Vendas']}
+                  />
+                  <Legend />
+                  {salesLegend.map((entry) => (
+                    <Bar key={entry.name} dataKey={entry.name} fill={entry.color} radius={[6, 6, 0, 0]} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </DashboardCard>
+        </div>
+
+        <div className="col-span-1 xl:col-span-4">
+          <DashboardCard title="Ranking Semanal" action={<Trophy size={16} color={COLORS.soft} />}>
+            <div className="space-y-3">
+              {salesRanking.map((entry, index) => (
+                <div
+                  key={entry.agentId}
+                  className={`flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 ${index === 0 ? 'border-primary/40 bg-primary/10' : 'border-border/60 bg-muted/20'}`}
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-foreground">{entry.agentName}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{formatCurrency(entry.totalMargin)}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-lg font-bold text-foreground">{entry.totalPieces}</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">peças</p>
+                  </div>
+                </div>
+              ))}
+              {salesRanking.length === 0 && (
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  Sem vendas registradas na semana.
+                </div>
+              )}
+            </div>
+          </DashboardCard>
         </div>
       </div>
 

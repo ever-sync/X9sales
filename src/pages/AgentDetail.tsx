@@ -72,7 +72,7 @@ export default function AgentDetail() {
       if (!id) return null;
       const { data, error } = await supabase
         .from('agents')
-        .select('*')
+        .select('*, store:stores(id, company_id, name, is_active, created_at, updated_at)')
         .eq('id', id)
         .maybeSingle();
       if (error) throw error;
@@ -204,6 +204,7 @@ export default function AgentDetail() {
           <div>
             <h2 className="text-2xl font-bold text-foreground">{agent.name}</h2>
             {agent.email && <p className="text-muted-foreground">{agent.email}</p>}
+            {agent.store?.name && <p className="text-sm text-muted-foreground mt-1">Loja: {agent.store.name}</p>}
           </div>
         </div>
       </div>

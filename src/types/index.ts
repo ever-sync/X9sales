@@ -102,6 +102,26 @@ export interface NotificationJobSummary {
   processed_at: string | null;
 }
 
+export interface SaleRecord {
+  id: string;
+  company_id: string;
+  seller_agent_id: string | null;
+  conversation_id: string | null;
+  seller_name_snapshot: string;
+  store_name: string;
+  quantity: number;
+  margin_amount: number;
+  sold_at: string;
+  notes: string | null;
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  seller?: Agent | null;
+  conversation?: Pick<Conversation, 'id' | 'started_at'> & {
+    customer?: Pick<Customer, 'name' | 'phone'> | null;
+  } | null;
+}
+
 // ============================================================
 // Agent Types
 // ============================================================
@@ -109,6 +129,7 @@ export interface Agent {
   id: string;
   company_id: string;
   member_id: string | null;
+  store_id: string | null;
   external_id: string | null;
   name: string;
   email: string | null;
@@ -116,6 +137,16 @@ export interface Agent {
   avatar_url: string | null;
   is_active: boolean;
   created_at: string;
+  store?: Store | null;
+}
+
+export interface Store {
+  id: string;
+  company_id: string;
+  name: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 // ============================================================
