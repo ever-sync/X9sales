@@ -1,4 +1,4 @@
-import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
+﻿import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -6,8 +6,26 @@ const corsHeaders = {
 };
 
 interface TranscribePayload {
-  audioUrl: string; // The URL to the audio file (e.g., from WhaZApi/Evolution)
+  audioUrl: string;
   mimetype?: string;
+}
+
+type TranscriptionStatus = "completed" | "failed" | "no_speech";
+
+function json(status: number, body: Record<string, unknown>) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function sanitizeAudioUrl(audioUrl: string): string {
+  try {
+    const parsed = new URL(audioUrl);
+    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+  } catch {
+    return "[invalid-audio-url]";
+  }
 }
 
 serve(async (req) => {
@@ -20,41 +38,40 @@ serve(async (req) => {
     const { audioUrl } = payload;
 
     if (!audioUrl) {
-      return new Response(JSON.stringify({ error: "Missing audioUrl" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      return json(400, {
+        success: false,
+        status: "failed" satisfies TranscriptionStatus,
+        error: "Missing audioUrl",
       });
     }
 
     const openAiKey = Deno.env.get("OPENAI_API_KEY");
     if (!openAiKey) {
       console.error("[transcribe-audio] OPENAI_API_KEY is missing");
-      return new Response(JSON.stringify({ error: "Configuration Error" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      return json(500, {
+        success: false,
+        status: "failed" satisfies TranscriptionStatus,
+        error: "Configuration Error",
       });
     }
 
-    console.log(`[transcribe-audio] Fetching audio from: ${audioUrl}`);
-    
-    // 1. Download the audio file
+    console.log(`[transcribe-audio] Fetching audio from: ${sanitizeAudioUrl(audioUrl)}`);
+
     const audioRes = await fetch(audioUrl);
     if (!audioRes.ok) {
       throw new Error(`Failed to download audio: ${audioRes.statusText}`);
     }
-    
+
     const audioBlob = await audioRes.blob();
     const fileExtension = audioBlob.type.includes("ogg") ? "ogg" : "webm";
 
-    // 2. Prepare FormData for OpenAI Whisper
     const formData = new FormData();
     formData.append("file", audioBlob, `audio.${fileExtension}`);
     formData.append("model", "whisper-1");
-    formData.append("language", "pt"); // Defaulting to Portuguese for MonitoraIA
+    formData.append("language", "pt");
 
     console.log(`[transcribe-audio] Sending ${audioBlob.size} bytes to OpenAI Whisper...`);
 
-    // 3. Send to OpenAI
     const whisperRes = await fetch("https://api.openai.com/v1/audio/transcriptions", {
       method: "POST",
       headers: {
@@ -70,19 +87,28 @@ serve(async (req) => {
     }
 
     const whisperData = await whisperRes.json();
-    const transcribedText = whisperData.text || "[Áudio sem fala reconhecida]";
+    const transcribedText = typeof whisperData.text === "string" ? whisperData.text.trim() : "";
+    const transcriptionStatus: TranscriptionStatus = transcribedText.length > 0
+      ? "completed"
+      : "no_speech";
 
-    console.log(`[transcribe-audio] Transcription complete: "${transcribedText.substring(0, 50)}..."`);
+    console.log(`[transcribe-audio] Transcription status=${transcriptionStatus} text=\"${transcribedText.substring(0, 50)}...\"`);
 
-    return new Response(JSON.stringify({ success: true, text: transcribedText }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    return json(200, {
+      success: true,
+      status: transcriptionStatus,
+      text: transcribedText,
+      language: "pt",
+      engine: "whisper-1",
     });
-
   } catch (error: any) {
     console.error("[transcribe-audio] Error:", error.message);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    return json(500, {
+      success: false,
+      status: "failed" satisfies TranscriptionStatus,
+      error: error.message,
+      language: "pt",
+      engine: "whisper-1",
     });
   }
 });
