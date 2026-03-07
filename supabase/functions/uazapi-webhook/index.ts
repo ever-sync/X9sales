@@ -379,6 +379,8 @@ function resolveContactName(
   entry: UazApiMessageEntry,
   fallbackPushName: string | null,
 ): string | null {
+  if (resolveFromMe(entry)) return null;
+
   const sender = isRecord(entry["sender"]) ? entry["sender"] : null;
   const chat = isRecord(entry["chat"]) ? entry["chat"] : null;
   const message = isRecord(entry["message"]) ? entry["message"] : null;

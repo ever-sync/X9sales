@@ -81,9 +81,25 @@ export function stripAgentPrefix(
   const raw = customerName?.trim();
   if (!raw) return fallback?.trim() || 'Cliente';
   const prefix = agentName?.trim();
-  if (prefix && raw.startsWith(prefix + ' - ')) {
-    const stripped = raw.slice(prefix.length + 3).trim();
-    return stripped || fallback?.trim() || 'Cliente';
+  if (prefix) {
+    const normalizedRaw = raw.toLowerCase();
+    const normalizedPrefix = prefix.toLowerCase();
+
+    if (normalizedRaw.startsWith(`${normalizedPrefix} - `)) {
+      const stripped = raw.slice(prefix.length + 3).trim();
+      return stripped || fallback?.trim() || 'Cliente';
+    }
+
+    // UazAPI / WhatsApp contact names sometimes come as "Emily Consultora ..."
+    // or other agent-prefixed labels. When that happens, prefer the phone fallback.
+    if (
+      normalizedRaw === normalizedPrefix ||
+      normalizedRaw.startsWith(`${normalizedPrefix} `) ||
+      normalizedRaw.startsWith(`${normalizedPrefix}-`) ||
+      normalizedRaw.startsWith(`${normalizedPrefix}_`)
+    ) {
+      return fallback?.trim() || 'Cliente';
+    }
   }
   return raw;
 }

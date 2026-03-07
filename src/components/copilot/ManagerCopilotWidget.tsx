@@ -345,6 +345,7 @@ export function ManagerCopilotWidget() {
   const [question, setQuestion] = useState('');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [showHeaderDetails, setShowHeaderDetails] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [periodStart, setPeriodStart] = useState(() => dateInputFromDate(new Date(Date.now() - 30 * 86400000)));
   const [periodEnd, setPeriodEnd] = useState(() => dateInputFromDate(new Date()));
   const [agentId, setAgentId] = useState('');
@@ -548,6 +549,13 @@ export function ManagerCopilotWidget() {
               <div className="flex items-center gap-1">
                 <button
                   type="button"
+                  onClick={() => setShowHistory((prev) => !prev)}
+                  className="rounded-xl border border-border/60 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  Historico
+                </button>
+                <button
+                  type="button"
                   onClick={() => setShowHeaderDetails((prev) => !prev)}
                   className="rounded-xl p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   aria-label={showHeaderDetails ? 'Ocultar resumo' : 'Mostrar resumo'}
@@ -601,26 +609,28 @@ export function ManagerCopilotWidget() {
             )}
           </div>
 
-          <div className="border-b border-border/70 bg-muted/30 px-4 py-3">
-            <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Thread</label>
-            <select
-              value={activeThreadId ?? ''}
-              onChange={(event) => setActiveThreadId(event.target.value || null)}
-              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring/35"
-            >
-              <option value="">Nova conversa</option>
-              {(threads ?? []).map((thread) => (
-                <option key={thread.id} value={thread.id}>
-                  {threadTitle(thread)}
-                </option>
-              ))}
-            </select>
-            {activeThread && (
-              <p className="mt-2 text-[11px] text-muted-foreground">
-                Thread ativa: <span className="font-medium text-foreground">{activeThread.title}</span>
-              </p>
-            )}
-          </div>
+          {showHistory && (
+            <div className="border-b border-border/70 bg-muted/30 px-4 py-3">
+              <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Historico</label>
+              <select
+                value={activeThreadId ?? ''}
+                onChange={(event) => setActiveThreadId(event.target.value || null)}
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring/35"
+              >
+                <option value="">Nova conversa</option>
+                {(threads ?? []).map((thread) => (
+                  <option key={thread.id} value={thread.id}>
+                    {threadTitle(thread)}
+                  </option>
+                ))}
+              </select>
+              {activeThread && (
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  Conversa ativa: <span className="font-medium text-foreground">{activeThread.title}</span>
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="min-h-0 flex-1 overflow-y-auto bg-card p-4">
             <div className="space-y-4">

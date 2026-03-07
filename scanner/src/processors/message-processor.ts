@@ -546,6 +546,8 @@ async function processConversationGroup(
 
 function extractCustomerName(messages: RawMessage[]): string | null {
   for (const msg of messages) {
+    if (msg.direction !== 'inbound') continue;
+    if (normalizeSenderType(msg.sender_type, msg.direction) !== 'customer') continue;
     const pushName = msg.raw_payload?.pushName;
     if (typeof pushName === 'string' && pushName.trim().length > 0) {
       return pushName.trim();

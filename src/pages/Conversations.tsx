@@ -5,7 +5,6 @@ import {
   ArrowDownLeft,
   ArrowRight,
   ArrowUpRight,
-  BadgeCheck,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -14,13 +13,11 @@ import {
   MessageSquare,
   MessagesSquare,
   Phone,
-  Sparkles,
-  Thermometer,
   User,
 } from 'lucide-react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../integrations/supabase/client';
-import { channelLabel, cn, formatDateTime, normalizePhone, stripAgentPrefix } from '../lib/utils';
+import { channelLabel, cn, normalizePhone, stripAgentPrefix } from '../lib/utils';
 import { CACHE, PAGINATION } from '../config/constants';
 import type { Agent, Conversation } from '../types';
 
@@ -128,10 +125,10 @@ function statusLabel(status: string) {
 }
 
 function statusClass(status: string) {
-  if (status === 'active') return 'border border-green-300 bg-green-200 text-green-900 dark:border-green-800 dark:bg-green-900/40 dark:text-green-300';
-  if (status === 'waiting') return 'border border-yellow-300 bg-yellow-200 text-yellow-900 dark:border-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300';
+  if (status === 'active') return 'border border-green-300 bg-green-200 text-green-900';
+  if (status === 'waiting') return 'border border-yellow-300 bg-yellow-200 text-yellow-900';
   if (status === 'closed') return 'border border-border bg-muted text-foreground';
-  return 'border border-blue-300 bg-blue-200 text-blue-900 dark:border-blue-800 dark:bg-blue-900/40 dark:text-blue-300';
+  return 'border border-blue-300 bg-blue-200 text-blue-900';
 }
 
 function formatResponseTime(sec: number | null | undefined): string {
@@ -140,28 +137,6 @@ function formatResponseTime(sec: number | null | undefined): string {
   if (sec < 3600) return `${Math.round(sec / 60)}min`;
   return `${(sec / 3600).toFixed(1)}h`;
 }
-
-function qualityColor(score: number | null | undefined) {
-  if (score == null) return 'text-muted-foreground';
-  if (score >= 80) return 'text-green-600 dark:text-green-400';
-  if (score >= 60) return 'text-yellow-600 dark:text-yellow-400';
-  return 'text-red-600 dark:text-red-400';
-}
-
-function qualityLabel(score: number | null | undefined) {
-  if (score == null) return 'Sem QA';
-  if (score >= 80) return 'Alta';
-  if (score >= 60) return 'Media';
-  return 'Critica';
-}
-
-function temperatureConfig(level: string | null | undefined): { label: string; cls: string } {
-  if (level === 'alto') return { label: 'Quente', cls: 'text-red-500' };
-  if (level === 'médio' || level === 'medio') return { label: 'Morno', cls: 'text-yellow-500' };
-  if (level === 'baixo') return { label: 'Frio', cls: 'text-blue-500' };
-  return { label: '—', cls: 'text-muted-foreground' };
-}
-
 
 function formatPhoneDisplay(phone: string | null | undefined) {
   const digits = normalizePhone(phone);
@@ -192,18 +167,12 @@ function StatPill({
 }
 
 function ConversationRow({ conv }: { conv: ConvWithAnalysis }) {
-  const analysis = Array.isArray(conv.ai_analysis) ? conv.ai_analysis[0] : undefined;
   const metrics = Array.isArray(conv.metrics) ? conv.metrics[0] : (conv.metrics as Conversation['metrics'] | undefined);
-  const qualityScore = analysis?.quality_score ?? null;
-  const interestLevel = analysis?.structured_analysis?.diagnosis?.interest_level ?? null;
-  const tempCfg = temperatureConfig(interestLevel);
   const responseTime = metrics?.avg_response_gap_sec ?? metrics?.first_response_time_sec ?? null;
   const inboundCount = conv.message_count_in ?? 0;
   const outboundCount = conv.message_count_out ?? 0;
   const msgCount = inboundCount + outboundCount;
-  const tags = (analysis?.training_tags ?? []).slice(0, 2);
   const customerPhone = formatPhoneDisplay(conv.customer?.phone);
-  const lastActivity = conv.updated_at ?? conv.started_at ?? conv.created_at;
 
   return (
     <Link
@@ -215,7 +184,7 @@ function ConversationRow({ conv }: { conv: ConvWithAnalysis }) {
           <MessageSquare className="h-4.5 w-4.5 text-muted-foreground" />
         </div>
 
-        <div className="min-w-0 flex-1 space-y-3">
+        <div className="min-w-0 flex-1">
           <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 space-y-1">
               <div className="flex flex-wrap items-center gap-2">
@@ -248,62 +217,6 @@ function ConversationRow({ conv }: { conv: ConvWithAnalysis }) {
               <StatPill icon={ArrowDownLeft} label="Receb." value={String(inboundCount)} />
               <StatPill icon={ArrowUpRight} label="Env." value={String(outboundCount)} />
               <StatPill icon={Clock} label="Resp." value={formatResponseTime(responseTime)} />
-            </div>
-          </div>
-
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
-            <div className="space-y-2 rounded-2xl border border-border/70 bg-background/70 p-3">
-              <div className="flex flex-wrap items-center gap-2">
-                {interestLevel && (
-                  <span className={cn('inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs font-medium', tempCfg.cls)}>
-                    <Thermometer className="h-3.5 w-3.5" />
-                    Interesse {tempCfg.label}
-                  </span>
-                )}
-
-                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
-                  <BadgeCheck className="h-3.5 w-3.5" />
-                  QA {qualityLabel(qualityScore)}
-                </span>
-
-                {qualityScore != null && (
-                  <span className={cn('inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold', qualityColor(qualityScore))}>
-                    <Sparkles className="h-3.5 w-3.5" />
-                    Score {qualityScore}
-                  </span>
-                )}
-              </div>
-
-              {tags.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {tags.map(tag => (
-                    <span
-                      key={tag}
-                      className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary"
-                    >
-                      {tag.replace(/_/g, ' ')}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-2xl border border-border/70 bg-muted/35 p-3">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Ritmo da conversa</p>
-              <div className="mt-2 space-y-2">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">Abertura</span>
-                  <span className="font-medium text-foreground">{conv.started_at ? formatDateTime(conv.started_at) : '—'}</span>
-                </div>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">Última atividade</span>
-                  <span className="font-medium text-foreground">{lastActivity ? formatDateTime(lastActivity) : '—'}</span>
-                </div>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">Fluxo</span>
-                  <span className="font-medium text-foreground">{inboundCount} entrada / {outboundCount} saída</span>
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -345,7 +258,7 @@ function AgentCard({ agent, convs, total, loading }: AgentCardProps) {
       {loading ? (
         <div className="space-y-2 p-4">
           {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-28 rounded-2xl bg-muted animate-pulse" />
+            <div key={i} className="h-20 rounded-2xl bg-muted animate-pulse" />
           ))}
         </div>
       ) : convs.length === 0 ? (
@@ -424,7 +337,7 @@ function FlatList({ agentId, status, channel }: { agentId: string; status: strin
       {isLoading ? (
         <div className="rounded-[26px] border border-border/70 bg-card p-6 space-y-3">
           {[...Array(5)].map((_, i) => (
-            <div key={i} className="h-28 rounded-2xl bg-muted animate-pulse" />
+            <div key={i} className="h-20 rounded-2xl bg-muted animate-pulse" />
           ))}
         </div>
       ) : conversations.length === 0 ? (
@@ -549,7 +462,7 @@ export default function Conversations() {
       <div>
         <h2 className="text-2xl font-bold text-foreground">Conversas</h2>
         <p className="mt-1 text-muted-foreground">
-          Visualização consolidada por telefone, com mais contexto operacional em cada atendimento.
+          Visualização consolidada por telefone, com leitura direta do atendimento.
         </p>
       </div>
 
