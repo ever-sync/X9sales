@@ -3,7 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Bot,
   CalendarRange,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   Lightbulb,
   Loader2,
   MessageCircle,
@@ -341,6 +343,8 @@ export function ManagerCopilotWidget() {
   const [isOpen, setIsOpen] = useState(false);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [question, setQuestion] = useState('');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [showHeaderDetails, setShowHeaderDetails] = useState(false);
   const [periodStart, setPeriodStart] = useState(() => dateInputFromDate(new Date(Date.now() - 30 * 86400000)));
   const [periodEnd, setPeriodEnd] = useState(() => dateInputFromDate(new Date()));
   const [agentId, setAgentId] = useState('');
@@ -528,7 +532,7 @@ export function ManagerCopilotWidget() {
       )}
 
       {isOpen && (
-        <div className="fixed bottom-6 right-6 z-50 flex h-[80vh] w-[430px] flex-col overflow-hidden rounded-[28px] border border-border/70 bg-card shadow-2xl">
+        <div className="fixed bottom-6 right-6 z-50 flex h-[80vh] w-[430px] min-h-0 flex-col overflow-hidden rounded-[28px] border border-border/70 bg-card shadow-2xl">
           <div className="border-b border-border/70 bg-gradient-to-br from-card via-card to-muted/40 px-5 py-4">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
@@ -541,29 +545,60 @@ export function ManagerCopilotWidget() {
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setIsOpen(false)}
-                className="rounded-xl p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setShowHeaderDetails((prev) => !prev)}
+                  className="rounded-xl p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  aria-label={showHeaderDetails ? 'Ocultar resumo' : 'Mostrar resumo'}
+                  title={showHeaderDetails ? 'Ocultar resumo' : 'Mostrar resumo'}
+                >
+                  {showHeaderDetails ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsOpen(false)}
+                  className="rounded-xl p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
-            <div className="mt-4 grid grid-cols-3 gap-2">
-              <div className="rounded-2xl border border-border/60 bg-background/80 p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Atendente</p>
-                <p className="mt-1 truncate text-sm font-semibold text-foreground">{selectedAgent?.name ?? 'Resolver no prompt'}</p>
+            <button
+              type="button"
+              onClick={() => setShowHeaderDetails((prev) => !prev)}
+              className="mt-3 flex w-full items-center justify-between rounded-2xl border border-border/60 bg-background/80 px-3 py-2 text-left transition-colors hover:bg-muted/40"
+            >
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Resumo rapido</p>
+                <p className="mt-1 truncate text-xs font-medium text-foreground">
+                  {selectedAgent?.name ?? 'Atendente por prompt'} · {periodStart} a {periodEnd} · {inProgress ? 'Analisando' : 'Pronto'}
+                </p>
               </div>
-              <div className="rounded-2xl border border-border/60 bg-background/80 p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Periodo</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{periodStart} a {periodEnd}</p>
+              {showHeaderDetails ? (
+                <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+              )}
+            </button>
+
+            {showHeaderDetails && (
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <div className="rounded-2xl border border-border/60 bg-background/80 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Atendente</p>
+                  <p className="mt-1 truncate text-sm font-semibold text-foreground">{selectedAgent?.name ?? 'Resolver no prompt'}</p>
+                </div>
+                <div className="rounded-2xl border border-border/60 bg-background/80 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Periodo</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground">{periodStart} a {periodEnd}</p>
+                </div>
+                <div className="rounded-2xl border border-border/60 bg-background/80 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Status</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground">{inProgress ? 'Analisando' : 'Pronto para perguntar'}</p>
+                </div>
               </div>
-              <div className="rounded-2xl border border-border/60 bg-background/80 p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Status</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{inProgress ? 'Analisando' : 'Pronto para perguntar'}</p>
-              </div>
-            </div>
+            )}
           </div>
 
           <div className="border-b border-border/70 bg-muted/30 px-4 py-3">
@@ -587,7 +622,8 @@ export function ManagerCopilotWidget() {
             )}
           </div>
 
-          <div className="flex-1 space-y-4 overflow-y-auto bg-card p-4">
+          <div className="min-h-0 flex-1 overflow-y-auto bg-card p-4">
+            <div className="space-y-4">
             <div className="rounded-[22px] border border-border/70 bg-gradient-to-br from-[#f8ffd8] via-[#f5ffd0] to-card p-4">
               <div className="flex items-start gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#5945fd] text-white">
@@ -642,60 +678,83 @@ export function ManagerCopilotWidget() {
                 );
               })
             )}
+            </div>
           </div>
 
-          <div className="border-t border-border/70 bg-card p-4">
-            <div className="mb-3 grid grid-cols-2 gap-2">
-              <label className="rounded-2xl border border-border/70 bg-background px-3 py-2">
-                <span className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                  <CalendarRange className="h-3 w-3" />
-                  Inicio
-                </span>
-                <input
-                  type="date"
-                  value={periodStart}
-                  onChange={(event) => setPeriodStart(event.target.value)}
-                  className="w-full bg-transparent text-xs text-foreground outline-none"
-                />
-              </label>
+          <div className="shrink-0 border-t border-border/70 bg-card p-4">
+            <button
+              type="button"
+              onClick={() => setShowAdvancedFilters((prev) => !prev)}
+              className="mb-3 flex w-full items-center justify-between rounded-2xl border border-border/70 bg-background px-3 py-2.5 text-left transition-colors hover:bg-muted/40"
+            >
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Filtros avancados</p>
+                <p className="mt-1 text-xs text-foreground">
+                  {selectedAgent?.name ?? 'Atendente por prompt'} · {periodStart} a {periodEnd}
+                </p>
+              </div>
+              {showAdvancedFilters ? (
+                <ChevronUp className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              )}
+            </button>
 
-              <label className="rounded-2xl border border-border/70 bg-background px-3 py-2">
-                <span className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                  <CalendarRange className="h-3 w-3" />
-                  Fim
-                </span>
-                <input
-                  type="date"
-                  value={periodEnd}
-                  onChange={(event) => setPeriodEnd(event.target.value)}
-                  className="w-full bg-transparent text-xs text-foreground outline-none"
-                />
-              </label>
-            </div>
+            {showAdvancedFilters && (
+              <>
+                <div className="mb-3 grid grid-cols-2 gap-2">
+                  <label className="rounded-2xl border border-border/70 bg-background px-3 py-2">
+                    <span className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      <CalendarRange className="h-3 w-3" />
+                      Inicio
+                    </span>
+                    <input
+                      type="date"
+                      value={periodStart}
+                      onChange={(event) => setPeriodStart(event.target.value)}
+                      className="w-full bg-transparent text-xs text-foreground outline-none"
+                    />
+                  </label>
 
-            <label className="mb-3 block rounded-2xl border border-border/70 bg-background px-3 py-2">
-              <span className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                <User className="h-3 w-3" />
-                Atendente
-              </span>
-              <select
-                value={agentId}
-                onChange={(event) => setAgentId(event.target.value)}
-                className="w-full bg-transparent text-xs text-foreground outline-none"
-              >
-                <option value="">Resolver por nome na pergunta</option>
-                {(agents ?? []).map((agent) => (
-                  <option key={agent.id} value={agent.id}>
-                    {agent.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+                  <label className="rounded-2xl border border-border/70 bg-background px-3 py-2">
+                    <span className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      <CalendarRange className="h-3 w-3" />
+                      Fim
+                    </span>
+                    <input
+                      type="date"
+                      value={periodEnd}
+                      onChange={(event) => setPeriodEnd(event.target.value)}
+                      className="w-full bg-transparent text-xs text-foreground outline-none"
+                    />
+                  </label>
+                </div>
+
+                <label className="mb-3 block rounded-2xl border border-border/70 bg-background px-3 py-2">
+                  <span className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    <User className="h-3 w-3" />
+                    Atendente
+                  </span>
+                  <select
+                    value={agentId}
+                    onChange={(event) => setAgentId(event.target.value)}
+                    className="w-full bg-transparent text-xs text-foreground outline-none"
+                  >
+                    <option value="">Resolver por nome na pergunta</option>
+                    {(agents ?? []).map((agent) => (
+                      <option key={agent.id} value={agent.id}>
+                        {agent.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            )}
 
             <textarea
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
-              rows={4}
+              rows={showAdvancedFilters ? 4 : 2}
               placeholder="Peça resumo executivo, coaching, comparativo de desempenho ou lista de conversas criticas."
               className="w-full resize-none rounded-[22px] border border-border/70 bg-background px-3 py-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring/35"
             />
