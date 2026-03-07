@@ -1,4 +1,4 @@
-﻿import { useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import {
   ArrowUpRight,
   BarChart3,
@@ -120,9 +120,113 @@ const footerColumns = [
 
 export default function MarketingLanding() {
   const [openFaq, setOpenFaq] = useState<string>(faqItems[0].q);
+  const pageRef = useRef<HTMLDivElement | null>(null);
+  const heroStageRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const root = pageRef.current;
+    if (!root || typeof window === 'undefined') return;
+
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion) return;
+
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
+
+    void (async () => {
+      const [{ default: gsap }, { ScrollTrigger }] = await Promise.all([
+        import('gsap'),
+        import('gsap/ScrollTrigger'),
+      ]);
+
+      if (disposed) return;
+
+      gsap.registerPlugin(ScrollTrigger);
+
+      const ctx = gsap.context(() => {
+        const heroTimeline = gsap.timeline({ defaults: { ease: 'power3.out' } });
+        heroTimeline
+          .from('[data-hero-badge]', { opacity: 0, y: 18, duration: 0.45 })
+          .from('[data-hero-title]', { opacity: 0, y: 26, duration: 0.7 }, '-=0.2')
+          .from('[data-hero-copy]', { opacity: 0, y: 20, duration: 0.55 }, '-=0.4')
+          .from('[data-hero-actions]', { opacity: 0, y: 18, duration: 0.45 }, '-=0.35')
+          .from('[data-hero-pills] > *', { opacity: 0, y: 14, duration: 0.35, stagger: 0.06 }, '-=0.2')
+          .from('[data-hero-visual]', { opacity: 0, y: 24, scale: 0.96, duration: 0.8 }, '-=0.5');
+
+        gsap.utils.toArray<HTMLElement>('[data-reveal]').forEach((element) => {
+          gsap.from(element, {
+            opacity: 0,
+            y: 34,
+            duration: 0.7,
+            ease: 'power3.out',
+            scrollTrigger: {
+              trigger: element,
+              start: 'top 84%',
+              once: true,
+            },
+          });
+        });
+
+        gsap.utils.toArray<HTMLElement>('[data-float]').forEach((element, index) => {
+          gsap.to(element, {
+            y: index % 2 === 0 ? -10 : 10,
+            duration: 3.3 + index * 0.2,
+            repeat: -1,
+            yoyo: true,
+            ease: 'sine.inOut',
+          });
+        });
+
+        gsap.to('[data-parallax-figure]', {
+          yPercent: -7,
+          ease: 'none',
+          scrollTrigger: {
+            trigger: heroStageRef.current,
+            start: 'top top',
+            end: 'bottom top',
+            scrub: 0.8,
+          },
+        });
+
+        gsap.to('[data-parallax-glow="primary"]', {
+          yPercent: -10,
+          xPercent: 4,
+          ease: 'none',
+          scrollTrigger: {
+            trigger: heroStageRef.current,
+            start: 'top top',
+            end: 'bottom top',
+            scrub: 1,
+          },
+        });
+
+        gsap.to('[data-parallax-glow="secondary"]', {
+          yPercent: -14,
+          xPercent: -3,
+          ease: 'none',
+          scrollTrigger: {
+            trigger: heroStageRef.current,
+            start: 'top top',
+            end: 'bottom top',
+            scrub: 1,
+          },
+        });
+      }, root);
+
+      cleanup = () => {
+        ctx.revert();
+      };
+    })();
+
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
+  }, []);
 
   return (
     <div
+      ref={pageRef}
       className="min-h-screen bg-[#f5f5f4] text-[#181818]"
       style={{
         fontFamily: '"Outfit","Manrope","Segoe UI",sans-serif',
@@ -170,7 +274,7 @@ export default function MarketingLanding() {
             className="grid items-center gap-12 pt-6 md:pt-8 lg:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)] lg:gap-10 lg:pt-0"
           >
             <div className="max-w-[640px]">
-              <div className="inline-flex items-center gap-2 rounded-full border border-[#dadada] bg-white/90 px-4 py-2 text-sm font-medium text-[#4f4f4f] shadow-sm backdrop-blur">
+              <div data-hero-badge className="inline-flex items-center gap-2 rounded-full border border-[#dadada] bg-white/90 px-4 py-2 text-sm font-medium text-[#4f4f4f] shadow-sm backdrop-blur">
                 <span className="grid h-6 w-6 place-items-center rounded-full bg-[#d4ff18] text-[#161616]">
                   <ShieldCheck size={14} strokeWidth={2.5} />
                 </span>
@@ -178,16 +282,17 @@ export default function MarketingLanding() {
               </div>
 
               <h1
+                data-hero-title
                 className="mt-6 max-w-[720px] text-[42px] font-semibold leading-[0.94] tracking-[-0.05em] text-[#161616] sm:text-[54px]"
                 style={{ fontSize: 'clamp(42px, 4.6vw, 62px)' }}
               >
                 Transforme conversas em dados, diagnostico e melhoria real
               </h1>
-              <p className="mt-6 max-w-[560px] text-[15px] leading-7 text-[#666] sm:text-base md:text-lg md:leading-8">
+              <p data-hero-copy className="mt-6 max-w-[560px] text-[15px] leading-7 text-[#666] sm:text-base md:text-lg md:leading-8">
                 A X9.Sales monitora cada atendimento da sua equipe, analisa a qualidade das conversas e mostra pontos fortes, falhas, oportunidades perdidas e padroes de melhoria por atendente.
               </p>
 
-              <div className="mt-8 flex flex-wrap items-center gap-3 sm:gap-4">
+              <div data-hero-actions className="mt-8 flex flex-wrap items-center gap-3 sm:gap-4">
                 <a
                   href={whatsappHref}
                   target="_blank"
@@ -205,7 +310,7 @@ export default function MarketingLanding() {
                 </a>
               </div>
 
-              <div className="mt-8 flex flex-wrap gap-2.5">
+              <div data-hero-pills className="mt-8 flex flex-wrap gap-2.5">
                 {proofPills.map((pill) => (
                   <span
                     key={pill}
@@ -215,14 +320,14 @@ export default function MarketingLanding() {
                   </span>
                 ))}
               </div>
-
             </div>
 
-            <div className="relative mx-auto flex w-full max-w-[560px] items-end justify-center lg:justify-end">
-              <div className="relative h-[640px] w-full max-w-[560px] sm:h-[820px]" style={{ maxWidth: '560px' }}>
-                <div className="absolute left-1/2 top-[18%] h-[360px] w-[360px] -translate-x-1/2 rounded-full bg-[#5945fd]/8 blur-3xl sm:h-[470px] sm:w-[470px]" />
-                <div className="absolute left-1/2 top-[21%] h-[280px] w-[280px] -translate-x-1/2 rounded-full bg-[#d3fe18]/7 blur-3xl sm:h-[340px] sm:w-[340px]" />
+            <div data-hero-visual className="relative mx-auto flex w-full max-w-[560px] items-end justify-center lg:justify-end">
+              <div ref={heroStageRef} className="relative h-[640px] w-full max-w-[560px] sm:h-[820px]" style={{ maxWidth: '560px' }}>
+                <div data-parallax-glow="primary" className="absolute left-1/2 top-[18%] h-[360px] w-[360px] -translate-x-1/2 rounded-full bg-[#5945fd]/8 blur-3xl sm:h-[470px] sm:w-[470px]" />
+                <div data-parallax-glow="secondary" className="absolute left-1/2 top-[21%] h-[280px] w-[280px] -translate-x-1/2 rounded-full bg-[#d3fe18]/7 blur-3xl sm:h-[340px] sm:w-[340px]" />
                 <img
+                  data-parallax-figure
                   src="/img-site/homem%20home.png"
                   alt="Pessoa observando com binoculos"
                   className="absolute left-1/2 z-20 -translate-x-1/2 drop-shadow-[0_18px_42px_rgba(0,0,0,0.14)]"
@@ -232,7 +337,7 @@ export default function MarketingLanding() {
                   }}
                 />
 
-                <div className="absolute left-0 top-[13%] z-40 max-w-[220px] rounded-[24px] border border-white/70 bg-white/92 p-4 shadow-[0_20px_50px_rgba(0,0,0,0.1)] backdrop-blur sm:left-[2%] lg:-left-2">
+                <div data-float className="absolute left-0 top-[13%] z-40 max-w-[220px] rounded-[24px] border border-white/70 bg-white/92 p-4 shadow-[0_20px_50px_rgba(0,0,0,0.1)] backdrop-blur sm:left-[2%] lg:-left-2">
                   <div className="flex items-center gap-3">
                     <span className="grid h-10 w-10 place-items-center rounded-2xl bg-[#d4ff18]/20 text-[#161616]">
                       <TrendingUp size={18} />
@@ -245,7 +350,7 @@ export default function MarketingLanding() {
                   <p className="mt-3 text-sm leading-6 text-[#686868]">Identifique quem sustenta o padrao da equipe e onde a operacao comeca a cair.</p>
                 </div>
 
-                <div className="absolute bottom-[12%] right-0 z-40 max-w-[220px] rounded-[24px] border border-[#202020] bg-[#161616] p-4 text-white shadow-[0_20px_50px_rgba(0,0,0,0.16)] sm:right-[2%] lg:right-0">
+                <div data-float className="absolute bottom-[12%] right-0 z-40 max-w-[220px] rounded-[24px] border border-[#202020] bg-[#161616] p-4 text-white shadow-[0_20px_50px_rgba(0,0,0,0.16)] sm:right-[2%] lg:right-0">
                   <div className="flex items-center gap-3">
                     <span className="grid h-10 w-10 place-items-center rounded-2xl bg-[#d4ff18] text-[#161616]">
                       <Sparkles size={18} />
@@ -262,7 +367,7 @@ export default function MarketingLanding() {
           </div>
         </div>
 
-        <div className="border-y border-black/5 bg-[#efefef]/85 py-8 backdrop-blur">
+        <div data-reveal className="border-y border-black/5 bg-[#efefef]/85 py-8 backdrop-blur">
           <div className="mx-auto grid max-w-[1240px] gap-4 px-4 text-center sm:grid-cols-3 sm:px-6 md:px-10 lg:px-0">
             {platformSignals.map((item) => (
               <div key={item.title} className="rounded-[24px] bg-white/75 px-5 py-5 shadow-[0_12px_30px_rgba(0,0,0,0.03)]">
@@ -278,10 +383,7 @@ export default function MarketingLanding() {
       </section>
 
       <main className="mx-auto max-w-[1240px] space-y-24 px-4 py-16 sm:px-6 md:px-10 lg:px-0 lg:py-20">
-        <section
-          id="funcionalidades"
-          className="grid items-center gap-12 lg:grid-cols-[1.02fr_0.98fr]"
-        >
+        <section data-reveal id="funcionalidades" className="grid items-center gap-12 lg:grid-cols-[1.02fr_0.98fr]">
           <div className="max-w-[500px]">
             <p className="text-xs font-medium uppercase tracking-[0.28em] text-[#7f7f7f]">Analise</p>
             <h2 className="mt-3 text-[36px] font-semibold leading-[1.02] tracking-[-0.04em] md:text-[58px]">
@@ -343,7 +445,7 @@ export default function MarketingLanding() {
           </div>
         </section>
 
-        <section className="grid items-center gap-12 lg:grid-cols-[0.92fr_1.08fr]">
+        <section data-reveal className="grid items-center gap-12 lg:grid-cols-[0.92fr_1.08fr]">
           <div className="order-2 rounded-[28px] bg-[#efefef] p-5 md:p-7 lg:order-1">
             <div className="flex flex-col items-center justify-center gap-6 py-12">
               <div className="grid h-20 w-20 place-items-center rounded-2xl bg-[#d4ff18] shadow-lg">
@@ -395,7 +497,7 @@ export default function MarketingLanding() {
           </div>
         </section>
 
-        <section id="faq" className="grid gap-12 lg:grid-cols-[0.88fr_1.12fr]">
+        <section data-reveal id="faq" className="grid gap-12 lg:grid-cols-[0.88fr_1.12fr]">
           <div className="max-w-[380px]">
             <p className="text-xs font-medium uppercase tracking-[0.28em] text-[#7f7f7f]">FAQ</p>
             <h2 className="mt-3 text-[34px] font-semibold leading-[1.03] tracking-[-0.04em] md:text-[52px]">
@@ -435,7 +537,7 @@ export default function MarketingLanding() {
         </section>
       </main>
 
-      <section id="contato" className="px-4 pb-16 sm:px-6 md:px-10 lg:px-0 lg:pb-20">
+      <section data-reveal id="contato" className="px-4 pb-16 sm:px-6 md:px-10 lg:px-0 lg:pb-20">
         <div className="mx-auto max-w-[1240px] overflow-hidden rounded-[32px] bg-[#121212] px-6 py-12 text-center text-white shadow-[0_30px_80px_rgba(0,0,0,0.24)] sm:px-8 md:px-16 md:py-14">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/45">Demonstracao guiada</p>
           <h2 className="mx-auto mt-4 max-w-[760px] text-[32px] font-semibold leading-[1.02] tracking-[-0.04em] md:text-[54px]">

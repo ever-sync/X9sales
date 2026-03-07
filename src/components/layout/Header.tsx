@@ -12,12 +12,32 @@ import {
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import { Search, Bell, LayoutGrid, ChevronDown, Settings as SettingsIcon, LogOut, Moon, Sun, PanelLeft } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '../../integrations/supabase/client';
+import { CACHE } from '../../config/constants';
 
 export function Header({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const { user, signOut } = useAuth();
-  const { company } = useCompany();
+  const { company, companyId } = useCompany();
   const { role } = usePermissions();
   const { theme, toggleTheme } = useTheme();
+
+  const { data: openAlertsCount = 0 } = useQuery<number>({
+    queryKey: ['alerts-open-count', companyId],
+    queryFn: async () => {
+      if (!companyId) return 0;
+      const { count, error } = await supabase
+        .from('alerts')
+        .select('id', { count: 'exact', head: true })
+        .eq('company_id', companyId)
+        .eq('status', 'open');
+      if (error) return 0;
+      return count ?? 0;
+    },
+    enabled: !!companyId,
+    staleTime: CACHE.STALE_TIME,
+  });
 
   const roleLabels: Record<string, string> = {
     owner_admin: 'Administrador',
@@ -72,10 +92,18 @@ export function Header({ onOpenSidebar }: { onOpenSidebar: () => void }) {
           {theme === 'dark' ? <Sun className="h-4.5 w-4.5" /> : <Moon className="h-4.5 w-4.5" />}
         </button>
 
-        <button className="relative flex h-10 w-10 items-center justify-center rounded-2xl border border-transparent text-muted-foreground transition-colors hover:bg-muted dark:text-muted-foreground dark:hover:bg-accent dark:hover:text-foreground">
+        <Link
+          to="/alerts"
+          className="relative flex h-10 w-10 items-center justify-center rounded-2xl border border-transparent text-muted-foreground transition-colors hover:bg-muted dark:text-muted-foreground dark:hover:bg-accent dark:hover:text-foreground"
+          title={openAlertsCount > 0 ? `${openAlertsCount} alerta${openAlertsCount !== 1 ? 's' : ''} aberto${openAlertsCount !== 1 ? 's' : ''}` : 'Alertas'}
+        >
           <Bell className="h-4.5 w-4.5" />
-          <span className="absolute top-2 right-2 w-1.5 h-1.5 bg-red-500 rounded-full" />
-        </button>
+          {openAlertsCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 leading-none">
+              {openAlertsCount > 99 ? '99+' : openAlertsCount}
+            </span>
+          )}
+        </Link>
 
         <div className="mx-1 hidden h-5 w-px bg-secondary/30 dark:bg-border sm:block" />
 

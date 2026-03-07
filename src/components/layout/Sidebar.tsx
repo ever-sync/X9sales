@@ -3,7 +3,6 @@ import {
   LayoutDashboard,
   Users,
   MessageSquare,
-  AlertTriangle,
   ClipboardCheck,
   Settings,
   Brain,
@@ -48,7 +47,6 @@ const navGroups: NavGroup[] = [
     items: [
       { to: '/', icon: LayoutDashboard, label: 'Dashboard', permission: 'dashboard.view' },
       { to: '/conversations', icon: MessageSquare, label: 'Conversas', permission: 'conversations.view_own' },
-      { to: '/alerts', icon: AlertTriangle, label: 'Alertas', permission: 'alerts.view' },
     ],
   },
   {
@@ -106,8 +104,8 @@ export function Sidebar({
       >
         {/* header: logo + close/collapse */}
         <div className={cn(
-          'flex items-center border-b border-white/5 px-4 py-5',
-          collapsed ? 'justify-center' : 'justify-between gap-3',
+          'flex border-b border-white/5 px-4 py-5',
+          collapsed ? 'flex-col items-center gap-3' : 'items-center justify-between gap-3',
         )}>
           <img
             src={collapsed ? collapsedLogo : siteLogo}
@@ -132,7 +130,7 @@ export function Sidebar({
           <button
             type="button"
             onClick={onToggleCollapse}
-            className="hidden lg:flex h-9 w-9 items-center justify-center rounded-2xl border border-white/8 text-white/40 transition-colors hover:bg-white/5 hover:text-white"
+            className="hidden h-9 w-9 items-center justify-center rounded-2xl border border-white/8 text-white/40 transition-colors hover:bg-white/5 hover:text-white lg:flex"
             aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}
             title={collapsed ? 'Expandir menu' : 'Recolher menu'}
           >

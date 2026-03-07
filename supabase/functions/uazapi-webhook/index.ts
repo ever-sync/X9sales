@@ -82,6 +82,8 @@ type SkipReason =
   | "broadcast_or_group"
   | "no_content";
 
+type AudioTranscriptionStatus = "pending" | "completed" | "failed" | "no_speech";
+
 function ok(body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -94,6 +96,10 @@ function err(status: number, message: string) {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+function stripAudioPrefix(content: string): string {
+  return content.replace(/^\[audio transcrito\]:\s*/i, "").trim();
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -568,6 +574,16 @@ serve(async (req: Request) => {
       const scopedMessageId = `${agentId}:${messageId}`;
       let messageText = rawMessage ? extractText(rawMessage) : (fallbackText ?? "[mensagem]");
       const audioUrl = resolveAudioUrl(rawMessage) ?? resolveFlatAudioUrl(entry);
+      const audioMetadata: Record<string, unknown> = {
+        provider: "uazapi",
+        url: audioUrl,
+        transcription_status: audioUrl ? "pending" satisfies AudioTranscriptionStatus : "failed" satisfies AudioTranscriptionStatus,
+        language: "pt",
+        engine: "whisper-1",
+        text: null,
+        transcribed_at: null,
+        error: audioUrl ? null : "audio_url_missing",
+      };
 
       if (audioUrl) {
         try {
@@ -582,14 +598,37 @@ serve(async (req: Request) => {
 
           if (transcribeRes.ok) {
             const transcribeJson = await transcribeRes.json();
-            if (transcribeJson?.success && typeof transcribeJson.text === "string") {
-              messageText = `[audio transcrito]: ${transcribeJson.text}`;
+            const status = typeof transcribeJson?.status === "string"
+              ? transcribeJson.status as AudioTranscriptionStatus
+              : "failed";
+            const transcribedText = typeof transcribeJson?.text === "string"
+              ? transcribeJson.text.trim()
+              : "";
+
+            audioMetadata.transcription_status = status;
+            audioMetadata.language = typeof transcribeJson?.language === "string" ? transcribeJson.language : "pt";
+            audioMetadata.engine = typeof transcribeJson?.engine === "string" ? transcribeJson.engine : "whisper-1";
+            audioMetadata.error = transcribeJson?.error ?? null;
+            audioMetadata.transcribed_at = new Date().toISOString();
+
+            if (transcribeJson?.success && status === "completed" && transcribedText.length > 0) {
+              audioMetadata.text = transcribedText;
+              messageText = `[audio transcrito]: ${transcribedText}`;
+            } else if (status === "no_speech") {
+              audioMetadata.text = "";
+              messageText = "[audio sem fala reconhecida]";
+            } else {
+              messageText = "[audio]";
             }
           } else {
             console.error(`[uazapi-webhook] transcriber returned ${transcribeRes.status}`);
+            audioMetadata.transcription_status = "failed";
+            audioMetadata.error = `transcriber_http_${transcribeRes.status}`;
           }
         } catch (transcribeError) {
           console.error("[uazapi-webhook] failed to transcribe audio", transcribeError);
+          audioMetadata.transcription_status = "failed";
+          audioMetadata.error = transcribeError instanceof Error ? transcribeError.message : "unknown_transcription_error";
         }
       }
 
@@ -633,6 +672,10 @@ serve(async (req: Request) => {
         messageType,
         audioUrl,
         audioMessage: hasAudio,
+        audio: hasAudio ? {
+          ...audioMetadata,
+          text: typeof audioMetadata.text === "string" ? stripAudioPrefix(String(audioMetadata.text)) : audioMetadata.text,
+        } : undefined,
         imageMessage: hasImage,
         videoMessage: hasVideo,
         documentMessage: hasDocument,

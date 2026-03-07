@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../integrations/supabase/client';
 import { useCompany } from '../contexts/CompanyContext';
-import { Book, Plus, Search, Trash2, FileText, Loader2 } from 'lucide-react';
+import { Book, Plus, Search, Trash2, FileText, Loader2, HelpCircle, X, Database, Lightbulb } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -20,6 +20,7 @@ export default function KnowledgeBase() {
   const { companyId } = useCompany();
   const queryClient = useQueryClient();
   const [isAdding, setIsAdding] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [search, setSearch] = useState('');
   
   const [newDoc, setNewDoc] = useState({ title: '', content: '' });
@@ -90,11 +91,85 @@ export default function KnowledgeBase() {
             Adicione manuais, regras e documentos para orientar a análise da IA (RAG).
           </p>
         </div>
-        <Button onClick={() => setIsAdding(true)} className="gap-2 shrink-0">
-          <Plus className="h-4 w-4" />
-          Novo Documento
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setShowHelp((v) => !v)} className="gap-2 shrink-0">
+            <HelpCircle className="h-4 w-4" />
+            Como usar
+          </Button>
+          <Button onClick={() => setIsAdding(true)} className="gap-2 shrink-0">
+            <Plus className="h-4 w-4" />
+            Novo Documento
+          </Button>
+        </div>
       </div>
+
+      {showHelp && (
+        <div className="rounded-2xl border border-primary/20 bg-accent/40 p-5 relative">
+          <button
+            type="button"
+            onClick={() => setShowHelp(false)}
+            className="absolute right-4 top-4 rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted"
+          >
+            <X className="h-4 w-4" />
+          </button>
+          <h3 className="mb-3 flex items-center gap-2 text-base font-semibold text-foreground">
+            <Book className="h-5 w-5 text-primary" />
+            Como funciona a Base de Conhecimento
+          </h3>
+          <p className="mb-4 text-sm text-muted-foreground">
+            A Base de Conhecimento alimenta a IA com <strong>contexto especifico da sua empresa</strong> usando tecnica de RAG (Retrieval Augmented Generation). A IA consulta esses documentos ao analisar conversas para entender as regras e o negocio.
+          </p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-xl border border-border bg-card p-4">
+              <div className="mb-2 flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10">
+                  <span className="text-xs font-bold text-primary">1</span>
+                </div>
+                <span className="text-sm font-semibold text-foreground">Cadastre documentos</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Clique em <strong>Novo Documento</strong> e informe um titulo e o conteudo. Exemplos: "Politica de Reembolso", "Script de Vendas", "Regras de Atendimento".
+              </p>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-4">
+              <div className="mb-2 flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10">
+                  <span className="text-xs font-bold text-primary">2</span>
+                </div>
+                <span className="text-sm font-semibold text-foreground">A IA aprende</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Ao analisar uma conversa, a IA busca automaticamente os documentos relevantes da base para contextualizar a avaliacao com as regras da sua empresa.
+              </p>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-4">
+              <div className="mb-2 flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10">
+                  <span className="text-xs font-bold text-primary">3</span>
+                </div>
+                <span className="text-sm font-semibold text-foreground">Analise mais precisa</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Quanto mais documentos relevantes voce adicionar, mais precisa e contextualizada sera a avaliacao de qualidade das conversas.
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <div className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2.5">
+              <FileText className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <p className="text-xs text-muted-foreground">Scripts de vendas, roteiros de atendimento, politicas da empresa.</p>
+            </div>
+            <div className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2.5">
+              <Database className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <p className="text-xs text-muted-foreground">Perguntas frequentes, objecoes comuns e como contorna-las.</p>
+            </div>
+            <div className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2.5">
+              <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <p className="text-xs text-muted-foreground">Quanto mais especifico e detalhado o conteudo, melhor a analise da IA.</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center gap-2 bg-card p-2 rounded-xl border shadow-sm">
         <Search className="ml-2 h-4 w-4 text-muted-foreground" />

@@ -80,8 +80,23 @@ export interface Message {
   content: string;
   content_type: 'text' | 'image' | 'video' | 'audio' | 'document' | 'interactive';
   external_message_id: string | string; // WhaZApi message ID
-  metadata: Record<string, unknown> | null;
+  metadata: MessageMetadata | null;
   created_at: string;
+}
+
+export interface MessageAudioMetadata {
+  url?: string | null;
+  provider?: string | null;
+  transcription_status?: 'pending' | 'completed' | 'failed' | 'no_speech';
+  language?: string | null;
+  text?: string | null;
+  engine?: string | null;
+  transcribed_at?: string | null;
+  error?: string | null;
+}
+
+export interface MessageMetadata extends Record<string, unknown> {
+  audio?: MessageAudioMetadata | null;
 }
 
 export interface Customer {
@@ -347,6 +362,52 @@ export interface AIAnalysisJob {
   started_at: string | null;
   finished_at: string | null;
   updated_at: string;
+}
+
+export interface AIInsightsSummary {
+  analyses_total: number;
+  avg_score: number | null;
+  lowest_score: number | null;
+  coaching_count: number;
+  coaching_rate: number;
+}
+
+export interface AIInsightsAgentSummary {
+  agent_id: string | null;
+  agent_name: string;
+  avg_score: number | null;
+  analyzed_count: number;
+  coaching_count: number;
+  failure_count: number;
+}
+
+export interface AIInsightsTagSummary {
+  source: 'training' | 'failure';
+  tag: string;
+  count: number;
+}
+
+export interface AIInsightsReviewItem {
+  id: string;
+  conversation_id: string;
+  agent_id: string | null;
+  agent_name: string;
+  quality_score: number | null;
+  needs_coaching: boolean;
+  training_tags: string[];
+  failure_tags: string[];
+  analyzed_at: string;
+  customer_name: string | null;
+  customer_phone: string | null;
+  channel: string | null;
+  conversation_started_at: string | null;
+}
+
+export interface AIInsightsFailureHeatmapCell {
+  agent_id: string | null;
+  agent_name: string;
+  failure_tag: string;
+  failure_count: number;
 }
 
 // ============================================================
