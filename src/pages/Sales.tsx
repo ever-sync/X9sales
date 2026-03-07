@@ -3,9 +3,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CalendarRange,
   Filter,
+  Pencil,
   PlusCircle,
   Search,
   Store,
+  Trash2,
   TrendingUp,
   UserRound,
   X,
@@ -23,7 +25,6 @@ import type { Agent, Customer, SaleRecord, Store as SalesStore } from '../types'
 type SalesForm = {
   sellerAgentId: string;
   conversationId: string;
-  storeName: string;
   quantity: string;
   marginAmount: string;
   soldAt: string;
@@ -42,6 +43,10 @@ type SalesConversationOptionRow = {
   agent_id: string | null;
   started_at: string | null;
   customer?: Array<{ name: string | null; phone: string | null }> | { name: string | null; phone: string | null } | null;
+};
+
+type AgentRow = Omit<Agent, 'store'> & {
+  store?: SalesStore[] | SalesStore | null;
 };
 
 type CustomerForm = {
@@ -70,11 +75,21 @@ function emptyForm(): SalesForm {
   return {
     sellerAgentId: '',
     conversationId: '',
-    storeName: '',
     quantity: '1',
     marginAmount: '0.00',
     soldAt: toDatetimeLocal(new Date().toISOString()),
     notes: '',
+  };
+}
+
+function saleToForm(sale: SaleRecord): SalesForm {
+  return {
+    sellerAgentId: sale.seller_agent_id ?? '',
+    conversationId: sale.conversation_id ?? '',
+    quantity: String(sale.quantity ?? 1),
+    marginAmount: String(Number(sale.margin_amount ?? 0)),
+    soldAt: toDatetimeLocal(sale.sold_at),
+    notes: sale.notes ?? '',
   };
 }
 
@@ -109,6 +124,8 @@ export default function Sales() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [form, setForm] = useState<SalesForm>(() => emptyForm());
+  const [conversationSearch, setConversationSearch] = useState('');
+  const [editingSaleId, setEditingSaleId] = useState<string | null>(null);
   const [showCustomerForm, setShowCustomerForm] = useState(false);
   const [customerForm, setCustomerForm] = useState<CustomerForm>(() => emptyCustomerForm());
 
@@ -118,12 +135,15 @@ export default function Sales() {
       if (!companyId) return [];
       const { data, error } = await supabase
         .from('agents')
-        .select('id, company_id, member_id, external_id, name, email, phone, avatar_url, is_active, created_at')
+        .select('id, company_id, member_id, store_id, external_id, name, email, phone, avatar_url, is_active, created_at, store:stores(id, company_id, name, is_active, created_at, updated_at)')
         .eq('company_id', companyId)
         .eq('is_active', true)
         .order('name');
       if (error) throw error;
-      return (data ?? []) as Agent[];
+      return ((data ?? []) as AgentRow[]).map((agent) => ({
+        ...agent,
+        store: Array.isArray(agent.store) ? (agent.store[0] ?? null) : (agent.store ?? null),
+      }));
     },
     enabled: !!companyId,
     staleTime: CACHE.STALE_TIME,
@@ -202,10 +222,38 @@ export default function Sales() {
 
   const storeOptions = useMemo(() => stores.map((store) => store.name), [stores]);
 
+  const selectedSeller = useMemo(
+    () => agents.find((agent) => agent.id === form.sellerAgentId) ?? null,
+    [agents, form.sellerAgentId],
+  );
+
+  const selectedSellerStoreName = useMemo(() => {
+    if (!selectedSeller) return '';
+    if (selectedSeller.store?.name) return selectedSeller.store.name;
+    if (!selectedSeller.store_id) return '';
+    return stores.find((store) => store.id === selectedSeller.store_id)?.name ?? '';
+  }, [selectedSeller, stores]);
+
   const filteredConversationOptions = useMemo(() => {
-    if (!form.sellerAgentId) return conversationOptions;
-    return conversationOptions.filter((conversation) => conversation.agent_id === form.sellerAgentId);
-  }, [conversationOptions, form.sellerAgentId]);
+    const normalizedSearch = conversationSearch.trim().toLowerCase();
+
+    return conversationOptions.filter((conversation) => {
+      if (form.sellerAgentId && conversation.agent_id !== form.sellerAgentId) return false;
+
+      if (!normalizedSearch) return true;
+
+      const haystack = [
+        conversation.customer?.name,
+        conversation.customer?.phone,
+        conversation.started_at ? formatDateTime(conversation.started_at) : '',
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return haystack.includes(normalizedSearch);
+    });
+  }, [conversationOptions, form.sellerAgentId, conversationSearch]);
 
   const filteredSales = useMemo(() => {
     return sales.filter((sale) => {
@@ -242,14 +290,37 @@ export default function Sales() {
     );
   }, [filteredSales]);
 
+  const resetModalState = () => {
+    setForm(emptyForm());
+    setConversationSearch('');
+    setCustomerForm(emptyCustomerForm());
+    setShowCustomerForm(false);
+    setEditingSaleId(null);
+    setIsModalOpen(false);
+  };
+
+  const openCreateModal = () => {
+    setEditingSaleId(null);
+    setForm(emptyForm());
+    setConversationSearch('');
+    setCustomerForm(emptyCustomerForm());
+    setShowCustomerForm(false);
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (sale: SaleRecord) => {
+    setEditingSaleId(sale.id);
+    setForm(saleToForm(sale));
+    setConversationSearch('');
+    setCustomerForm(emptyCustomerForm());
+    setShowCustomerForm(false);
+    setIsModalOpen(true);
+  };
+
   const createSaleMutation = useMutation({
     mutationFn: async () => {
       if (!companyId) throw new Error('Empresa não selecionada.');
       if (!form.sellerAgentId) throw new Error('Selecione o vendedor.');
-      if (!form.storeName) throw new Error('Selecione a loja.');
-
-      const resolvedStoreName = form.storeName.trim();
-      if (!resolvedStoreName) throw new Error('Informe a loja.');
 
       const quantity = Number(form.quantity);
       const margin = Number(form.marginAmount.replace(',', '.'));
@@ -258,6 +329,7 @@ export default function Sales() {
       if (!form.soldAt) throw new Error('Informe a data da venda.');
 
       const selectedSeller = agents.find((agent) => agent.id === form.sellerAgentId);
+      if (!selectedSellerStoreName) throw new Error('O vendedor precisa estar vinculado a uma loja no cadastro.');
       if (!selectedSeller) throw new Error('Vendedor não encontrado.');
 
       const { error } = await supabase
@@ -267,7 +339,7 @@ export default function Sales() {
           seller_agent_id: form.sellerAgentId,
           conversation_id: form.conversationId || null,
           seller_name_snapshot: selectedSeller.name,
-          store_name: resolvedStoreName,
+          store_name: selectedSellerStoreName,
           quantity,
           margin_amount: margin,
           sold_at: new Date(form.soldAt).toISOString(),
@@ -278,14 +350,72 @@ export default function Sales() {
     },
     onSuccess: () => {
       toast.success('Venda registrada com sucesso.');
-      setForm(emptyForm());
-      setCustomerForm(emptyCustomerForm());
-      setShowCustomerForm(false);
-      setIsModalOpen(false);
+      resetModalState();
       queryClient.invalidateQueries({ queryKey: ['sales-records', companyId] });
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'Falha ao registrar venda.');
+    },
+  });
+
+  const updateSaleMutation = useMutation({
+    mutationFn: async () => {
+      if (!companyId) throw new Error('Empresa não selecionada.');
+      if (!editingSaleId) throw new Error('Venda não selecionada.');
+      if (!form.sellerAgentId) throw new Error('Selecione o vendedor.');
+
+      const quantity = Number(form.quantity);
+      const margin = Number(form.marginAmount.replace(',', '.'));
+      if (!Number.isFinite(quantity) || quantity <= 0) throw new Error('Quantidade inválida.');
+      if (!Number.isFinite(margin) || margin < 0) throw new Error('Margem inválida.');
+      if (!form.soldAt) throw new Error('Informe a data da venda.');
+      if (!selectedSeller) throw new Error('Vendedor não encontrado.');
+      if (!selectedSellerStoreName) throw new Error('O vendedor precisa estar vinculado a uma loja no cadastro.');
+
+      const { error } = await supabase
+        .from('sales_records')
+        .update({
+          seller_agent_id: form.sellerAgentId,
+          conversation_id: form.conversationId || null,
+          seller_name_snapshot: selectedSeller.name,
+          store_name: selectedSellerStoreName,
+          quantity,
+          margin_amount: margin,
+          sold_at: new Date(form.soldAt).toISOString(),
+          notes: form.notes.trim() || null,
+        })
+        .eq('id', editingSaleId)
+        .eq('company_id', companyId);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success('Venda atualizada com sucesso.');
+      resetModalState();
+      queryClient.invalidateQueries({ queryKey: ['sales-records', companyId] });
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Falha ao atualizar venda.');
+    },
+  });
+
+  const deleteSaleMutation = useMutation({
+    mutationFn: async (saleId: string) => {
+      if (!companyId) throw new Error('Empresa não selecionada.');
+      const { error } = await supabase
+        .from('sales_records')
+        .delete()
+        .eq('id', saleId)
+        .eq('company_id', companyId);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success('Venda excluída com sucesso.');
+      queryClient.invalidateQueries({ queryKey: ['sales-records', companyId] });
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Falha ao excluir venda.');
     },
   });
 
@@ -396,7 +526,7 @@ export default function Sales() {
         {canCreateSale && (
           <Button
             type="button"
-            onClick={() => setIsModalOpen(true)}
+            onClick={openCreateModal}
             className="h-11 rounded-full bg-primary px-5 text-[#171717] hover:bg-primary/90"
           >
             <PlusCircle className="mr-2 h-4 w-4" />
@@ -483,11 +613,42 @@ export default function Sales() {
             {filteredSales.map((sale) => (
               <div key={sale.id} className="grid gap-4 px-5 py-4 lg:grid-cols-[minmax(0,1.2fr)_repeat(4,minmax(0,1fr))] lg:items-center">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate text-sm font-semibold text-foreground">{sale.seller?.name ?? sale.seller_name_snapshot}</p>
-                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                      {sale.store_name}
-                    </span>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <p className="truncate text-sm font-semibold text-foreground">{sale.seller?.name ?? sale.seller_name_snapshot}</p>
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                        {sale.store_name}
+                      </span>
+                    </div>
+                    {canCreateSale && (
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 rounded-full px-3"
+                          onClick={() => openEditModal(sale)}
+                        >
+                          <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                          Editar
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 rounded-full px-3 text-red-600 hover:bg-red-50 hover:text-red-700"
+                          onClick={() => {
+                            if (window.confirm('Excluir esta venda? Esta ação não pode ser desfeita.')) {
+                              deleteSaleMutation.mutate(sale.id);
+                            }
+                          }}
+                          disabled={deleteSaleMutation.isPending}
+                        >
+                          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                          Excluir
+                        </Button>
+                      </div>
+                    )}
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">{sale.notes || 'Sem observações adicionais.'}</p>
                   {sale.conversation && (
@@ -531,14 +692,14 @@ export default function Sales() {
                   <PlusCircle className="h-5 w-5 text-primary" />
                 </div>
                 <div>
-                  <h3 className="text-2xl font-bold text-foreground">Registrar Venda</h3>
+                  <h3 className="text-2xl font-bold text-foreground">{editingSaleId ? 'Editar Venda' : 'Registrar Venda'}</h3>
                   <p className="mt-1 text-sm text-muted-foreground">Adicione uma nova venda à corrida semanal.</p>
                 </div>
               </div>
 
               <button
                 type="button"
-                onClick={() => setIsModalOpen(false)}
+                onClick={resetModalState}
                 className="rounded-xl p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 <X className="h-4.5 w-4.5" />
@@ -547,7 +708,7 @@ export default function Sales() {
 
             <div className="p-6">
               <div className="rounded-[28px] border border-border/70 bg-background/70 p-6">
-                <h4 className="text-2xl font-semibold text-foreground">Nova Venda</h4>
+                <h4 className="text-2xl font-semibold text-foreground">{editingSaleId ? 'Editar Venda' : 'Nova Venda'}</h4>
 
                 <div className="mt-8 grid gap-4 md:grid-cols-2">
                   <label className="space-y-2">
@@ -556,7 +717,10 @@ export default function Sales() {
                       <UserRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       <select
                         value={form.sellerAgentId}
-                        onChange={(event) => setForm((current) => ({ ...current, sellerAgentId: event.target.value, conversationId: '' }))}
+                        onChange={(event) => {
+                          setForm((current) => ({ ...current, sellerAgentId: event.target.value, conversationId: '' }));
+                          setConversationSearch('');
+                        }}
                         className="h-12 w-full rounded-xl border border-border bg-card pl-10 pr-3 text-sm text-foreground outline-none"
                       >
                         <option value="">Selecione o vendedor</option>
@@ -569,6 +733,12 @@ export default function Sales() {
 
                   <label className="space-y-2">
                     <span className="text-sm font-semibold text-foreground">Conversa que fez a venda</span>
+                    <Input
+                      value={conversationSearch}
+                      onChange={(event) => setConversationSearch(event.target.value)}
+                      placeholder="Busque por nome, telefone ou data da conversa"
+                      className="h-12 rounded-xl"
+                    />
                     <div className="relative">
                       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       <select
@@ -598,22 +768,20 @@ export default function Sales() {
                     </div>
                   </label>
 
-                  <label className="space-y-2">
-                    <span className="text-sm font-semibold text-foreground">Loja *</span>
-                    <div className="relative">
-                      <Store className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <select
-                        value={form.storeName}
-                        onChange={(event) => setForm((current) => ({ ...current, storeName: event.target.value }))}
-                        className="h-12 w-full rounded-xl border border-border bg-card pl-10 pr-3 text-sm text-foreground outline-none"
-                      >
-                        <option value="">Selecione a loja</option>
-                        {storeOptions.map((storeName) => (
-                          <option key={storeName} value={storeName}>{storeName}</option>
-                        ))}
-                      </select>
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-border/70 bg-card px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted">
+                      <Store className="h-4 w-4 text-muted-foreground" />
                     </div>
-                  </label>
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Loja da venda</p>
+                      <p className="mt-1 text-sm font-medium text-foreground">
+                        {selectedSellerStoreName || 'Selecione um vendedor com loja vinculada'}
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
                 {showCustomerForm && (
@@ -714,12 +882,12 @@ export default function Sales() {
 
                 <Button
                   type="button"
-                  onClick={() => createSaleMutation.mutate()}
-                  disabled={createSaleMutation.isPending}
+                  onClick={() => (editingSaleId ? updateSaleMutation.mutate() : createSaleMutation.mutate())}
+                  disabled={createSaleMutation.isPending || updateSaleMutation.isPending}
                   className="mt-5 h-12 w-full rounded-2xl bg-primary text-[#171717] hover:bg-primary/90"
                 >
-                  {createSaleMutation.isPending && <TrendingUp className="mr-2 h-4 w-4 animate-pulse" />}
-                  Registrar Venda
+                  {(createSaleMutation.isPending || updateSaleMutation.isPending) && <TrendingUp className="mr-2 h-4 w-4 animate-pulse" />}
+                  {editingSaleId ? 'Salvar alterações' : 'Registrar Venda'}
                 </Button>
               </div>
             </div>
