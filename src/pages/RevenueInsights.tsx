@@ -8,6 +8,7 @@ import {
   FileText,
   Filter,
   HandCoins,
+  HelpCircle,
   Loader2,
   PlayCircle,
   ShieldAlert,
@@ -16,6 +17,8 @@ import {
   TrendingUp,
   UserRound,
   X,
+  Zap,
+  BarChart3,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../integrations/supabase/client';
@@ -200,6 +203,7 @@ export default function RevenueInsights() {
   const startDate = dateInputFromDate(new Date(Date.now() - 30 * 86400000));
 
   const [showModal, setShowModal] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [agentId, setAgentId] = useState('');
   const [scope, setScope] = useState<Scope>('all');
   const [periodStart, setPeriodStart] = useState(startDate);
@@ -559,6 +563,7 @@ export default function RevenueInsights() {
             </div>
           </div>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row xl:flex-shrink-0">
+            <Button variant="outline" onClick={() => setShowHelp((v) => !v)} className="w-full sm:w-auto"><HelpCircle className="mr-2 h-4 w-4" />Como funciona</Button>
             <Button onClick={() => setShowModal(true)} disabled={!canRun} className="w-full bg-[#5945fd] text-white hover:bg-[#4a39d4] sm:w-auto"><PlayCircle className="mr-2 h-4 w-4" />Atualizar analise</Button>
             <Button variant="outline" onClick={generateRoi} disabled={!canRun || roiGenerating} className="w-full sm:w-auto">{roiGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}Gerar relatorio ROI</Button>
           </div>
@@ -590,6 +595,78 @@ export default function RevenueInsights() {
           {!canRun && <p>Seu perfil pode visualizar a tela, mas nao pode disparar atualizacoes manuais.</p>}
         </div>
       </section>
+
+      {showHelp && (
+        <div className="rounded-2xl border border-primary/20 bg-accent/40 p-5 relative">
+          <button
+            type="button"
+            onClick={() => setShowHelp(false)}
+            className="absolute right-4 top-4 rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted"
+          >
+            <X className="h-4 w-4" />
+          </button>
+          <h3 className="mb-3 flex items-center gap-2 text-base font-semibold text-foreground">
+            <HandCoins className="h-5 w-5 text-primary" />
+            Como funciona o Revenue Insights
+          </h3>
+          <p className="mb-4 text-sm text-muted-foreground">
+            O Revenue Insights usa IA para analisar conversas e identificar <strong>oportunidades de receita, riscos de perda e proximas melhores acoes</strong> para cada negociacao. Tudo calculado automaticamente a partir das mensagens trocadas.
+          </p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-xl border border-border bg-card p-4">
+              <div className="mb-2 flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10">
+                  <span className="text-xs font-bold text-primary">1</span>
+                </div>
+                <span className="text-sm font-semibold text-foreground">Analise as conversas</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Clique em <strong>Atualizar analise</strong>, selecione um atendente e o periodo. A IA le as conversas e gera sinais de receita para cada uma.
+              </p>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-4">
+              <div className="mb-2 flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10">
+                  <span className="text-xs font-bold text-primary">2</span>
+                </div>
+                <span className="text-sm font-semibold text-foreground">Leia o pipeline</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                As conversas sao classificadas em <strong>Quentes</strong> (alta intencao de fechar), <strong>Em risco</strong> (risco alto de perda) e <strong>Melhor oportunidade</strong> (maior chance de conversao).
+              </p>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-4">
+              <div className="mb-2 flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10">
+                  <span className="text-xs font-bold text-primary">3</span>
+                </div>
+                <span className="text-sm font-semibold text-foreground">Tome acao</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Cada conversa tem uma <strong>proxima melhor acao</strong> e uma <strong>sugestao de resposta</strong> gerada pela IA. Abra a conversa diretamente do card para agir imediatamente.
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-4">
+            <div className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2.5">
+              <Target className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <p className="text-xs text-muted-foreground"><strong>Receita potencial</strong>: valor total das oportunidades identificadas no periodo.</p>
+            </div>
+            <div className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2.5">
+              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-[#5945fd]" />
+              <p className="text-xs text-muted-foreground"><strong>Receita em risco</strong>: valor de negociacoes que podem ser perdidas sem intervencao.</p>
+            </div>
+            <div className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2.5">
+              <Zap className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <p className="text-xs text-muted-foreground"><strong>Adocao coaching</strong>: percentual de acoes recomendadas que os atendentes executaram.</p>
+            </div>
+            <div className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2.5">
+              <BarChart3 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <p className="text-xs text-muted-foreground"><strong>Relatorio ROI</strong>: gera um resumo consolidado do periodo com conversao e receita ganha.</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {pageError && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Falha ao carregar dados de revenue: {pageError.message}</div>}
 

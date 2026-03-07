@@ -104,7 +104,14 @@ function ProtectedRoutes() {
           />
           <Route path="agents/:id" element={<AgentDetail />} />
           <Route path="conversations" element={<Conversations />} />
-          <Route path="ranking" element={<Ranking />} />
+          <Route
+            path="ranking"
+            element={
+              <PermissionGate permission="agents.view_team" fallback={<Navigate to="/" replace />}>
+                <Ranking />
+              </PermissionGate>
+            }
+          />
           <Route path="conversations/:id" element={<ConversationDetail />} />
           <Route
             path="alerts"

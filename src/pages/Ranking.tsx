@@ -179,10 +179,18 @@ function QualityBar({ score }: { score: number | null }) {
 
 export default function Ranking() {
   const [sortKey, setSortKey] = useState<SortKey>('avg_ai_quality_score');
-  const { data, isLoading } = useRanking();
+  const { data, isLoading, isError, error } = useRanking();
 
   const currentSort = SORT_OPTIONS.find(o => o.key === sortKey)!;
-  const sorted = sortRanking(data ?? [], sortKey, currentSort.desc);
+  const sorted = sortRanking(data ?? [], sortKey, currentSort.desc).sort((a, b) => {
+    const av = a[sortKey] as number | null;
+    const bv = b[sortKey] as number | null;
+
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    return 0;
+  });
 
   const top3 = sorted.slice(0, 3);
   return (
@@ -218,6 +226,14 @@ export default function Ranking() {
             {[...Array(3)].map((_, i) => <div key={i} className="h-52 bg-muted rounded-2xl animate-pulse" />)}
           </div>
           <div className="h-64 bg-muted rounded-2xl animate-pulse" />
+        </div>
+      ) : isError ? (
+        <div className="bg-card rounded-2xl border border-border p-16 text-center text-muted-foreground">
+          <AlertTriangle className="h-10 w-10 mx-auto mb-3 opacity-50 text-red-500" />
+          <p className="font-medium text-foreground">Nao foi possivel carregar o ranking.</p>
+          <p className="mt-2 text-sm">
+            {error instanceof Error ? error.message : 'Verifique a conexao com o Supabase e as permissoes da view.'}
+          </p>
         </div>
       ) : sorted.length === 0 ? (
         <div className="bg-card rounded-2xl border border-border p-16 text-center text-muted-foreground">

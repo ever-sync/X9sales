@@ -28,6 +28,77 @@ export interface CompanySettings {
   working_hours_end: string;
   working_days: number[];
   auto_block_on_critical_risk?: boolean;
+  legal_name?: string;
+  document_type?: 'cpf' | 'cnpj';
+  document_number?: string;
+  logo_url?: string;
+  admin_report_frequency?: 'daily' | 'weekly' | 'monthly';
+  admin_report_channel?: 'email' | 'whatsapp';
+  admin_report_weekday?: string;
+  admin_report_month_day?: number;
+  agent_morning_improvement_ideas?: boolean;
+  agent_follow_up_alerts?: boolean;
+}
+
+export interface BillingSubscription {
+  id: string;
+  company_id: string;
+  stripe_subscription_id: string;
+  plan_code: string;
+  plan_name: string;
+  status: string;
+  billing_cycle: string;
+  amount_cents: number;
+  currency: string;
+  included_seats: number | null;
+  used_seats: number | null;
+  current_period_start: string | null;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BillingInvoice {
+  id: string;
+  company_id: string;
+  stripe_invoice_id: string;
+  stripe_subscription_id: string | null;
+  status: string;
+  amount_due_cents: number;
+  currency: string;
+  due_date: string | null;
+  hosted_invoice_url: string | null;
+  invoice_pdf: string | null;
+  created_at: string;
+}
+
+export interface CompanyInvite {
+  id: string;
+  company_id: string;
+  email: string;
+  role: AppRole;
+  status: 'pending' | 'accepted' | 'expired' | 'revoked';
+  token: string;
+  invited_by_user_id: string;
+  expires_at: string;
+  accepted_by_user_id: string | null;
+  created_at: string;
+}
+
+export interface NotificationJobSummary {
+  id: string;
+  company_id: string;
+  job_type: 'admin_report' | 'agent_morning_ideas' | 'agent_follow_up';
+  target_user_id: string | null;
+  target_agent_id: string | null;
+  channel: 'email' | 'whatsapp';
+  scheduled_for: string;
+  status: 'pending' | 'sent' | 'failed' | 'skipped';
+  payload: Record<string, unknown>;
+  error_message: string | null;
+  created_at: string;
+  processed_at: string | null;
 }
 
 // ============================================================
