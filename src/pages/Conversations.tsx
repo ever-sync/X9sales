@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../integrations/supabase/client';
-import { channelLabel, cn, formatDateTime, normalizePhone } from '../lib/utils';
+import { channelLabel, cn, formatDateTime, normalizePhone, stripAgentPrefix } from '../lib/utils';
 import { CACHE, PAGINATION } from '../config/constants';
 import type { Agent, Conversation } from '../types';
 
@@ -162,6 +162,7 @@ function temperatureConfig(level: string | null | undefined): { label: string; c
   return { label: '—', cls: 'text-muted-foreground' };
 }
 
+
 function formatPhoneDisplay(phone: string | null | undefined) {
   const digits = normalizePhone(phone);
   if (!digits) return 'Telefone não informado';
@@ -219,7 +220,7 @@ function ConversationRow({ conv }: { conv: ConvWithAnalysis }) {
             <div className="min-w-0 space-y-1">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="truncate text-sm font-semibold text-foreground md:text-[15px]">
-                  {conv.customer?.name ?? conv.customer?.phone ?? 'Cliente'}
+                  {stripAgentPrefix(conv.customer?.name, conv.agent?.name, conv.customer?.phone)}
                 </p>
                 <span className={cn('rounded-full px-2.5 py-1 text-[11px] font-semibold leading-none shadow-sm', statusClass(conv.status))}>
                   {statusLabel(conv.status)}

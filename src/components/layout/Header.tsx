@@ -1,6 +1,5 @@
 import { useAuth } from '../../hooks/useAuth';
 import { useCompany } from '../../contexts/CompanyContext';
-import { useTheme } from '../../contexts/ThemeContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { Avatar, AvatarFallback } from '../ui/avatar';
 import {
@@ -11,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
-import { Search, Bell, LayoutGrid, ChevronDown, Settings as SettingsIcon, LogOut, Moon, Sun, PanelLeft } from 'lucide-react';
+import { Search, Bell, LayoutGrid, ChevronDown, Settings as SettingsIcon, LogOut, PanelLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../../integrations/supabase/client';
@@ -21,7 +20,6 @@ export function Header({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const { user, signOut } = useAuth();
   const { company, companyId } = useCompany();
   const { role } = usePermissions();
-  const { theme, toggleTheme } = useTheme();
 
   const { data: openAlertsCount = 0 } = useQuery<number>({
     queryKey: ['alerts-open-count', companyId],
@@ -56,7 +54,7 @@ export function Header({ onOpenSidebar }: { onOpenSidebar: () => void }) {
           <PanelLeft className="h-4.5 w-4.5" />
         </button>
         {company && (
-          <span className="hidden truncate text-sm font-semibold text-muted-foreground sm:block dark:text-muted-foreground">
+          <span className="hidden truncate text-sm font-semibold text-muted-foreground sm:block">
             {company.name}
           </span>
         )}
@@ -77,22 +75,13 @@ export function Header({ onOpenSidebar }: { onOpenSidebar: () => void }) {
       </div>
 
       <div className="flex items-center gap-1.5 sm:gap-2">
-        <button className="hidden h-10 w-10 items-center justify-center rounded-2xl border border-transparent text-muted-foreground transition-colors hover:bg-muted dark:text-muted-foreground dark:hover:bg-accent md:flex dark:hover:text-foreground">
+        <button className="hidden h-10 w-10 items-center justify-center rounded-2xl border border-transparent text-muted-foreground transition-colors hover:bg-muted md:flex">
           <LayoutGrid className="h-4.5 w-4.5" />
-        </button>
-
-        <button
-          onClick={toggleTheme}
-          className="flex h-10 w-10 items-center justify-center rounded-2xl border border-transparent text-muted-foreground transition-colors hover:bg-muted dark:text-muted-foreground dark:hover:bg-accent dark:hover:text-foreground"
-          aria-label={theme === 'dark' ? 'Ativar modo claro' : 'Ativar modo escuro'}
-          title={theme === 'dark' ? 'Modo claro' : 'Modo escuro'}
-        >
-          {theme === 'dark' ? <Sun className="h-4.5 w-4.5" /> : <Moon className="h-4.5 w-4.5" />}
         </button>
 
         <Link
           to="/alerts"
-          className="relative flex h-10 w-10 items-center justify-center rounded-2xl border border-transparent text-muted-foreground transition-colors hover:bg-muted dark:text-muted-foreground dark:hover:bg-accent dark:hover:text-foreground"
+          className="relative flex h-10 w-10 items-center justify-center rounded-2xl border border-transparent text-muted-foreground transition-colors hover:bg-muted"
           title={openAlertsCount > 0 ? `${openAlertsCount} alerta${openAlertsCount !== 1 ? 's' : ''} aberto${openAlertsCount !== 1 ? 's' : ''}` : 'Alertas'}
         >
           <Bell className="h-4.5 w-4.5" />
@@ -103,7 +92,7 @@ export function Header({ onOpenSidebar }: { onOpenSidebar: () => void }) {
           )}
         </Link>
 
-        <div className="mx-1 hidden h-5 w-px bg-secondary/30 dark:bg-border sm:block" />
+        <div className="mx-1 hidden h-5 w-px bg-secondary/30 sm:block" />
 
         <DropdownMenu>
           <DropdownMenuTrigger className="group flex items-center gap-2 rounded-full border border-border/70 bg-card/85 px-1.5 py-1.5 shadow-sm outline-none transition-colors hover:bg-muted/50 sm:gap-3 sm:px-2">
@@ -138,7 +127,7 @@ export function Header({ onOpenSidebar }: { onOpenSidebar: () => void }) {
             <DropdownMenuSeparator className="bg-border" />
             <DropdownMenuItem
               onSelect={signOut}
-              className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-[13px] font-semibold text-red-600 outline-none transition-colors hover:bg-destructive/10 focus:bg-destructive/10 dark:text-red-400"
+              className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-[13px] font-semibold text-red-600 outline-none transition-colors hover:bg-destructive/10 focus:bg-destructive/10"
             >
               <LogOut className="h-4 w-4" />
               Sair da Conta

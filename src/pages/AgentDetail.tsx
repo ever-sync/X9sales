@@ -7,7 +7,7 @@ import type { Agent, AgentDailyMetrics, AIConversationAnalysis } from '../types'
 import { useConversations } from '../hooks/useConversations';
 import { CACHE } from '../config/constants';
 import { MetricCard } from '../components/dashboard/MetricCard';
-import { formatSeconds, formatPercent, formatCurrency, formatDateTime, channelLabel, cn } from '../lib/utils';
+import { formatSeconds, formatPercent, formatCurrency, formatDateTime, channelLabel, cn, stripAgentPrefix } from '../lib/utils';
 import { ArrowLeft, User, Clock, CheckCircle, MessageSquare, TrendingUp, Brain, BookOpen, Copy, Check, Link2 } from 'lucide-react';
 
 function ScoreBar({ value, max = 10 }: { value: number | null; max?: number }) {
@@ -387,7 +387,7 @@ export default function AgentDetail() {
               <tbody className="divide-y divide-border">
                 {aiAnalyses.map(analysis => {
                   const conv = analysis.conversation as any;
-                  const customerName = conv?.customer?.name ?? conv?.customer?.phone ?? 'Cliente';
+                  const customerName = stripAgentPrefix(conv?.customer?.name, agent?.name, conv?.customer?.phone);
                   return (
                     <tr key={analysis.id} className="hover:bg-muted">
                       <td className="px-6 py-3">
@@ -450,7 +450,7 @@ export default function AgentDetail() {
               >
                 <div>
                   <p className="text-sm font-medium text-foreground">
-                    {conv.customer?.name ?? conv.customer?.phone ?? 'Cliente'}
+                    {stripAgentPrefix(conv.customer?.name, agent?.name, conv.customer?.phone)}
                   </p>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-xs text-muted-foreground">{channelLabel(conv.channel)}</span>

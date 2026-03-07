@@ -6,7 +6,7 @@ import { useCompany } from '../contexts/CompanyContext';
 import { usePermissions } from '../hooks/usePermissions';
 import type { AIConversationAnalysis, Conversation, ConversationMetrics, SpamRiskEvent } from '../types';
 import { CACHE } from '../config/constants';
-import { channelLabel, cn, formatDateTime, formatSeconds, severityColor } from '../lib/utils';
+import { channelLabel, cn, formatDateTime, formatSeconds, severityColor, stripAgentPrefix } from '../lib/utils';
 
 type AuditWorstSlaRow = ConversationMetrics & {
   conversation?: Conversation;
@@ -160,10 +160,10 @@ export default function Audit() {
                       <td className="px-6 py-3">
                         {conv?.id ? (
                           <Link to={`/conversations/${conv.id}`} className="text-primary hover:underline">
-                            {conv.customer?.name ?? conv.customer?.phone ?? 'Cliente'}
+                            {stripAgentPrefix(conv.customer?.name, conv?.agent?.name, conv.customer?.phone)}
                           </Link>
                         ) : (
-                          <span>{conv?.customer?.name ?? conv?.customer?.phone ?? 'Cliente'}</span>
+                          <span>{stripAgentPrefix(conv?.customer?.name, conv?.agent?.name, conv?.customer?.phone)}</span>
                         )}
                       </td>
                       <td className="px-6 py-3 text-muted-foreground">
@@ -235,7 +235,7 @@ export default function Audit() {
                 <tbody className="divide-y divide-border">
                   {lowQuality.map((analysis) => {
                     const conv = analysis.conversation as Conversation | undefined;
-                    const customerName = conv?.customer?.name ?? conv?.customer?.phone ?? 'Cliente';
+                    const customerName = stripAgentPrefix(conv?.customer?.name, analysis.agent?.name, conv?.customer?.phone);
 
                     return (
                       <tr key={analysis.id} className="hover:bg-muted">

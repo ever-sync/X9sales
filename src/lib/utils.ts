@@ -68,6 +68,26 @@ export function severityColor(severity: string): string {
   return colors[severity] ?? 'text-muted-foreground bg-muted';
 }
 
+/**
+ * Strip agent name prefix from customer name.
+ * Chatwoot stores some conversation titles as "AgentName - CustomerName".
+ * This function returns only the customer part.
+ */
+export function stripAgentPrefix(
+  customerName: string | null | undefined,
+  agentName: string | null | undefined,
+  fallback?: string | null,
+): string {
+  const raw = customerName?.trim();
+  if (!raw) return fallback?.trim() || 'Cliente';
+  const prefix = agentName?.trim();
+  if (prefix && raw.startsWith(prefix + ' - ')) {
+    const stripped = raw.slice(prefix.length + 3).trim();
+    return stripped || fallback?.trim() || 'Cliente';
+  }
+  return raw;
+}
+
 export function normalizePhone(value: string | null | undefined): string {
   if (!value) return '';
   return value.replace(/\D+/g, '');

@@ -4,7 +4,6 @@ import { Toaster } from 'sonner';
 import { env } from './config/env';
 import { useAuth } from './hooks/useAuth';
 import { CompanyProvider } from './contexts/CompanyContext';
-import { ThemeProvider } from './contexts/ThemeContext';
 import { MainLayout } from './components/layout/MainLayout';
 import { PermissionGate } from './components/auth/PermissionGate';
 
@@ -29,17 +28,17 @@ import ProductIntelligence from './pages/ProductIntelligence';
 
 function SetupScreen() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted dark:bg-[#0F282F]">
+    <div className="min-h-screen flex items-center justify-center bg-muted">
       <div className="w-full max-w-lg">
-        <div className="bg-card dark:bg-card rounded-2xl shadow-sm border border-border dark:border-border p-8">
+        <div className="bg-card rounded-2xl shadow-sm border border-border p-8">
           <div className="text-center mb-6">
             <h1 className="text-3xl font-bold text-primary">MonitoraIA</h1>
-            <p className="text-muted-foreground dark:text-muted-foreground mt-2">Plataforma de monitoramento de atendimento</p>
+            <p className="text-muted-foreground mt-2">Plataforma de monitoramento de atendimento</p>
           </div>
 
-          <div className="bg-accent dark:bg-accent/30 border border-primary/30 dark:border-primary/30 rounded-xl p-4 mb-6">
+          <div className="bg-accent border border-primary/30 rounded-xl p-4 mb-6">
             <h2 className="text-sm font-semibold text-primary mb-1">Configuracao necessaria</h2>
-            <p className="text-sm text-primary dark:text-primary">
+            <p className="text-sm text-primary">
               Crie um arquivo <code className="bg-accent px-1 rounded">.env</code> na raiz do projeto com as credenciais do Supabase:
             </p>
           </div>
@@ -49,7 +48,7 @@ function SetupScreen() {
             <div><span className="text-primary">VITE_SUPABASE_ANON_KEY</span>=sua-anon-key-aqui</div>
           </div>
 
-          <div className="mt-6 space-y-3 text-sm text-muted-foreground dark:text-muted-foreground">
+          <div className="mt-6 space-y-3 text-sm text-muted-foreground">
             <p><strong>1.</strong> Crie um projeto no <a href="https://supabase.com" target="_blank" rel="noopener" className="text-primary hover:underline">supabase.com</a></p>
             <p><strong>2.</strong> Copie a URL e a anon key das configuracoes do projeto</p>
             <p><strong>3.</strong> Crie o arquivo <code className="bg-muted px-1 rounded">.env</code> (use <code className="bg-muted px-1 rounded">.env.example</code> como modelo)</p>
@@ -78,7 +77,7 @@ function ProtectedRoutes() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-muted dark:bg-[#0F282F]">
+      <div className="min-h-screen flex items-center justify-center bg-muted">
         <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full" />
       </div>
     );
@@ -220,7 +219,7 @@ function AuthRoute() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-muted dark:bg-[#0F282F]">
+      <div className="min-h-screen flex items-center justify-center bg-muted">
         <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full" />
       </div>
     );
@@ -232,20 +231,18 @@ function AuthRoute() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      {!env.isConfigured ? (
-        <SetupScreen />
-      ) : (
-        <QueryClientProvider client={queryClient}>
-          <BrowserRouter>
-            <Routes>
-              <Route path="/login" element={<AuthRoute />} />
-              <Route path="/*" element={<ProtectedRoutes />} />
-            </Routes>
-          </BrowserRouter>
-          <Toaster richColors position="top-right" />
-        </QueryClientProvider>
-      )}
-    </ThemeProvider>
+    !env.isConfigured ? (
+      <SetupScreen />
+    ) : (
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<AuthRoute />} />
+            <Route path="/*" element={<ProtectedRoutes />} />
+          </Routes>
+        </BrowserRouter>
+        <Toaster richColors position="top-right" />
+      </QueryClientProvider>
+    )
   );
 }
