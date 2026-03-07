@@ -12,7 +12,7 @@ import type {
 } from '../types';
 import { CACHE } from '../config/constants';
 import { MetricCard } from '../components/dashboard/MetricCard';
-import { formatSeconds, formatDateTime, channelLabel, cn } from '../lib/utils';
+import { formatSeconds, formatDateTime, channelLabel, cn, getMessageDisplayContent } from '../lib/utils';
 import { toast } from 'sonner';
 import {
   ArrowLeft,
@@ -773,6 +773,7 @@ export default function ConversationDetail() {
             {messages.map((msg) => {
               const isAgent = msg.sender_type === 'agent';
               const isSystem = msg.sender_type === 'system' || msg.sender_type === 'bot';
+              const messageText = getMessageDisplayContent(msg);
 
               return (
                 <div
@@ -795,7 +796,7 @@ export default function ConversationDetail() {
                     <p className="text-xs font-medium opacity-80 mb-1">
                       {isSystem ? 'Sistema' : isAgent ? (agent?.name ?? 'Atendente') : customerLabel}
                     </p>
-                    <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+                    <p className="text-sm whitespace-pre-wrap break-words">{messageText}</p>
                     <p
                       className={cn(
                         'text-[11px] mt-1.5',

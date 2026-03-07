@@ -1,14 +1,10 @@
 export const ROLES = {
   OWNER_ADMIN: 'owner_admin',
-  MANAGER: 'manager',
-  QA_REVIEWER: 'qa_reviewer',
   AGENT: 'agent',
 } as const;
 
 export const ROLE_LEVELS: Record<string, number> = {
   owner_admin: 90,
-  manager: 70,
-  qa_reviewer: 50,
   agent: 30,
 };
 

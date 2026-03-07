@@ -44,8 +44,8 @@ type AuditPreview = Partial<AIConversationAnalysis> & {
 };
 
 type CustomerLeadMessage = {
-  created_at: string;
-  conversation?: { customer_id?: string | null } | null;
+  started_at: string;
+  customer_id: string | null;
 };
 
 type AgentSlaMetric = {
@@ -190,14 +190,13 @@ export default function Dashboard() {
       since.setDate(since.getDate() - 30);
 
       const { data, error } = await supabase
-        .from('messages')
-        .select('created_at, conversation:conversations!inner(customer_id)')
+        .from('conversations')
+        .select('started_at, customer_id')
         .eq('company_id', company.id)
-        .eq('sender_type', 'customer')
-        .gte('created_at', since.toISOString());
+        .gte('started_at', since.toISOString());
 
       if (error) throw error;
-      return (data ?? []) as unknown as CustomerLeadMessage[];
+      return (data ?? []) as CustomerLeadMessage[];
     },
     enabled: !!company?.id,
     staleTime: CACHE.STALE_TIME,
@@ -257,9 +256,9 @@ export default function Dashboard() {
     const perDay = new Map<string, Set<string>>();
 
     for (const item of leadMessages) {
-      const customerId = firstRelation(item.conversation)?.customer_id;
+      const customerId = item.customer_id;
       if (!customerId) continue;
-      const dayKey = formatDateKey(item.created_at, businessTimezone);
+      const dayKey = formatDateKey(item.started_at, businessTimezone);
       const current = perDay.get(dayKey) ?? new Set<string>();
       current.add(customerId);
       perDay.set(dayKey, current);
@@ -287,8 +286,7 @@ export default function Dashboard() {
   const leadsMonth = useMemo(() => {
     const uniqueCustomers = new Set<string>();
     for (const item of leadMessages) {
-      const customerId = firstRelation(item.conversation)?.customer_id;
-      if (customerId) uniqueCustomers.add(customerId);
+      if (item.customer_id) uniqueCustomers.add(item.customer_id);
     }
     return uniqueCustomers.size;
   }, [leadMessages]);
@@ -472,7 +470,7 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <DashboardCard title="Leads Hoje" action={<div className="p-1.5 bg-muted rounded-full text-muted-foreground"><Settings2Icon/></div>}>
               <div className="mt-2 text-[32px] font-bold tracking-tight">{leadsToday}</div>
-              <p className="text-sm font-medium text-muted-foreground mt-1 mb-4">Pessoas unicas que mandaram mensagem hoje</p>
+              <p className="text-sm font-medium text-muted-foreground mt-1 mb-4">Novas conversas iniciadas hoje</p>
               <div className="h-16 w-full relative">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={recentTrend}>
@@ -484,7 +482,7 @@ export default function Dashboard() {
 
             <DashboardCard title="Leads no Mês" action={<div className="p-1.5 bg-muted rounded-full text-muted-foreground"><ShoppingBag size={14}/></div>}>
               <div className="mt-2 text-[32px] font-bold tracking-tight">{leadsMonth}</div>
-              <p className="text-sm font-medium text-muted-foreground mt-1 mb-4">Pessoas unicas que mandaram mensagem nos ultimos 30 dias</p>
+              <p className="text-sm font-medium text-muted-foreground mt-1 mb-4">Novas conversas iniciadas nos ultimos 30 dias</p>
               <div className="h-16 w-full relative">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={recentTrend}>
@@ -511,7 +509,7 @@ export default function Dashboard() {
                   <Tooltip
                     cursor={{ stroke: '#DDDAD7', strokeDasharray: '4 4' }}
                     contentStyle={{ borderRadius: 16, border: `1px solid ${COLORS.line}`, boxShadow: '0 16px 40px rgba(0,0,0,0.08)' }}
-                    formatter={(value) => [`${Number(value ?? 0)} pessoas`, 'Mandaram mensagem']}
+                    formatter={(value) => [`${Number(value ?? 0)} conversas`, 'Iniciadas no dia']}
                   />
                   <Area type="monotone" dataKey="conversations" stroke={COLORS.lime} strokeWidth={3} fill="url(#dashboardLeadsArea)" />
                 </AreaChart>

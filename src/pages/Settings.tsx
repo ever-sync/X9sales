@@ -80,7 +80,7 @@ type NotificationForm = {
 
 type AccessForm = {
   email: string;
-  role: 'owner_admin' | 'manager' | 'qa_reviewer' | 'agent';
+  role: 'owner_admin' | 'agent';
 };
 
 type WorkspaceUser = {
@@ -166,12 +166,29 @@ function isValidEmail(value: string) {
   return /\S+@\S+\.\S+/.test(value);
 }
 
+function isValidPhoneForBlocklist(value: string) {
+  const digits = sanitizeDigits(value);
+  return digits.length >= 8 && digits.length <= 15;
+}
+
+function formatBlockedPhone(value: string) {
+  const digits = sanitizeDigits(value);
+  if (digits.length === 11) {
+    return digits.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3');
+  }
+  if (digits.length === 10) {
+    return digits.replace(/(\d{2})(\d{4})(\d{4})/, '($1) $2-$3');
+  }
+  if (digits.length === 13 && digits.startsWith('55')) {
+    return `+55 ${digits.slice(2).replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')}`;
+  }
+  return digits;
+}
+
 function roleLabel(role: string) {
   const labels: Record<string, string> = {
-    owner_admin: 'Owner Admin',
-    manager: 'Manager',
-    qa_reviewer: 'QA Reviewer',
-    agent: 'Agent',
+    owner_admin: 'ADMIN',
+    agent: 'VISUALIZADOR',
   };
   return labels[role] ?? role;
 }
@@ -203,6 +220,8 @@ export default function Settings() {
     email: '',
     role: 'agent',
   });
+  const [blockedNumberInput, setBlockedNumberInput] = useState('');
+  const [blockedNumbers, setBlockedNumbers] = useState<string[]>([]);
   const [accountProfileForm, setAccountProfileForm] = useState<AccountProfileForm>({
     name: '',
     email: '',
@@ -230,6 +249,12 @@ export default function Settings() {
       agentMorningImprovementIdeas: !!company.settings.agent_morning_improvement_ideas,
       agentFollowUpAlerts: !!company.settings.agent_follow_up_alerts,
     });
+
+    setBlockedNumbers(
+      Array.isArray(company.settings.blocked_report_numbers)
+        ? company.settings.blocked_report_numbers.map((number) => sanitizeDigits(String(number))).filter(Boolean)
+        : [],
+    );
   }, [company]);
 
   useEffect(() => {
@@ -719,6 +744,31 @@ export default function Settings() {
     });
   };
 
+  const saveBlockedNumbers = () => {
+    updateSettingsMutation.mutate({
+      ...company.settings,
+      blocked_report_numbers: blockedNumbers,
+    });
+  };
+
+  const addBlockedNumber = () => {
+    const normalized = sanitizeDigits(blockedNumberInput);
+    if (!isValidPhoneForBlocklist(normalized)) {
+      toast.error('Informe um numero valido com DDD ou codigo do pais.');
+      return;
+    }
+    if (blockedNumbers.includes(normalized)) {
+      toast.info('Esse numero ja esta bloqueado.');
+      return;
+    }
+    setBlockedNumbers((current) => [...current, normalized].sort());
+    setBlockedNumberInput('');
+  };
+
+  const removeBlockedNumber = (value: string) => {
+    setBlockedNumbers((current) => current.filter((item) => item !== value));
+  };
+
   const handleCreateAccess = () => {
     inviteUserMutation.mutate(accessForm);
   };
@@ -747,6 +797,9 @@ export default function Settings() {
           </TabsTrigger>
           <TabsTrigger value="notifications" className="rounded-xl px-4 py-2.5">
             Notificacoes
+          </TabsTrigger>
+          <TabsTrigger value="blocking" className="rounded-xl px-4 py-2.5">
+            Bloqueio
           </TabsTrigger>
           {canManageUsers && (
             <TabsTrigger value="users" className="rounded-xl px-4 py-2.5">
@@ -1395,6 +1448,99 @@ export default function Settings() {
           </div>
         </TabsContent>
 
+        <TabsContent value="blocking" className="mt-0">
+          <div className="space-y-6 rounded-3xl border border-border bg-card p-6">
+            <div className="flex items-center gap-3 border-b border-border pb-5">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                <ShieldAlert className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-foreground">Bloqueio</h3>
+                <p className="text-sm text-muted-foreground">
+                  Nao incluir numeros pessoais ou internos do time em relatorios e analises.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+              <div className="rounded-2xl border border-border bg-background p-5">
+                <h4 className="font-semibold text-foreground">Numeros bloqueados</h4>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Esses numeros ficam fora das analises manuais e do fluxo de relatorios conectado a essa configuracao.
+                </p>
+
+                <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+                  <Input
+                    value={blockedNumberInput}
+                    onChange={(e) => setBlockedNumberInput(formatBlockedPhone(e.target.value))}
+                    placeholder="Ex: (11) 99999-9999"
+                  />
+                  <button
+                    type="button"
+                    onClick={addBlockedNumber}
+                    className="inline-flex items-center justify-center rounded-xl border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+                  >
+                    Adicionar numero
+                  </button>
+                </div>
+
+                <div className="mt-5 space-y-3">
+                  {blockedNumbers.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-border p-5 text-sm text-muted-foreground">
+                      Nenhum numero bloqueado ainda.
+                    </div>
+                  ) : (
+                    blockedNumbers.map((number) => (
+                      <div key={number} className="flex items-center justify-between gap-3 rounded-2xl border border-border px-4 py-3">
+                        <div>
+                          <p className="font-medium text-foreground">{formatBlockedPhone(number)}</p>
+                          <p className="text-xs text-muted-foreground">{number}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeBlockedNumber(number)}
+                          className="inline-flex rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                        >
+                          Remover
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-border bg-background p-5">
+                  <h4 className="font-semibold text-foreground">Resumo</h4>
+                  <div className="mt-4 grid grid-cols-1 gap-4">
+                    <div className="rounded-2xl bg-muted/40 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Total bloqueado</p>
+                      <p className="mt-2 text-2xl font-semibold text-foreground">{blockedNumbers.length}</p>
+                    </div>
+                    <div className="rounded-2xl bg-muted/40 p-4 text-sm text-muted-foreground">
+                      Use esta lista para excluir celulares pessoais, numeros internos e linhas de teste que distorcem indicadores.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-dashed border-border bg-background p-5 text-sm text-muted-foreground">
+                  O bloqueio considera o numero normalizado apenas com digitos. Se um contato aparecer com formatos diferentes, ele ainda sera tratado como o mesmo numero.
+                </div>
+
+                <button
+                  type="button"
+                  onClick={saveBlockedNumbers}
+                  disabled={updateSettingsMutation.isPending}
+                  className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Save className="h-4 w-4" />
+                  Salvar bloqueios
+                </button>
+              </div>
+            </div>
+          </div>
+        </TabsContent>
+
         {canManageUsers && (
           <TabsContent value="users" className="mt-0">
             <div className="space-y-6 rounded-3xl border border-border bg-card p-6">
@@ -1437,10 +1583,8 @@ export default function Settings() {
                         onChange={(e) => setAccessForm((current) => ({ ...current, role: e.target.value as AccessForm['role'] }))}
                         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       >
-                        <option value="owner_admin">Owner Admin</option>
-                        <option value="manager">Manager</option>
-                        <option value="qa_reviewer">QA Reviewer</option>
-                        <option value="agent">Agent</option>
+                        <option value="owner_admin">ADMIN</option>
+                        <option value="agent">VISUALIZADOR</option>
                       </select>
                     </div>
                     <div className="flex items-end">
@@ -1488,7 +1632,7 @@ export default function Settings() {
                           <div>
                             {row.kind === 'member' ? (
                               <select
-                                value={row.role}
+                                value={row.role === 'owner_admin' ? 'owner_admin' : 'agent'}
                                 onChange={(e) =>
                                   updateMemberRoleMutation.mutate({
                                     memberId: row.member_id,
@@ -1497,10 +1641,8 @@ export default function Settings() {
                                 }
                                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                               >
-                                <option value="owner_admin">Owner Admin</option>
-                                <option value="manager">Manager</option>
-                                <option value="qa_reviewer">QA Reviewer</option>
-                                <option value="agent">Agent</option>
+                                <option value="owner_admin">ADMIN</option>
+                                <option value="agent">VISUALIZADOR</option>
                               </select>
                             ) : (
                               <span className="inline-flex rounded-full bg-muted px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-foreground">

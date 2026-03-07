@@ -15,6 +15,8 @@ import {
   X,
   PanelLeftClose,
   PanelLeftOpen,
+  Sparkles,
+  Contact,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -55,8 +57,15 @@ const navGroups: NavGroup[] = [
       { to: '/agents', icon: Users, label: 'Atendentes', permission: 'agents.view_team' },
       { to: '/ranking', icon: Trophy, label: 'Ranking', permission: 'agents.view_team' },
       { to: '/audit', icon: ClipboardCheck, label: 'Auditoria', permission: 'audit.view' },
-      { to: '/ai-insights', icon: Brain, label: 'Analise IA', permission: 'dashboard.view', badge: 'IA' },
+      { to: '/ai-insights', icon: Brain, label: 'Analise IA', permission: 'audit.review', badge: 'IA' },
       { to: '/revenue-insights', icon: HandCoins, label: 'Revenue Insights', permission: 'revenue.view', badge: 'ROI' },
+    ],
+  },
+  {
+    label: 'INTELIGENCIA',
+    items: [
+      { to: '/product-intelligence', icon: Sparkles, label: 'Inteligencia de Produto', permission: 'revenue.view', badge: 'IA' },
+      { to: '/customer-intelligence', icon: Contact, label: 'Inteligencia de Cliente', permission: 'revenue.view', badge: 'IA' },
     ],
   },
   {
@@ -142,7 +151,7 @@ export function Sidebar({
         </div>
 
         {/* nav */}
-        <nav className={cn('flex-1 space-y-5 overflow-y-auto py-5', collapsed ? 'px-2' : 'px-4')}>
+        <nav className={cn('no-scrollbar flex-1 space-y-5 overflow-y-auto py-5', collapsed ? 'px-2' : 'px-4')}>
           {navGroups.map((group) => {
             const visibleItems = group.items.filter((item) => can(item.permission));
             if (visibleItems.length === 0) return null;

@@ -23,6 +23,11 @@ interface ConversationGroup {
   messages: RawMessage[];
 }
 
+function normalizePhone(value: string | null | undefined): string {
+  if (!value) return '';
+  return value.replace(/\D+/g, '');
+}
+
 export async function processMessages(): Promise<void> {
   console.log('[MessageProcessor] Starting processing cycle...');
 
@@ -129,27 +134,95 @@ async function processConversationGroup(
 
   // 1. Upsert customer
   const customerExternalId = messages.find(m => m.customer_external_id)?.customer_external_id;
+  const normalizedCustomerPhone = normalizePhone(customerExternalId);
   let customerId: string | null = null;
   if (customerExternalId) {
     const customerName = extractCustomerName(messages);
-    const { data: customer, error: customerErr } = await supabase
-      .schema('app')
-      .from('customers')
-      .upsert(
-        {
+    let existingCustomer:
+      | { id: string; external_id: string | null; name: string | null; phone: string | null }
+      | null = null;
+
+    if (normalizedCustomerPhone) {
+      const { data: customerByPhone, error: customerByPhoneErr } = await supabase
+        .schema('app')
+        .from('customers')
+        .select('id, external_id, name, phone')
+        .eq('company_id', companyId)
+        .eq('phone', normalizedCustomerPhone)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (customerByPhoneErr) {
+        throw new Error(`Failed to resolve customer by phone ${normalizedCustomerPhone}: ${customerByPhoneErr.message}`);
+      }
+
+      existingCustomer = customerByPhone ?? null;
+    }
+
+    if (!existingCustomer) {
+      const { data: customerByExternalId, error: customerByExternalIdErr } = await supabase
+        .schema('app')
+        .from('customers')
+        .select('id, external_id, name, phone')
+        .eq('company_id', companyId)
+        .eq('external_id', customerExternalId)
+        .maybeSingle();
+
+      if (customerByExternalIdErr) {
+        throw new Error(`Failed to resolve customer by external id ${customerExternalId}: ${customerByExternalIdErr.message}`);
+      }
+
+      existingCustomer = customerByExternalId ?? null;
+    }
+
+    if (existingCustomer) {
+      const updates: Record<string, string> = {};
+
+      if (normalizedCustomerPhone && existingCustomer.phone !== normalizedCustomerPhone) {
+        updates.phone = normalizedCustomerPhone;
+      }
+
+      if (customerName && existingCustomer.name !== customerName) {
+        updates.name = customerName;
+      }
+
+      if (!existingCustomer.external_id && customerExternalId) {
+        updates.external_id = customerExternalId;
+      }
+
+      if (Object.keys(updates).length > 0) {
+        const { error: updateCustomerErr } = await supabase
+          .schema('app')
+          .from('customers')
+          .update(updates)
+          .eq('id', existingCustomer.id);
+
+        if (updateCustomerErr) {
+          throw new Error(`Failed to update customer ${existingCustomer.id}: ${updateCustomerErr.message}`);
+        }
+      }
+
+      customerId = existingCustomer.id;
+    } else {
+      const { data: customer, error: customerErr } = await supabase
+        .schema('app')
+        .from('customers')
+        .insert({
           company_id: companyId,
           external_id: customerExternalId,
           ...(customerName ? { name: customerName } : {}),
-          phone: customerExternalId,
-        },
-        { onConflict: 'company_id,external_id' }
-      )
-      .select('id')
-      .single();
-    if (customerErr) {
-      throw new Error(`Failed to upsert customer ${customerExternalId}: ${customerErr.message}`);
+          phone: normalizedCustomerPhone || customerExternalId,
+        })
+        .select('id')
+        .single();
+
+      if (customerErr) {
+        throw new Error(`Failed to insert customer ${customerExternalId}: ${customerErr.message}`);
+      }
+
+      customerId = customer?.id ?? null;
     }
-    customerId = customer?.id ?? null;
   }
 
   // 2. Upsert agent

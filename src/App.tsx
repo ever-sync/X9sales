@@ -24,6 +24,8 @@ import KnowledgeBase from './pages/KnowledgeBase';
 import RegisterBusiness from './pages/RegisterBusiness';
 import MarketingLanding from './pages/MarketingLanding';
 import Ranking from './pages/Ranking';
+import CustomerIntelligence from './pages/CustomerIntelligence';
+import ProductIntelligence from './pages/ProductIntelligence';
 
 function SetupScreen() {
   return (
@@ -102,8 +104,22 @@ function ProtectedRoutes() {
               </PermissionGate>
             }
           />
-          <Route path="agents/:id" element={<AgentDetail />} />
-          <Route path="conversations" element={<Conversations />} />
+          <Route
+            path="agents/:id"
+            element={
+              <PermissionGate permission="agents.view_team" fallback={<Navigate to="/" replace />}>
+                <AgentDetail />
+              </PermissionGate>
+            }
+          />
+          <Route
+            path="conversations"
+            element={
+              <PermissionGate permission="conversations.view_own" fallback={<Navigate to="/" replace />}>
+                <Conversations />
+              </PermissionGate>
+            }
+          />
           <Route
             path="ranking"
             element={
@@ -112,7 +128,14 @@ function ProtectedRoutes() {
               </PermissionGate>
             }
           />
-          <Route path="conversations/:id" element={<ConversationDetail />} />
+          <Route
+            path="conversations/:id"
+            element={
+              <PermissionGate permission="conversations.view_own" fallback={<Navigate to="/" replace />}>
+                <ConversationDetail />
+              </PermissionGate>
+            }
+          />
           <Route
             path="alerts"
             element={
@@ -131,7 +154,11 @@ function ProtectedRoutes() {
           />
           <Route
             path="ai-insights"
-            element={<AIInsights />}
+            element={
+              <PermissionGate permission="audit.review" fallback={<Navigate to="/" replace />}>
+                <AIInsights />
+              </PermissionGate>
+            }
           />
           <Route
             path="revenue-insights"
@@ -162,6 +189,22 @@ function ProtectedRoutes() {
             element={
               <PermissionGate permission="settings.company" fallback={<Navigate to="/" replace />}>
                 <Settings />
+              </PermissionGate>
+            }
+          />
+          <Route
+            path="customer-intelligence"
+            element={
+              <PermissionGate permission="revenue.view" fallback={<Navigate to="/" replace />}>
+                <CustomerIntelligence />
+              </PermissionGate>
+            }
+          />
+          <Route
+            path="product-intelligence"
+            element={
+              <PermissionGate permission="revenue.view" fallback={<Navigate to="/" replace />}>
+                <ProductIntelligence />
               </PermissionGate>
             }
           />

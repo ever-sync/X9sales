@@ -14,6 +14,10 @@ serve(async (req) => {
       return json({ error: "company_id, member_id and role are required" }, { status: 400 });
     }
 
+    if (!["owner_admin", "agent"].includes(role)) {
+      return json({ error: "Only owner_admin and agent roles are allowed" }, { status: 400 });
+    }
+
     const { service } = await requireOwnerAdmin(authHeader, company_id);
     const { error } = await service
       .from("company_members")

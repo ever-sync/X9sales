@@ -196,7 +196,7 @@ async function invokeEdge<T>(
 export default function RevenueInsights() {
   const { companyId, company, role } = useCompany();
   const queryClient = useQueryClient();
-  const canRun = role === 'owner_admin' || role === 'manager' || role === 'qa_reviewer';
+  const canRun = role === 'owner_admin';
   const businessTimezone = company?.settings?.timezone || 'UTC';
 
   const nowDate = dateInputFromDate(new Date());

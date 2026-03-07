@@ -134,6 +134,10 @@ function jidToExternalId(jid: string): string {
   return jid.split("@")[0];
 }
 
+function normalizePhone(value: string): string {
+  return value.replace(/\D+/g, "");
+}
+
 function unwrapMessage(message?: UazApiMessage): UazApiMessage | undefined {
   if (!message) return undefined;
   if (message.ephemeralMessage?.message) return unwrapMessage(message.ephemeralMessage.message);
@@ -569,8 +573,9 @@ serve(async (req: Request) => {
       }
 
       const fromMe = resolveFromMe(entry);
-      const customerExternalId = jidToExternalId(remoteJid);
-      const conversationExternalId = `${agentId}:${customerExternalId}`;
+      const rawCustomerExternalId = jidToExternalId(remoteJid);
+      const customerExternalId = normalizePhone(rawCustomerExternalId) || rawCustomerExternalId;
+      const conversationExternalId = `whatsapp:${customerExternalId}`;
       const scopedMessageId = `${agentId}:${messageId}`;
       let messageText = rawMessage ? extractText(rawMessage) : (fallbackText ?? "[mensagem]");
       const audioUrl = resolveAudioUrl(rawMessage) ?? resolveFlatAudioUrl(entry);

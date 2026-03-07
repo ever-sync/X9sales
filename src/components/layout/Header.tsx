@@ -41,9 +41,7 @@ export function Header({ onOpenSidebar }: { onOpenSidebar: () => void }) {
 
   const roleLabels: Record<string, string> = {
     owner_admin: 'Administrador',
-    manager: 'Gerente',
-    qa_reviewer: 'Revisor QA',
-    agent: 'Atendente',
+    agent: 'Visualizador',
   };
 
   return (

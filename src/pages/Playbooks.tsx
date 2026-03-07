@@ -191,7 +191,7 @@ async function invokePublishPlaybook(accessToken: string, companyId: string, pla
 export default function Playbooks() {
   const { companyId, role } = useCompany();
   const queryClient = useQueryClient();
-  const canManage = role === 'owner_admin' || role === 'manager';
+  const canManage = role === 'owner_admin';
 
   const [showHelp, setShowHelp] = useState(false);
   const [selectedPlaybookId, setSelectedPlaybookId] = useState('');

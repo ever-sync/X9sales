@@ -37,6 +37,11 @@ interface CandidateRow {
   customer_phone: string | null;
 }
 
+interface CompanySettingsPayload {
+  timezone: string;
+  blockedReportNumbers: string[];
+}
+
 function json(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
     status,
@@ -63,6 +68,10 @@ function clampInt(value: unknown, min: number, max: number, fallback: number): n
   if (rounded < min) return min;
   if (rounded > max) return max;
   return rounded;
+}
+
+function normalizePhone(value: string | null | undefined): string {
+  return (value ?? "").replace(/\D/g, "");
 }
 
 function parseBody(value: unknown): RunRequestBody {
@@ -159,10 +168,10 @@ async function ensureAgentBelongsToCompany(
   }
 }
 
-async function getCompanyTimezone(
+async function getCompanySettings(
   supabase: ReturnType<typeof createClient>,
   companyId: string,
-): Promise<string> {
+): Promise<CompanySettingsPayload> {
   const { data, error } = await supabase
     .schema("app")
     .from("companies")
@@ -174,12 +183,21 @@ async function getCompanyTimezone(
     throw new Error(`Falha ao carregar timezone da empresa: ${error.message}`);
   }
 
+  let timezone = "UTC";
+  let blockedReportNumbers: string[] = [];
+
   if (isRecord(data) && isRecord(data.settings) && typeof data.settings.timezone === "string") {
     const tz = data.settings.timezone.trim();
-    if (tz.length > 0) return tz;
+    if (tz.length > 0) timezone = tz;
   }
 
-  return "UTC";
+  if (isRecord(data) && isRecord(data.settings) && Array.isArray(data.settings.blocked_report_numbers)) {
+    blockedReportNumbers = data.settings.blocked_report_numbers
+      .map((item) => normalizePhone(typeof item === "string" ? item : ""))
+      .filter((item) => item.length > 0);
+  }
+
+  return { timezone, blockedReportNumbers };
 }
 
 async function fetchCandidates(
@@ -267,7 +285,7 @@ serve(async (req) => {
     }
 
     await ensureAgentBelongsToCompany(supabase, companyId, agentId);
-    const companyTimezone = await getCompanyTimezone(supabase, companyId);
+    const companySettings = await getCompanySettings(supabase, companyId);
 
     if (body.action === "preview") {
       const previewLimit = clampInt(body.limit, 1, 200, 100);
@@ -276,14 +294,16 @@ serve(async (req) => {
         agentId,
         periodStart,
         periodEnd,
-        timezone: companyTimezone,
+        timezone: companySettings.timezone,
         limit: previewLimit,
       });
+      const blockedNumbers = new Set(companySettings.blockedReportNumbers);
+      const filteredCandidates = candidates.filter((candidate) => !blockedNumbers.has(normalizePhone(candidate.customer_phone)));
 
       return json(200, {
         success: true,
-        count: candidates.length,
-        candidates: candidates.map((candidate) => ({
+        count: filteredCandidates.length,
+        candidates: filteredCandidates.map((candidate) => ({
           conversation_id: candidate.conversation_id,
           started_at: candidate.started_at,
           status: candidate.status,
@@ -308,9 +328,11 @@ serve(async (req) => {
       agentId,
       periodStart,
       periodEnd,
-      timezone: companyTimezone,
+      timezone: companySettings.timezone,
       limit: null,
     });
+    const blockedNumbers = new Set(companySettings.blockedReportNumbers);
+    const allCandidates = allCandidatesRaw.filter((candidate) => !blockedNumbers.has(normalizePhone(candidate.customer_phone)));
 
     let totalCandidates = allCandidates.length;
     let conversationId: string | null = null;
@@ -344,7 +366,7 @@ serve(async (req) => {
         conversation_id: conversationId,
         period_start: periodStart,
         period_end: periodEnd,
-        company_timezone: companyTimezone,
+        company_timezone: companySettings.timezone,
         status: "queued",
         total_candidates: totalCandidates,
       })

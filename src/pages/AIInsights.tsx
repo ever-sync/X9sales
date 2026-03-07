@@ -203,7 +203,7 @@ export default function AIInsights() {
   const { companyId, company, role } = useCompany();
   const queryClient = useQueryClient();
   const reviewSectionRef = useRef<HTMLDivElement | null>(null);
-  const canRunManualAnalysis = role === 'owner_admin' || role === 'manager' || role === 'qa_reviewer';
+  const canRunManualAnalysis = role === 'owner_admin';
   const timezone = company?.settings?.timezone || 'UTC';
   const defaultPeriod = useMemo(() => getDefaultPeriod(), []);
 

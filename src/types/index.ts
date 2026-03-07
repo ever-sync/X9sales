@@ -1,7 +1,7 @@
 // ============================================================
 // RBAC Types
 // ============================================================
-export type AppRole = 'owner_admin' | 'manager' | 'qa_reviewer' | 'agent';
+export type AppRole = 'owner_admin' | 'agent';
 
 export interface CompanyMember {
   id: string;
@@ -38,6 +38,7 @@ export interface CompanySettings {
   admin_report_month_day?: number;
   agent_morning_improvement_ideas?: boolean;
   agent_follow_up_alerts?: boolean;
+  blocked_report_numbers?: string[];
 }
 
 export interface BillingSubscription {

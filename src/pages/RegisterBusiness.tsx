@@ -1,28 +1,68 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Building2, ArrowRight, Loader2, LogOut } from 'lucide-react';
+import { toast } from 'sonner';
 import { supabase } from '../integrations/supabase/client';
+import { useAuth } from '../hooks/useAuth';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '../components/ui/card';
-import { toast } from 'sonner';
-import { Building2, ArrowRight, Loader2, LogOut } from 'lucide-react';
+
+const SIGNUP_PROFILE_STORAGE_KEY = 'monitoraia_signup_profile';
+
+function sanitizeDigits(value: string) {
+  return value.replace(/\D/g, '');
+}
+
+function formatCnpj(value: string) {
+  return sanitizeDigits(value)
+    .slice(0, 14)
+    .replace(/^(\d{2})(\d)/, '$1.$2')
+    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d)/, '.$1/$2')
+    .replace(/(\d{4})(\d)/, '$1-$2');
+}
 
 export default function RegisterBusiness() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
+  const [documentNumber, setDocumentNumber] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    const rawLocal = localStorage.getItem(SIGNUP_PROFILE_STORAGE_KEY);
+    const localSignup = rawLocal ? JSON.parse(rawLocal) : null;
+    const metadata = user?.user_metadata ?? {};
+
+    const nextName =
+      (typeof metadata.company_name_seed === 'string' && metadata.company_name_seed) ||
+      localSignup?.companyName ||
+      '';
+    const nextSlug =
+      (typeof metadata.company_slug_seed === 'string' && metadata.company_slug_seed) ||
+      localSignup?.companySlug ||
+      '';
+    const nextDocument =
+      (typeof metadata.company_document_number === 'string' && metadata.company_document_number) ||
+      localSignup?.cnpj ||
+      '';
+
+    if (nextName && !name) setName(nextName);
+    if (nextSlug && !slug) setSlug(nextSlug);
+    if (nextDocument && !documentNumber) setDocumentNumber(formatCnpj(nextDocument));
+  }, [documentNumber, name, slug, user]);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     navigate('/login');
   };
-  const [name, setName] = useState('');
-  const [slug, setSlug] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Auto-generate slug from name
-  const handleNameChange = (val: string) => {
-    setName(val);
-    const generatedSlug = val
+  const handleNameChange = (value: string) => {
+    setName(value);
+    const generatedSlug = value
       .toLowerCase()
       .trim()
       .replace(/[^\w\s-]/g, '')
@@ -34,28 +74,44 @@ export default function RegisterBusiness() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !slug) {
-      toast.error('Por favor, preencha todos os campos.');
+      toast.error('Por favor, preencha todos os campos obrigatorios.');
       return;
     }
 
     setIsSubmitting(true);
     setErrorMsg(null);
+
     try {
-      console.log('[RegisterBusiness] calling RPC register_company', { name, slug });
       const { data, error } = await supabase.rpc('register_company', {
         p_name: name,
         p_slug: slug,
       });
-      console.log('[RegisterBusiness] RPC result:', { data, error });
 
       if (error) throw error;
 
+      const cleanedDocument = sanitizeDigits(documentNumber);
+      if (cleanedDocument) {
+        const { error: settingsError } = await supabase
+          .from('companies')
+          .update({
+            settings: {
+              legal_name: name,
+              document_type: 'cnpj',
+              document_number: cleanedDocument,
+              logo_url: '',
+            },
+          } as never)
+          .eq('id', data as string);
+
+        if (settingsError) throw settingsError;
+      }
+
       toast.success('Empresa cadastrada com sucesso!');
-      localStorage.removeItem('monitoraia_company_id');
+      localStorage.removeItem(SIGNUP_PROFILE_STORAGE_KEY);
+      localStorage.setItem('monitoraia_company_id', data as string);
       window.location.href = '/';
     } catch (error: any) {
       const msg = error?.message || JSON.stringify(error) || 'Erro desconhecido';
-      console.error('[RegisterBusiness] error:', msg, error);
       setErrorMsg(msg);
     } finally {
       setIsSubmitting(false);
@@ -63,21 +119,19 @@ export default function RegisterBusiness() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted p-4">
-      <Card className="max-w-md w-full shadow-lg border-border">
-        <CardHeader className="text-center space-y-1">
-          <div className="w-12 h-12 bg-accent text-primary rounded-xl flex items-center justify-center mx-auto mb-2">
+    <div className="flex min-h-screen items-center justify-center bg-muted p-4">
+      <Card className="w-full max-w-md border-border shadow-lg">
+        <CardHeader className="space-y-1 text-center">
+          <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-accent text-primary">
             <Building2 className="h-6 w-6" />
           </div>
           <CardTitle className="text-2xl font-bold text-foreground">Cadastre sua Empresa</CardTitle>
-          <CardDescription>
-            Configure sua organização para começar a monitorar seus atendimentos.
-          </CardDescription>
+          <CardDescription>Revise os dados iniciais da empresa para concluir o acesso ao workspace.</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4 pt-4">
             {errorMsg && (
-              <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 break-all">
+              <div className="break-all rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                 <strong>Erro:</strong> {errorMsg}
               </div>
             )}
@@ -95,7 +149,7 @@ export default function RegisterBusiness() {
             </div>
             <div className="space-y-2">
               <label htmlFor="slug" className="text-sm font-medium text-foreground">
-                Slug (Identificador Único)
+                Slug
               </label>
               <Input
                 id="slug"
@@ -104,17 +158,24 @@ export default function RegisterBusiness() {
                 onChange={(e) => setSlug(e.target.value)}
                 required
               />
-              <p className="text-[10px] text-muted-foreground italic">
-                * Este identificador será usado em URLs e integrações.
+              <p className="text-[10px] italic text-muted-foreground">
+                Este identificador sera usado em URLs e integracoes.
               </p>
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="document" className="text-sm font-medium text-foreground">
+                CNPJ
+              </label>
+              <Input
+                id="document"
+                placeholder="00.000.000/0000-00"
+                value={documentNumber}
+                onChange={(e) => setDocumentNumber(formatCnpj(e.target.value))}
+              />
             </div>
           </CardContent>
           <CardFooter className="flex flex-col pt-2">
-            <Button 
-              type="submit" 
-              className="w-full bg-primary hover:bg-primary/90 h-11"
-              disabled={isSubmitting}
-            >
+            <Button type="submit" className="h-11 w-full bg-primary hover:bg-primary/90" disabled={isSubmitting}>
               {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -130,7 +191,7 @@ export default function RegisterBusiness() {
             <Button
               type="button"
               variant="ghost"
-              className="mt-2 text-red-400 hover:text-red-600 text-xs gap-1.5"
+              className="mt-2 gap-1.5 text-xs text-red-400 hover:text-red-600"
               onClick={handleSignOut}
             >
               <LogOut className="h-3.5 w-3.5" />

@@ -4,7 +4,7 @@ import { corsHeaders, getBaseUrl, getResendApiKey, json, requireOwnerAdmin } fro
 type InvitePayload = {
   company_id: string;
   email: string;
-  role: "owner_admin" | "manager" | "qa_reviewer" | "agent";
+  role: "owner_admin" | "agent";
 };
 
 async function sendInviteEmail(email: string, inviteUrl: string, role: string, companyName: string) {
@@ -53,6 +53,10 @@ serve(async (req) => {
 
     if (!payload.company_id || !email || !payload.role) {
       return json({ error: "company_id, email and role are required" }, { status: 400 });
+    }
+
+    if (!["owner_admin", "agent"].includes(payload.role)) {
+      return json({ error: "Only owner_admin and agent roles are allowed" }, { status: 400 });
     }
 
     const { service, user } = await requireOwnerAdmin(authHeader, payload.company_id);

@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import type { Message } from '../types';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -65,4 +66,27 @@ export function severityColor(severity: string): string {
     critical: 'text-red-600 bg-red-50',
   };
   return colors[severity] ?? 'text-muted-foreground bg-muted';
+}
+
+export function normalizePhone(value: string | null | undefined): string {
+  if (!value) return '';
+  return value.replace(/\D+/g, '');
+}
+
+export function getMessageDisplayContent(message: Pick<Message, 'content' | 'content_type' | 'metadata'>): string {
+  const content = message.content?.trim();
+  if (content) return content;
+
+  const audio = message.metadata?.audio;
+  const transcript = audio?.text?.trim();
+  if (transcript) return transcript;
+
+  if (message.content_type === 'audio') {
+    if (audio?.transcription_status === 'pending') return '[Audio em transcricao]';
+    if (audio?.transcription_status === 'failed') return '[Falha na transcricao do audio]';
+    if (audio?.transcription_status === 'no_speech') return '[Audio sem fala detectada]';
+    return '[Audio sem transcricao]';
+  }
+
+  return '[Mensagem sem conteudo]';
 }
