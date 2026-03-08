@@ -24,7 +24,9 @@ export async function aggregateDailyMetrics(): Promise<void> {
   }
 
   console.log('[DailyAggregator] Aggregation complete. Refreshing materialized views...');
-  const { error: refreshError } = await supabase.rpc('refresh_dashboard_views');
+  const { error: refreshError } = await supabase
+    .schema('app')
+    .rpc('refresh_dashboard_views');
   if (refreshError) {
     console.error('[DailyAggregator] Failed to refresh views:', refreshError.message);
   } else {

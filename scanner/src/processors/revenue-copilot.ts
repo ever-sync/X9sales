@@ -70,8 +70,10 @@ interface DealSignalAnalysis {
 
 function coerceRpcSingleRow<T>(value: unknown): T | null {
   if (!value) return null;
-  if (Array.isArray(value)) return (value[0] ?? null) as T | null;
-  return value as T;
+  const row = Array.isArray(value) ? (value[0] ?? null) : value;
+  if (!row || typeof row !== 'object') return null;
+  if ('id' in row && !((row as { id?: unknown }).id)) return null;
+  return row as T;
 }
 
 function trimErrorMessage(value: unknown): string {
