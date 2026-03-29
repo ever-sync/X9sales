@@ -6,6 +6,7 @@ import { detectSpam } from './processors/spam-detector';
 import { processAiAnalysisJobs } from './processors/ai-analyzer';
 import { processRevenueCopilotJobs } from './processors/revenue-copilot';
 import { processManagerFeedbackJobs } from './processors/manager-feedback';
+import { processSellerAuditRuns } from './processors/seller-audit';
 import { sendDailyDigest } from './processors/daily-digest';
 import { sendWeeklyAgentFeedback } from './processors/weekly-agent-feedback';
 import { syncAgentAvatars } from './processors/avatar-sync';
@@ -17,6 +18,7 @@ let isDetectingSpam = false;
 let isAnalyzing = false;
 let isRevenueCopilot = false;
 let isManagerCopilot = false;
+let isSellerAuditing = false;
 let isDigesting = false;
 let isWeeklyFeedback = false;
 let isAvatarSync = false;
@@ -29,6 +31,7 @@ console.log(`Spam detection cron: ${config.spamDetectorCron}`);
 console.log(`AI manual jobs cron: ${config.aiJobsCron}`);
 console.log(`Revenue copilot cron: ${config.revenueCopilotCron}`);
 console.log(`Manager copilot cron: ${config.managerCopilotCron}`);
+console.log(`Seller audit cron: ${config.aiJobsCron}`);
 console.log(`Morning coaching cron: ${config.morningCoachingCron}`);
 console.log(`Batch size: ${config.batchSize}`);
 console.log('Starting...\n');
@@ -135,6 +138,23 @@ cron.schedule(config.managerCopilotCron, async () => {
   }
 });
 
+// Seller audit runs: canonical monthly manager-grade audits, reusing the same queue cadence as AI jobs
+cron.schedule(config.aiJobsCron, async () => {
+  if (isSellerAuditing) {
+    console.log('[Scheduler] Seller audit processor still running, skipping...');
+    return;
+  }
+
+  isSellerAuditing = true;
+  try {
+    await processSellerAuditRuns();
+  } catch (err) {
+    console.error('[Scheduler] Seller audit processor failed:', err);
+  } finally {
+    isSellerAuditing = false;
+  }
+});
+
 // Daily Digest: runs exactly once at configured time (default 18:00)
 cron.schedule(config.dailyDigestCron, async () => {
   if (isDigesting) {
@@ -207,6 +227,7 @@ cron.schedule('0 10 * * 0', async () => {
     await aggregateDailyMetrics();
     await detectSpam();
     await processAiAnalysisJobs();
+    await processSellerAuditRuns();
     await processRevenueCopilotJobs();
     await processManagerFeedbackJobs();
     await syncAgentAvatars();

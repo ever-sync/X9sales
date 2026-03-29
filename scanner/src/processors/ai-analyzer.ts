@@ -1,8 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { config, supabase } from '../config';
+import { queueSellerAuditRun } from './seller-audit';
 
 const MODEL = 'claude-haiku-4-5-20251001';
-const PROMPT_VERSION = 'v3-enhanced';
+const PROMPT_VERSION = 'v4-commercial-audit';
 const OPENAI_EMBEDDING_MODEL = 'text-embedding-3-small';
 const MAX_ERROR_MESSAGE_LENGTH = 2000;
 
@@ -95,6 +96,30 @@ interface WeightedBreakdown {
   closing_weighted: number;
 }
 
+interface BehaviorFlags {
+  close_attempted: boolean;
+  follow_up_present: boolean;
+  real_diagnosis: boolean;
+  passive_response: boolean;
+  objection_mishandled: boolean;
+  abandoned_without_next_step: boolean;
+}
+
+interface CompetencyScores {
+  opening: number | null;
+  timing: number | null;
+  authority: number | null;
+  follow_up: number | null;
+  closing: number | null;
+}
+
+interface SeverityFinding {
+  tag: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  evidence: string;
+  impact: string;
+}
+
 interface AIAnalysisResult {
   quality_score: number | null;
   predicted_csat: number | null;
@@ -122,6 +147,10 @@ interface AIAnalysisResult {
   diagnosis: ConversationDiagnosis;
   pillar_evidence: Record<string, string>;
   failure_tags: string[];
+  behavior_flags?: BehaviorFlags | null;
+  competency_scores?: CompetencyScores | null;
+  severity_findings?: SeverityFinding[] | null;
+  seller_profile_hint?: string | null;
 }
 
 interface ConversationForAnalysis {
@@ -226,6 +255,45 @@ function normalizePillarEvidence(value: unknown): Record<string, string> {
   return result;
 }
 
+function normalizeBehaviorFlags(value: unknown): BehaviorFlags {
+  const obj = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  return {
+    close_attempted: normalizeBoolean(obj.close_attempted, false),
+    follow_up_present: normalizeBoolean(obj.follow_up_present, false),
+    real_diagnosis: normalizeBoolean(obj.real_diagnosis, false),
+    passive_response: normalizeBoolean(obj.passive_response, false),
+    objection_mishandled: normalizeBoolean(obj.objection_mishandled, false),
+    abandoned_without_next_step: normalizeBoolean(obj.abandoned_without_next_step, false),
+  };
+}
+
+function normalizeCompetencyScores(value: unknown): CompetencyScores {
+  const obj = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  return {
+    opening: normalizeSmallint(obj.opening, 0, 10),
+    timing: normalizeSmallint(obj.timing, 0, 10),
+    authority: normalizeSmallint(obj.authority, 0, 10),
+    follow_up: normalizeSmallint(obj.follow_up, 0, 10),
+    closing: normalizeSmallint(obj.closing, 0, 10),
+  };
+}
+
+function normalizeSeverityFindings(value: unknown): SeverityFinding[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+    .map((item) => ({
+      tag: typeof item.tag === 'string' ? item.tag.slice(0, 80) : '',
+      severity: ['critical', 'high', 'medium', 'low'].includes(item.severity as string)
+        ? (item.severity as SeverityFinding['severity'])
+        : 'medium',
+      evidence: typeof item.evidence === 'string' ? item.evidence.slice(0, 500) : '',
+      impact: typeof item.impact === 'string' ? item.impact.slice(0, 300) : '',
+    }))
+    .filter((item) => item.tag.length > 0)
+    .slice(0, 10);
+}
+
 const PILLAR_WEIGHTS = {
   communication: 0.30,
   investigation: 0.25,
@@ -304,6 +372,10 @@ function normalizeAnalysis(result: AIAnalysisResult): AIAnalysisResult {
     diagnosis: normalizeDiagnosis(result.diagnosis),
     pillar_evidence: normalizePillarEvidence(result.pillar_evidence),
     failure_tags: normalizeStringArray(result.failure_tags).slice(0, 15),
+    behavior_flags: normalizeBehaviorFlags(result.behavior_flags),
+    competency_scores: normalizeCompetencyScores(result.competency_scores),
+    severity_findings: normalizeSeverityFindings(result.severity_findings),
+    seller_profile_hint: typeof result.seller_profile_hint === 'string' ? result.seller_profile_hint.slice(0, 120) : '',
   };
 }
 
@@ -351,6 +423,7 @@ async function runAiAnalysisJob(job: AIAnalysisJobRow): Promise<void> {
 
     if (candidates.length === 0) {
       await completeJob(job.id, counters, 0);
+      await maybeQueueSellerAudit(job);
       console.log(`[AIAnalyzer] Job ${job.id} completed with zero candidates.`);
       return;
     }
@@ -386,6 +459,7 @@ async function runAiAnalysisJob(job: AIAnalysisJobRow): Promise<void> {
     }
 
     await completeJob(job.id, counters, candidates.length);
+    await maybeQueueSellerAudit(job);
     console.log(
       `[AIAnalyzer] Job ${job.id} completed: analyzed=${counters.analyzed_count}, skipped=${counters.skipped_count}, failed=${counters.failed_count}`,
     );
@@ -393,6 +467,28 @@ async function runAiAnalysisJob(job: AIAnalysisJobRow): Promise<void> {
     const message = trimErrorMessage(error);
     console.error(`[AIAnalyzer] Job ${job.id} failed: ${message}`);
     await failJob(job.id, counters, message);
+  }
+}
+
+async function maybeQueueSellerAudit(job: AIAnalysisJobRow): Promise<void> {
+  if (job.scope !== 'all' || !job.agent_id) return;
+
+  try {
+    const { reused } = await queueSellerAuditRun({
+      companyId: job.company_id,
+      requestedByUserId: job.requested_by_user_id,
+      agentId: job.agent_id,
+      periodStart: job.period_start,
+      periodEnd: job.period_end,
+      companyTimezone: job.company_timezone,
+      source: 'ai_analysis_auto',
+    });
+
+    console.log(
+      `[AIAnalyzer] Seller audit ${reused ? 'reused' : 'queued'} for agent ${job.agent_id} on job ${job.id}.`,
+    );
+  } catch (error) {
+    console.error(`[AIAnalyzer] Failed to queue seller audit for job ${job.id}:`, error);
   }
 }
 
@@ -599,7 +695,10 @@ async function callClaudeHaiku(
     contextBlock +
     `Transcript:\n${transcript}\n\n` +
     '---\n' +
-    'Analise a conversa e retorne este JSON com avaliacao estruturada:\n\n' +
+    'Analise a conversa como uma IA especialista em performance comercial por WhatsApp.\n' +
+    'Seu tom aqui deve ser tecnico, objetivo e formativo, porque esta analise pode ser lida por operacao e vendedor.\n' +
+    'Avalie especificamente: abertura, tempo e ritmo, diagnostico comercial, conducao, construcao de valor, autoridade e confianca, objecoes, fechamento, follow-up e comunicacao.\n' +
+    'Preserve compatibilidade com o schema abaixo e retorne exatamente este JSON:\n\n' +
     '{\n' +
     '  "predicted_csat": <numero 1-5>,\n' +
     '  "is_sales_conversation": <true/false>,\n' +
@@ -635,6 +734,37 @@ async function callClaudeHaiku(
     '    "interest_level": "<baixo, medio ou alto>"\n' +
     '  },\n' +
     '\n' +
+    '  // FLAGS DE COMPORTAMENTO (obrigatorio mesmo se false)\n' +
+    '  "behavior_flags": {\n' +
+    '    "close_attempted": <true/false>,\n' +
+    '    "follow_up_present": <true/false>,\n' +
+    '    "real_diagnosis": <true/false>,\n' +
+    '    "passive_response": <true/false>,\n' +
+    '    "objection_mishandled": <true/false>,\n' +
+    '    "abandoned_without_next_step": <true/false>\n' +
+    '  },\n' +
+    '\n' +
+    '  // COMPETENCIAS COMPLEMENTARES (0-10)\n' +
+    '  "competency_scores": {\n' +
+    '    "opening": <0-10>,\n' +
+    '    "timing": <0-10>,\n' +
+    '    "authority": <0-10>,\n' +
+    '    "follow_up": <0-10>,\n' +
+    '    "closing": <0-10>\n' +
+    '  },\n' +
+    '\n' +
+    '  // FINDINGS POR GRAVIDADE\n' +
+    '  "severity_findings": [\n' +
+    '    {\n' +
+    '      "tag": "<nome curto da falha ou acerto relevante>",\n' +
+    '      "severity": "<critical|high|medium|low>",\n' +
+    '      "evidence": "<trecho real curto da conversa>",\n' +
+    '      "impact": "<qual o impacto comercial observado>"\n' +
+    '    }\n' +
+    '  ],\n' +
+    '\n' +
+    '  "seller_profile_hint": "<perfil curto, ex: educado, mas passivo>",\n' +
+    '\n' +
     '  // PONTOS FORTES E MELHORIAS\n' +
     '  "strengths": [<2 a 4 pontos fortes observados, frases curtas e especificas>],\n' +
     '  "improvements": [<2 a 4 pontos a melhorar, frases curtas e acionaveis>],\n' +
@@ -669,6 +799,9 @@ async function callClaudeHaiku(
     'IMPORTANTE:\n' +
     '- NAO inclua quality_score no JSON (sera calculado automaticamente)\n' +
     '- Seja especifico nos pontos fortes/melhorias, evite frases genericas como "foi educado"\n' +
+    '- Nao confunda simpatia com competencia comercial\n' +
+    '- Se a conversa tiver comportamento passivo, sem proximo passo ou diagnostico raso, isso deve aparecer nas flags e nas findings\n' +
+    '- Se houver objecao mal trabalhada, marque objection_mishandled=true\n' +
     '- Em missed_opportunities, cite o trecho real da conversa\n' +
     '- Em pillar_evidence, cite trechos reais que comprovem o score dado\n' +
     '- failure_tags devem usar APENAS as tags da lista fornecida';
@@ -713,6 +846,10 @@ async function saveAnalysis(
     pillar_evidence: normalized.pillar_evidence,
     weighted_breakdown: weightedBreakdown,
     failure_tags: normalized.failure_tags,
+    behavior_flags: normalized.behavior_flags,
+    competency_scores: normalized.competency_scores,
+    severity_findings: normalized.severity_findings,
+    seller_profile_hint: normalized.seller_profile_hint || null,
   };
 
   const { error } = await supabase

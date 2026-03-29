@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo } from 'react';
+﻿import { useEffect, useRef, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
@@ -17,20 +17,18 @@ import {
   Medal,
   ShieldAlert,
   ShieldCheck,
-  Sparkles,
 } from 'lucide-react';
 import { useCompany } from '../contexts/CompanyContext';
 import { useBlockedPhones } from '../hooks/useBlockedPhones';
 import { supabase } from '../integrations/supabase/client';
 import { useAuth } from '../hooks/useAuth';
 import { Button } from '../components/ui/button';
-import { Progress } from '../components/ui/progress';
 import { BadgePill } from '../components/gamification/BadgePill';
 import { cn } from '../lib/utils';
 import type { AIConversationAnalysis, AgentBadge, StructuredAnalysis } from '../types';
 import gsap from 'gsap';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// Types
 
 type DailyMetrics = {
   conversations_total: number;
@@ -175,7 +173,7 @@ function topEntries(counts: Map<string, number>, limit: number) {
     .map(([label, count]) => ({ label, count }));
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// Component
 
 function AgentPanelCard({
   children,
@@ -231,7 +229,7 @@ export default function AgentDashboard() {
   const { user } = useAuth();
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // ── Queries ────────────────────────────────────────────────────────────────
+  // Queries
 
   const { data: myAgent } = useQuery({
     queryKey: ['my-agent-profile', company?.id, user?.id],
@@ -390,7 +388,7 @@ export default function AgentDashboard() {
     staleTime: 1000 * 60 * 10,
   });
 
-  // ── Animations ─────────────────────────────────────────────────────────────
+  // Animations
 
   useEffect(() => {
     if (containerRef.current) {
@@ -407,7 +405,7 @@ export default function AgentDashboard() {
     }
   }, [myAgent]);
 
-  // ── Computed ───────────────────────────────────────────────────────────────
+  // Computed
 
   const weeklyCoaching = useMemo(() => {
     const scoredAnalyses = recentAnalyses.filter((analysis) => analysis.quality_score != null);
@@ -540,7 +538,7 @@ export default function AgentDashboard() {
         col: 'bg-indigo-500',
       },
       {
-        label: 'Vendas (mês)',
+        label: 'Vendas (mÃƒÂªs)',
         cur: totalSalesQty,
         target: 5,
         col: 'bg-emerald-500',
@@ -627,89 +625,154 @@ export default function AgentDashboard() {
     <div ref={containerRef} className="space-y-6 pb-24 overflow-hidden">
 
       {/* 1. Header Hero */}
-      <div className="reveal-item px-4 md:px-0 pt-6">
-        <div className="relative group">
-          <div className="absolute -inset-1 bg-linear-to-r from-primary/50 to-secondary/50 rounded-[2.5rem] blur opacity-25 group-hover:opacity-40 transition duration-1000 group-hover:duration-200"></div>
-          <div className="relative bg-white dark:bg-slate-950 border border-slate-200/60 dark:border-slate-800/60 p-8 rounded-[2.5rem] shadow-2xl overflow-hidden">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="px-3 py-1 bg-primary/10 text-primary text-[10px] font-black uppercase tracking-widest rounded-full border border-primary/20">
-                    Modo Alta Performance
+      <section className="reveal-item px-4 pt-6 md:px-0">
+        <div className="relative overflow-hidden rounded-[34px] border border-border bg-card p-6 shadow-[0_18px_60px_rgba(15,23,42,0.05)] md:p-8">
+          <div className="absolute right-0 top-0 h-44 w-44 rounded-full bg-[radial-gradient(circle_at_center,rgba(89,83,251,0.16),transparent_68%)]" />
+          <div className="absolute bottom-0 left-0 h-32 w-32 rounded-full bg-[radial-gradient(circle_at_center,rgba(220,254,27,0.22),transparent_70%)]" />
+
+          <div className="relative grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_380px]">
+            <div className="max-w-3xl">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center rounded-full border border-secondary/10 bg-accent px-3 py-1 text-[11px] font-bold uppercase tracking-[0.22em] text-secondary">
+                  Painel do atendente
+                </span>
+                <span
+                  className={cn(
+                    'inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-[0.22em]',
+                    hasPriorityRisk ? 'bg-red-500/10 text-red-500' : 'bg-emerald-500/10 text-emerald-600',
+                  )}
+                >
+                  {hasPriorityRisk ? <ShieldAlert size={14} /> : <ShieldCheck size={14} />}
+                  {hasPriorityRisk ? 'Atencao imediata' : 'Operacao estavel'}
+                </span>
+                {priorityLabel && (
+                  <span className="inline-flex items-center rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.22em] text-primary">
+                    Foco: {priorityLabel}
                   </span>
-                  <span className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-500 text-[10px] font-black uppercase tracking-widest rounded-full">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    Online
-                  </span>
-                </div>
-                <h1 className="text-4xl sm:text-5xl font-black tracking-tight text-foreground mb-1 italic">
-                  Olá, {myAgent?.name?.split(' ')[0] ?? 'Vendedor'}! 🚀
-                </h1>
-                <p className="text-muted-foreground font-bold flex items-center gap-2">
-                  {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
-                </p>
-                {myBadges.length > 0 && (
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {myBadges.map((badge) => (
-                      <BadgePill key={badge.badge_key} badge={badge} />
-                    ))}
-                  </div>
                 )}
               </div>
-              <div className="flex shrink-0">
-                <Link to="/sales" className="group rounded-2xl p-[2px] bg-gradient-to-br from-primary to-emerald-400 hover:scale-105 active:scale-95 transition-all shadow-xl shadow-primary/20">
-                  <div className="bg-primary hover:bg-transparent text-primary-foreground px-8 py-5 rounded-[calc(1rem-2px)] flex items-center justify-center gap-3 font-black text-sm uppercase tracking-tighter transition-all">
-                    <Zap size={20} fill="currentColor" strokeWidth={0} />
-                    LANÇAR VENDA AGORA
-                  </div>
+
+              <h1 className="mt-4 text-[34px] font-bold leading-none tracking-[-0.05em] text-foreground md:text-[44px]">
+                {firstName}, sua operacao esta em foco
+              </h1>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground md:text-base">
+                Use este painel para atacar a fila certa, manter o SLA em dia e conduzir as conversas com maior chance de avancar.
+              </p>
+              <p className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">{todayLabel}</p>
+
+              <div className="mt-6 flex flex-wrap items-center gap-3">
+                <Link
+                  to="/conversations"
+                  className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground shadow-sm transition-transform hover:scale-[1.01] hover:bg-primary/90"
+                >
+                  Abrir fila agora
+                  <ArrowUpRight size={16} />
+                </Link>
+                <Link
+                  to="/ai-insights"
+                  className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-5 py-3 text-sm font-semibold text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-secondary"
+                >
+                  Ver analises
                 </Link>
               </div>
+
+              {myBadges.length > 0 && (
+                <div className="mt-6 flex flex-wrap gap-2">
+                  {myBadges.slice(0, 3).map((badge) => (
+                    <BadgePill key={badge.badge_key} badge={badge} />
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Quick Metrics Bar */}
-            <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4 py-6 border-t border-slate-100 dark:border-slate-800/50">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-1">Receita (mês)</p>
-                <p className="text-2xl font-black text-foreground">{fmtCurrency(metrics.revenue)}</p>
+            <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+              {heroHighlights.map((item) => (
+                <HeroHighlight
+                  key={item.label}
+                  label={item.label}
+                  value={item.value}
+                  hint={item.hint}
+                  tone={item.tone}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="relative mt-8 grid grid-cols-2 gap-4 border-t border-border/60 pt-6 md:grid-cols-4">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Receita no mes</p>
+              <p className="mt-2 text-2xl font-bold tracking-[-0.04em] text-foreground">{fmtCurrency(metrics.revenue)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">margem acumulada nas suas vendas</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Vendas hoje</p>
+              <p className="mt-2 text-2xl font-bold tracking-[-0.04em] text-foreground">{metrics.won}</p>
+              <p className="mt-1 text-xs text-muted-foreground">fechamentos registrados no dia</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Posicao no time</p>
+              <div className="mt-2 flex items-center gap-2">
+                <p className="text-2xl font-bold tracking-[-0.04em] text-amber-500">{myRank != null ? `#${myRank}` : '--'}</p>
+                {myRank != null && myRank <= 3 && <Trophy size={18} className="fill-amber-500 text-amber-500" />}
               </div>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-1">Vendas Hoje</p>
-                <p className="text-2xl font-black text-foreground">{metrics.won}</p>
-              </div>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-1">Ranking no Time</p>
-                <div className="flex items-center gap-2">
-                  <p className="text-2xl font-black text-amber-500">{myRank != null ? `${myRank}º` : '—'}</p>
-                  {myRank != null && myRank <= 3 && <Trophy size={18} className="text-amber-500 fill-amber-500" />}
-                </div>
-              </div>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-1">Qualidade IA</p>
-                <p className="text-2xl font-black text-indigo-500">{aiScore > 0 ? `${aiScore}/100` : '—'}</p>
-              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {allRankings.length > 0 ? `${allRankings.length} pessoas no ranking atual` : 'ranking ainda sem dados'}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Qualidade IA</p>
+              <p className="mt-2 text-2xl font-bold tracking-[-0.04em] text-secondary">{aiScoreRounded > 0 ? `${aiScoreRounded}/100` : '--'}</p>
+              <p className="mt-1 text-xs text-muted-foreground">media das conversas analisadas</p>
             </div>
           </div>
         </div>
-      </div>
-
-      {/* 2. Grid de Operação */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 px-4 md:px-0">
+      </section>
+      {/* 2. Grid de Operacao */}
+      <div className="grid grid-cols-1 gap-4 px-4 md:px-0 lg:grid-cols-4">
         {[
-          { label: 'Leads Hoje', val: metrics.leadsReceived, icon: UserPlus, color: 'text-blue-500', bg: 'bg-blue-500/10' },
-          { label: 'Deals Ativos', val: metrics.started, icon: MessageSquare, color: 'text-indigo-500', bg: 'bg-indigo-500/10' },
-          { label: 'Alto Risco', val: metrics.noResponse, icon: Clock, color: 'text-red-500', bg: 'bg-red-500/10' },
-          { label: 'Follow-ups', val: metrics.followUps, icon: AlertCircle, color: 'text-amber-500', bg: 'bg-amber-500/10' },
-        ].map((item, i) => (
-          <div key={i} className="reveal-item bg-card border border-slate-200/60 dark:border-slate-800/60 p-5 rounded-3xl shadow-sm hover:border-primary/40 transition-colors">
-            <div className={`${item.bg} w-10 h-10 rounded-xl flex items-center justify-center mb-4`}>
+          {
+            label: 'Leads de hoje',
+            value: metrics.leadsReceived,
+            detail: metrics.leadsReceived > 0 ? 'novas conversas na fila' : 'nenhuma nova entrada hoje',
+            icon: UserPlus,
+            bg: 'bg-sky-500/10',
+            color: 'text-sky-600',
+          },
+          {
+            label: 'Negociacoes ativas',
+            value: metrics.started,
+            detail: metrics.started > 0 ? 'clientes com potencial em curso' : 'sem negociacoes abertas',
+            icon: MessageSquare,
+            bg: 'bg-secondary/10',
+            color: 'text-secondary',
+          },
+          {
+            label: 'Risco de perda',
+            value: metrics.noResponse,
+            detail: metrics.noResponse > 0 ? 'conversas pedindo acao imediata' : 'operacao sob controle agora',
+            icon: Clock,
+            bg: 'bg-red-500/10',
+            color: 'text-red-500',
+          },
+          {
+            label: 'Retornos pendentes',
+            value: metrics.followUps,
+            detail: metrics.followUps > 0 ? 'follow-ups para destravar' : 'sem retornos pendentes',
+            icon: AlertCircle,
+            bg: 'bg-amber-500/10',
+            color: 'text-amber-500',
+          },
+        ].map((item) => (
+          <AgentPanelCard key={item.label} className="reveal-item p-5">
+            <div className={cn('flex h-11 w-11 items-center justify-center rounded-2xl', item.bg)}>
               <item.icon size={20} className={item.color} />
             </div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{item.label}</p>
-            <h3 className="text-3xl font-black mt-1 tracking-tight">{item.val}</h3>
-          </div>
+            <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">{item.label}</p>
+            <p className="mt-2 text-3xl font-bold tracking-[-0.04em] text-foreground">{item.value}</p>
+            <p className="mt-2 text-sm leading-5 text-muted-foreground">{item.detail}</p>
+          </AgentPanelCard>
         ))}
       </div>
-
       {myBadges.length > 0 && (
         <section className="reveal-item px-4 md:px-0">
           <div className="rounded-[2.5rem] border border-amber-200 bg-linear-to-r from-amber-50 to-white p-6 shadow-sm dark:border-amber-500/20 dark:from-amber-950/20 dark:to-slate-950">
@@ -737,52 +800,109 @@ export default function AgentDashboard() {
         </section>
       )}
 
-      {/* 3. Metas e Progressão */}
+      {/* 3. Metas e Progressao */}
       <section className="reveal-item px-4 md:px-0">
-        <div className="bg-slate-950 border border-slate-800/60 p-8 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity rotate-12">
-            <Target size={200} />
-          </div>
+        <AgentPanelCard>
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+            <div className="max-w-xl">
+              <div className="flex items-center gap-3">
+                <div className="rounded-2xl bg-primary/10 p-2.5 text-primary">
+                  <Target size={18} />
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-muted-foreground">Ritmo do dia</p>
+                  <h2 className="mt-1 text-2xl font-bold tracking-[-0.03em] text-foreground">Sua cadencia de atendimento</h2>
+                </div>
+              </div>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                Uma leitura direta das metas operacionais e das conversas que pedem intervencao antes de esfriarem.
+              </p>
+            </div>
 
-          <div className="relative z-10">
-            <div className="flex items-center justify-between mb-8">
-              <h3 className="text-xl font-black flex items-center gap-3 tracking-tighter">
-                <Target className="text-primary h-6 w-6" />
-                OBJETIVOS DO DIA
-              </h3>
-              <div className="flex items-center gap-1.5 px-3 py-1 bg-white/5 rounded-full">
-                <Trophy size={14} className="text-amber-500" />
-                <span className="text-[10px] font-black text-amber-500 uppercase">
-                  {allRankings.length > 0 && myRank ? `${myRank}º de ${allRankings.length}` : 'Ranking'}
-                </span>
+            <div className="grid gap-3 sm:grid-cols-3 lg:w-[320px]">
+              <div className="rounded-[24px] border border-border/70 bg-muted/20 p-4">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Ranking</p>
+                <p className="mt-2 text-2xl font-bold tracking-[-0.04em] text-foreground">{myRank != null ? `#${myRank}` : '--'}</p>
+                <p className="mt-1 text-xs text-muted-foreground">sua posicao atual</p>
+              </div>
+              <div className="rounded-[24px] border border-border/70 bg-muted/20 p-4">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">SLA</p>
+                <p className="mt-2 text-2xl font-bold tracking-[-0.04em] text-foreground">{slaScore}%</p>
+                <p className="mt-1 text-xs text-muted-foreground">ritmo da 1a resposta</p>
+              </div>
+              <div className="rounded-[24px] border border-border/70 bg-muted/20 p-4">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Coaching</p>
+                <p className="mt-2 text-2xl font-bold tracking-[-0.04em] text-foreground">{coachingPending}</p>
+                <p className="mt-1 text-xs text-muted-foreground">conversas com ajuste</p>
               </div>
             </div>
+          </div>
 
-            <div className="grid gap-8 md:grid-cols-3">
-              {goals.map((goal, i) => (
-                <div key={i} className="space-y-3">
-                  <div className="flex justify-between items-end">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{goal.label}</span>
-                    <span className="text-xl font-black">
-                      {goal.cur}<span className="text-slate-600 text-sm italic"> / {goal.target}</span>
-                    </span>
+          <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+            <div className="space-y-5">
+              {goals.map((goal) => {
+                const progress = goal.target > 0 ? Math.min(100, (goal.cur / goal.target) * 100) : 0;
+                return (
+                  <div key={goal.label} className="rounded-[26px] border border-border/70 bg-white/70 p-5">
+                    <div className="flex items-end justify-between gap-4">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">{goal.label}</p>
+                        <p className="mt-2 text-3xl font-bold tracking-[-0.04em] text-foreground">
+                          {goal.cur}
+                          <span className="ml-2 text-base font-medium text-muted-foreground">/ {goal.target}</span>
+                        </p>
+                      </div>
+                      <span className="text-xs font-semibold text-muted-foreground">
+                        faltam {Math.max(0, goal.target - goal.cur)}
+                      </span>
+                    </div>
+                    <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-muted/80">
+                      <div
+                        className={cn('h-full rounded-full transition-all duration-700', goal.col)}
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="h-2.5 bg-slate-900 rounded-full overflow-hidden border border-white/5">
-                    <div
-                      className={cn('h-full transition-all duration-1000', goal.col)}
-                      style={{ width: `${Math.min(100, (goal.cur / goal.target) * 100)}%` }}
-                    />
-                  </div>
-                  <p className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter">
-                    Faltam {Math.max(0, goal.target - goal.cur)} para a meta
-                  </p>
+                );
+              })}
+            </div>
+
+            <div className="rounded-[28px] border border-border/70 bg-muted/20 p-5">
+              <div className="flex items-center gap-3">
+                <div className="rounded-2xl bg-primary/10 p-2.5 text-primary">
+                  <ListTodo size={18} />
                 </div>
-              ))}
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Fila que pede acao</p>
+                  <p className="text-lg font-bold tracking-[-0.03em] text-foreground">Prioridades imediatas</p>
+                </div>
+              </div>
+
+              <div className="mt-5 space-y-3">
+                {actionPreview.length === 0 && (
+                  <div className="rounded-2xl border border-dashed border-border bg-card px-4 py-5 text-sm text-muted-foreground">
+                    Nenhuma conversa critica por agora. Seu painel volta a destacar risco assim que surgir algo fora do eixo.
+                  </div>
+                )}
+
+                {actionPreview.map((task) => (
+                  <Link
+                    key={task.conversationId}
+                    to={`/conversations/${task.conversationId}`}
+                    className="flex items-center justify-between gap-3 rounded-2xl border border-border/80 bg-card px-4 py-4 transition-colors hover:border-primary/40"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-foreground">{task.name}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{task.action}</p>
+                    </div>
+                    <ChevronRight size={18} className="shrink-0 text-primary" />
+                  </Link>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
+        </AgentPanelCard>
       </section>
-
       {/* 4. IA Insights & Coaching */}
       <div className="reveal-item grid grid-cols-1 lg:grid-cols-2 gap-6 px-4 md:px-0">
         <div className="bg-indigo-600 p-8 rounded-[2.5rem] shadow-xl text-white relative overflow-hidden group">
@@ -913,7 +1033,7 @@ export default function AgentDashboard() {
                   <div>
                     <p className="text-[10px] font-black text-emerald-600/70 uppercase tracking-widest mb-1 italic">Padroes recorrentes</p>
                     <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
-                      {fallbackTags.join(' • ')}
+                      {fallbackTags.join(' | ')}
                     </p>
                   </div>
                 )}
@@ -934,89 +1054,120 @@ export default function AgentDashboard() {
         </div>
       </div>
 
-      {/* 5. Ranking Pessoal */}
-      <section className="reveal-item px-4 md:px-0">
-        <div className="bg-card border border-slate-200 dark:border-slate-800 p-8 rounded-[2.5rem] shadow-xl relative overflow-hidden group">
-          <div className="absolute -bottom-6 -right-6 opacity-5 group-hover:rotate-12 transition-transform">
-            <Trophy size={160} />
-          </div>
-
-          <div className="flex flex-col md:flex-row md:items-center gap-10 relative z-10">
-            <div className="text-center md:text-left">
-              <div className="text-6xl font-black text-primary tracking-tighter italic">
-                {myRank != null ? `${myRank}º` : '—'}
-              </div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mt-1">
-                Sua Posição no Time
-                {allRankings.length > 0 && <span className="ml-1 text-muted-foreground/60">/ {allRankings.length}</span>}
+      {/* 5. Performance pessoal */}
+      <div className="grid grid-cols-1 gap-6 px-4 md:px-0 xl:grid-cols-12">
+        <AgentPanelCard className="reveal-item xl:col-span-7">
+          <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-muted-foreground">Performance pessoal</p>
+              <h2 className="mt-2 text-2xl font-bold tracking-[-0.03em] text-foreground">Sua leitura de performance</h2>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+                Ranking, qualidade e disciplina de resposta organizados no mesmo bloco, do jeito que o gestor enxerga o time.
               </p>
             </div>
 
-            <div className="flex-1 grid gap-6 sm:grid-cols-2">
-              <div className="space-y-2">
-                <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-[#7A7972]">
-                  <span className="text-muted-foreground">SLA 1ª Resposta</span>
-                  <span className={(myRanking?.avg_sla_first_response_pct ?? 0) >= 85 ? 'text-emerald-500' : 'text-amber-500'}>
-                    {myRanking?.avg_sla_first_response_pct ?? 0}%
-                  </span>
-                </div>
-                <Progress value={myRanking?.avg_sla_first_response_pct ?? 0} className="h-1.5" />
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-[#7A7972]">
-                  <span className="text-muted-foreground">Qualidade IA</span>
-                  <span className="text-indigo-500">{aiScore > 0 ? `${aiScore}/100` : '—'}</span>
-                </div>
-                <Progress value={aiScore} className="h-1.5 bg-indigo-500/10" />
+            <div className="rounded-[24px] border border-primary/20 bg-primary/10 px-5 py-4">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Posicao atual</p>
+              <div className="mt-2 flex items-center gap-3">
+                <span className="text-4xl font-bold tracking-[-0.05em] text-foreground">{myRank != null ? `#${myRank}` : '--'}</span>
+                <Medal className="text-amber-500" size={22} />
               </div>
             </div>
           </div>
-        </div>
-      </section>
 
-      {/* 6. Próximas Ações */}
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            <div className="rounded-[24px] border border-border/70 bg-muted/20 p-5">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Receita no mes</p>
+              <p className="mt-2 text-2xl font-bold tracking-[-0.04em] text-foreground">{fmtCurrency(metrics.revenue)}</p>
+              <p className="mt-2 text-sm text-muted-foreground">resultado financeiro acumulado</p>
+            </div>
+            <div className="rounded-[24px] border border-border/70 bg-muted/20 p-5">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Vendas no dia</p>
+              <p className="mt-2 text-2xl font-bold tracking-[-0.04em] text-foreground">{metrics.won}</p>
+              <p className="mt-2 text-sm text-muted-foreground">conversoes registradas hoje</p>
+            </div>
+            <div className="rounded-[24px] border border-border/70 bg-muted/20 p-5">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Coaching pendente</p>
+              <p className="mt-2 text-2xl font-bold tracking-[-0.04em] text-foreground">{coachingPending}</p>
+              <p className="mt-2 text-sm text-muted-foreground">conversas com ajuste apontado</p>
+            </div>
+          </div>
+
+          <div className="mt-8 grid gap-5 sm:grid-cols-2">
+            <div className="rounded-[24px] border border-border/70 bg-white/80 p-5">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">SLA da 1a resposta</p>
+                <span className={cn('text-sm font-bold', slaScore >= 85 ? 'text-emerald-500' : 'text-amber-500')}>{slaScore}%</span>
+              </div>
+              <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-muted">
+                <div className="h-full rounded-full bg-emerald-500 transition-all duration-700" style={{ width: `${Math.min(100, slaScore)}%` }} />
+              </div>
+            </div>
+
+            <div className="rounded-[24px] border border-border/70 bg-white/80 p-5">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Qualidade IA</p>
+                <span className="text-sm font-bold text-secondary">{aiScoreRounded > 0 ? `${aiScoreRounded}/100` : '--'}</span>
+              </div>
+              <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-secondary/10">
+                <div className="h-full rounded-full bg-secondary transition-all duration-700" style={{ width: `${Math.min(100, Math.max(0, aiScoreRounded))}%` }} />
+              </div>
+            </div>
+          </div>
+        </AgentPanelCard>
+      </div>
+
+      {/* 6. Acoes prioritarias */}
       <section className="reveal-item px-4 md:px-0">
-        <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800/60 p-8 rounded-[2.5rem] shadow-xl">
-          <div className="flex items-center justify-between mb-8">
-            <h3 className="text-xl font-black uppercase tracking-tight flex items-center gap-3">
-              <ListTodo className="text-primary h-6 w-6" />
-              AÇÕES PRIORITÁRIAS
-            </h3>
-            <span className="text-xs font-black bg-primary/10 text-primary px-3 py-1.5 rounded-full uppercase tracking-tighter">
-              {nextActions.length} URGENTE{nextActions.length !== 1 ? 'S' : ''}
+        <AgentPanelCard>
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-muted-foreground">Execucao</p>
+              <h2 className="mt-2 text-2xl font-bold tracking-[-0.03em] text-foreground">Acoes prioritarias</h2>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                A parte mais operacional do painel agora fecha a leitura do jeito certo: depois do contexto, vem a fila exata para agir.
+              </p>
+            </div>
+            <span className="inline-flex items-center rounded-full bg-primary/10 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2em] text-primary">
+              {nextActions.length} urgente{nextActions.length !== 1 ? 's' : ''}
             </span>
           </div>
 
           {nextActions.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              Nenhuma ação urgente no momento. Continue assim! 🎉
-            </p>
+            <div className="mt-8 rounded-[26px] border border-dashed border-border bg-muted/20 px-6 py-10 text-center">
+              <p className="text-lg font-semibold text-foreground">Nenhuma acao urgente no momento.</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Continue nessa linha. Quando surgir risco real, a conversa sobe para este bloco automaticamente.
+              </p>
+            </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-1 md:grid-cols-2">
-              {nextActions.map((task, i) => (
+            <div className="mt-8 grid gap-3 md:grid-cols-2">
+              {nextActions.map((task) => (
                 <Link
-                  key={i}
+                  key={task.conversationId}
                   to={`/conversations/${task.conversationId}`}
-                  className="flex items-center justify-between p-5 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-800/50 group hover:border-primary transition-all"
+                  className="group flex items-center justify-between gap-4 rounded-[24px] border border-border/80 bg-muted/20 px-5 py-5 transition-all hover:border-primary/40 hover:bg-white"
                 >
-                  <div className="flex items-center gap-4">
-                    <div className={cn(
-                      'h-11 w-11 rounded-full flex items-center justify-center font-black text-lg',
-                      task.urgent ? 'bg-red-100 text-red-600 dark:bg-red-900/20' : 'bg-blue-100 text-blue-600 dark:bg-blue-900/20',
-                    )}>
+                  <div className="flex min-w-0 items-center gap-4">
+                    <div
+                      className={cn(
+                        'flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-lg font-bold',
+                        task.urgent ? 'bg-red-100 text-red-600' : 'bg-sky-100 text-sky-600',
+                      )}
+                    >
                       {task.name.charAt(0)}
                     </div>
-                    <div>
-                      <h4 className="text-base font-black tracking-tight">{task.name}</h4>
-                      <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest">{task.action}</p>
+                    <div className="min-w-0">
+                      <p className="truncate text-base font-semibold tracking-[-0.02em] text-foreground">{task.name}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">{task.action}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex shrink-0 items-center gap-3">
                     {task.urgent && (
-                      <span className="text-[10px] font-black uppercase tracking-widest text-red-500 animate-pulse">Urgente</span>
+                      <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-red-500">Urgente</span>
                     )}
-                    <div className="h-8 w-8 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity border border-slate-100 dark:border-slate-700">
-                      <ChevronRight size={18} className="text-primary" />
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full border border-border bg-card text-primary transition-colors group-hover:border-primary/30">
+                      <ChevronRight size={18} />
                     </div>
                   </div>
                 </Link>
@@ -1026,13 +1177,17 @@ export default function AgentDashboard() {
 
           {dealSignals.length > nextActions.length && (
             <Link to="/conversations">
-              <Button variant="ghost" className="w-full mt-8 rounded-2xl font-black text-muted-foreground text-xs uppercase tracking-[0.2em] py-6 border-2 border-dashed border-slate-100 dark:border-slate-800 hover:border-primary/20">
-                VER TODAS AS CONVERSAS
+              <Button
+                variant="ghost"
+                className="mt-8 w-full rounded-full border border-dashed border-border py-6 text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground hover:border-primary/30 hover:text-primary"
+              >
+                Ver toda a fila de conversas
               </Button>
             </Link>
           )}
-        </div>
+        </AgentPanelCard>
       </section>
     </div>
   );
 }
+

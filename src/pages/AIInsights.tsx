@@ -2,13 +2,17 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
+  AlertTriangle,
   BookOpen,
   Brain,
+  Gauge,
   FilterX,
   Loader2,
   MessageSquare,
   PlayCircle,
+  RefreshCw,
   Search,
+  ShieldAlert,
   Target,
   TrendingDown,
   TrendingUp,
@@ -25,6 +29,7 @@ import type {
   AIInsightsReviewItem,
   AIInsightsSummary,
   AIInsightsTagSummary,
+  AISellerAuditRun,
 } from '../types';
 import { CACHE } from '../config/constants';
 import { env } from '../config/env';
@@ -58,6 +63,16 @@ interface StartResponse {
   error?: string;
 }
 
+interface SellerAuditStartResponse {
+  success: boolean;
+  reused: boolean;
+  run_id: string;
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  total_conversations: number;
+  prompt_version?: string;
+  error?: string;
+}
+
 interface BulkStartResult {
   bulk: true;
   started: number;
@@ -85,6 +100,7 @@ interface ManualAnalysisForm {
 
 const ALL_AGENTS = '__all__';
 const REVIEW_PAGE_SIZE = 20;
+type AuditAlertLevel = 'verde' | 'amarelo' | 'laranja' | 'vermelho';
 
 function toDateInput(value: Date): string {
   const tzOffset = value.getTimezoneOffset() * 60000;
@@ -166,6 +182,39 @@ async function invokeRunAiAnalysis<T>(
   return parsed as T;
 }
 
+async function invokeRunSellerAudit<T>(
+  accessToken: string,
+  payload: Record<string, unknown>,
+): Promise<T> {
+  const response = await fetch(`${env.VITE_SUPABASE_URL}/functions/v1/run-seller-audit`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: env.VITE_SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const rawText = await response.text();
+  let parsed: FunctionPayload | null = null;
+
+  try {
+    parsed = rawText ? (JSON.parse(rawText) as FunctionPayload) : null;
+  } catch {
+    parsed = null;
+  }
+
+  const backendMessage = (parsed && typeof parsed.error === 'string' ? parsed.error : rawText).trim();
+
+  if (!response.ok) throw new Error(mapHttpError(response.status, backendMessage));
+  if (!parsed || parsed.success !== true) {
+    throw new Error(backendMessage || 'Resposta invalida da funcao run-seller-audit.');
+  }
+
+  return parsed as T;
+}
+
 function candidateLabel(candidate: PreviewCandidate): string {
   const name = candidate.customer_name?.trim() || 'Sem nome';
   const phone = candidate.customer_phone ? ` (${candidate.customer_phone})` : '';
@@ -180,6 +229,41 @@ function tagChipClass(source: AIInsightsTagSummary['source']) {
   return source === 'failure'
     ? 'border-red-200 bg-red-50 text-red-700'
     : 'border-primary/20 bg-accent text-primary';
+}
+
+function auditAlertLabel(level: AuditAlertLevel | undefined | null): string {
+  switch (level) {
+    case 'verde':
+      return 'Saudavel';
+    case 'amarelo':
+      return 'Exige correcao';
+    case 'laranja':
+      return 'Compromete resultado';
+    case 'vermelho':
+      return 'Gargalo operacional';
+    default:
+      return 'Sem leitura';
+  }
+}
+
+function auditAlertTone(level: AuditAlertLevel | undefined | null): string {
+  switch (level) {
+    case 'verde':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    case 'amarelo':
+      return 'border-amber-200 bg-amber-50 text-amber-700';
+    case 'laranja':
+      return 'border-orange-200 bg-orange-50 text-orange-700';
+    case 'vermelho':
+      return 'border-red-200 bg-red-50 text-red-700';
+    default:
+      return 'border-border bg-muted text-muted-foreground';
+  }
+}
+
+function formatAuditRate(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(value)) return '--';
+  return `${value.toFixed(1)}%`;
 }
 
 function buildRpcParams(filters: {
@@ -342,6 +426,36 @@ export default function AIInsights() {
     staleTime: CACHE.STALE_TIME,
   });
 
+  const sellerAuditEnabled = !!companyId && selectedAgentId !== ALL_AGENTS && !filterError;
+
+  const sellerAuditQuery = useQuery<AISellerAuditRun | null>({
+    queryKey: ['ai-seller-audit', companyId, selectedAgentId, periodStart, periodEnd],
+    queryFn: async () => {
+      if (!companyId || selectedAgentId === ALL_AGENTS) return null;
+      const { data, error } = await supabase
+        .from('ai_seller_audit_runs')
+        .select('id, company_id, requested_by_user_id, agent_id, period_start, period_end, company_timezone, source, status, total_conversations, processed_count, analyzed_count, failed_count, report_json, report_markdown, prompt_version, model_used, error_message, created_at, started_at, finished_at, updated_at')
+        .eq('company_id', companyId)
+        .eq('agent_id', selectedAgentId)
+        .eq('period_start', periodStart)
+        .eq('period_end', periodEnd)
+        .eq('prompt_version', 'v1-manager-hard')
+        .order('created_at', { ascending: false })
+        .maybeSingle();
+
+      if (error) throw error;
+      return (data as AISellerAuditRun | null) ?? null;
+    },
+    enabled: sellerAuditEnabled,
+    staleTime: 0,
+    refetchInterval: (query) => {
+      if (!sellerAuditEnabled) return false;
+      const status = query.state.data?.status;
+      if (!query.state.data || status === 'queued' || status === 'running') return 8000;
+      return false;
+    },
+  });
+
   const effectiveAgentId = form.agentId || ALL_AGENTS;
   const modalPeriodError = useMemo(
     () => validatePeriod(form.periodStart, form.periodEnd),
@@ -500,6 +614,31 @@ export default function AIInsights() {
     },
   });
 
+  const runSellerAuditMutation = useMutation<SellerAuditStartResponse, Error, boolean | undefined>({
+    mutationFn: async (forceRefresh) => {
+      if (!companyId || selectedAgentId === ALL_AGENTS) throw new Error('Selecione um atendente para gerar auditoria mensal.');
+
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw new Error('Nao foi possivel validar a sessao. Faca login novamente.');
+
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) throw new Error('Sessao expirada. Faca login novamente.');
+
+      return invokeRunSellerAudit<SellerAuditStartResponse>(accessToken, {
+        action: 'start',
+        company_id: companyId,
+        agent_id: selectedAgentId,
+        period_start: periodStart,
+        period_end: periodEnd,
+        force_refresh: !!forceRefresh,
+      });
+    },
+    onSuccess: (result) => {
+      toast.success(result.reused ? 'Auditoria mensal reaproveitada.' : 'Auditoria mensal enfileirada.');
+      queryClient.invalidateQueries({ queryKey: ['ai-seller-audit'] });
+    },
+  });
+
   const jobQuery = useQuery<AIAnalysisJob, Error>({
     queryKey: ['ai-insights', 'job', companyId, jobId],
     enabled: !!companyId && !!jobId && showModal && (modalStep === 'processing' || modalStep === 'result'),
@@ -557,6 +696,7 @@ export default function AIInsights() {
 
     if (job.status === 'completed') {
       queryClient.invalidateQueries({ queryKey: ['ai-insights'] });
+      queryClient.invalidateQueries({ queryKey: ['ai-seller-audit'] });
       toast.success(
         `Analise concluida: ${job.analyzed_count} analisada(s), ${job.skipped_count} pulada(s), ${job.failed_count} com erro.`,
       );
@@ -570,6 +710,9 @@ export default function AIInsights() {
     if (selectedAgentId === ALL_AGENTS) return 'Todos os atendentes';
     return agents.find((agent) => agent.id === selectedAgentId)?.name ?? 'Atendente';
   }, [agents, selectedAgentId]);
+
+  const sellerAuditRun = sellerAuditQuery.data;
+  const sellerAuditReport = sellerAuditRun?.report_json ?? null;
 
   const selectedTagMeta = useMemo(() => {
     if (!selectedTag) return null;
@@ -622,6 +765,7 @@ export default function AIInsights() {
   }, [topFailureTags, heatmapRows]);
 
   const combinedError = summaryQuery.error || agentSummaryQuery.error || tagSummaryQuery.error || reviewFeedQuery.error || heatmapQuery.error;
+  const sellerAuditError = sellerAuditQuery.error;
   const isLoading = summaryQuery.isLoading || agentSummaryQuery.isLoading || tagSummaryQuery.isLoading || reviewFeedQuery.isLoading || heatmapQuery.isLoading;
   const summary = summaryQuery.data;
   const reviewItems = reviewFeedQuery.data ?? [];
@@ -799,6 +943,267 @@ export default function AIInsights() {
       </div>
 
       {combinedError && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Falha ao carregar AI Insights: {combinedError.message}</div>}
+
+      <div className="rounded-3xl border border-border bg-card p-5 md:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-primary/15 bg-accent px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-primary">
+              <ShieldAlert className="h-3.5 w-3.5" />
+              Auditoria Mensal do Vendedor
+            </div>
+            <h3 className="mt-4 text-xl font-bold text-foreground">Leitura executiva dura, separada da analise por conversa</h3>
+            <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
+              Esse bloco consolida o periodo inteiro para um unico atendente, com veredito, nivel de alerta, falhas mais graves e oportunidades perdidas.
+            </p>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="shrink-0"
+            disabled={selectedAgentId === ALL_AGENTS || runSellerAuditMutation.isPending || sellerAuditRun?.status === 'queued' || sellerAuditRun?.status === 'running'}
+            onClick={() => runSellerAuditMutation.mutate(!!sellerAuditRun)}
+          >
+            {runSellerAuditMutation.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 h-4 w-4" />
+            )}
+            {sellerAuditRun ? 'Atualizar auditoria mensal' : 'Gerar auditoria mensal'}
+          </Button>
+        </div>
+
+        {sellerAuditError && (
+          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            Falha ao carregar auditoria mensal: {sellerAuditError.message}
+          </div>
+        )}
+
+        {selectedAgentId === ALL_AGENTS ? (
+          <div className="mt-5 rounded-2xl border border-dashed border-border bg-muted/30 px-5 py-6 text-sm text-muted-foreground">
+            Selecione um atendente especifico para ativar a auditoria mensal. Esse relatorio nao roda para todos ao mesmo tempo.
+          </div>
+        ) : !sellerAuditRun ? (
+          <div className="mt-5 rounded-2xl border border-dashed border-border bg-muted/30 px-5 py-6">
+            <p className="text-sm font-medium text-foreground">Nenhuma auditoria mensal pronta para este recorte.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Quando voce analisar todas as conversas de um unico atendente, o sistema vai disparar esse relatorio automaticamente. Tambem da para gerar manualmente aqui.
+            </p>
+          </div>
+        ) : sellerAuditRun.status === 'queued' || sellerAuditRun.status === 'running' ? (
+          <div className="mt-5 rounded-2xl border border-primary/20 bg-primary/5 p-5">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Auditoria em processamento</p>
+                <p className="text-sm text-muted-foreground">
+                  {selectedAgentName} • {sellerAuditRun.period_start} ate {sellerAuditRun.period_end}
+                </p>
+              </div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-card px-3 py-1 text-xs font-semibold text-primary">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                {sellerAuditRun.status === 'queued' ? 'Na fila' : 'Processando'}
+              </div>
+            </div>
+            <div className="mt-4 h-2 rounded-full bg-primary/10">
+              <div
+                className="h-2 rounded-full bg-primary transition-all"
+                style={{
+                  width: `${sellerAuditRun.total_conversations > 0 ? Math.min(100, Math.round((sellerAuditRun.processed_count / sellerAuditRun.total_conversations) * 100)) : 12}%`,
+                }}
+              />
+            </div>
+            <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
+              <span>{sellerAuditRun.processed_count} processadas</span>
+              <span>{sellerAuditRun.analyzed_count} consolidadas</span>
+              <span>{sellerAuditRun.failed_count} falharam</span>
+            </div>
+          </div>
+        ) : sellerAuditRun.status === 'failed' ? (
+          <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-5">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 text-red-600" />
+              <div>
+                <p className="text-sm font-semibold text-red-700">A auditoria mensal falhou.</p>
+                <p className="mt-1 text-sm text-red-700">{sellerAuditRun.error_message || 'Nao foi possivel concluir o processamento.'}</p>
+              </div>
+            </div>
+          </div>
+        ) : sellerAuditReport ? (
+          <div className="mt-5 space-y-5">
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.3fr_0.7fr]">
+              <div className="rounded-2xl border border-border bg-background p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className={cn('inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em]', auditAlertTone(sellerAuditReport.alert_level))}>
+                      <ShieldAlert className="h-3.5 w-3.5" />
+                      {auditAlertLabel(sellerAuditReport.alert_level)}
+                    </div>
+                    <h4 className="mt-4 text-lg font-semibold text-foreground">{selectedAgentName}</h4>
+                    <p className="mt-1 text-sm text-muted-foreground">{sellerAuditReport.executive_verdict}</p>
+                  </div>
+
+                  <div className="rounded-2xl border border-border bg-card px-4 py-3 text-right">
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Nota final</p>
+                    <p className="mt-2 text-3xl font-bold text-foreground">
+                      {sellerAuditReport.final_score != null ? sellerAuditReport.final_score.toFixed(1) : '--'}
+                    </p>
+                    <p className="text-sm text-muted-foreground">{sellerAuditReport.seller_level}</p>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">
+                  {[
+                    ['Tentativa de fechamento', formatAuditRate(sellerAuditReport.performance_metrics.close_attempt_rate)],
+                    ['Follow-up', formatAuditRate(sellerAuditReport.performance_metrics.follow_up_rate)],
+                    ['Diagnostico real', formatAuditRate(sellerAuditReport.performance_metrics.real_diagnosis_rate)],
+                    ['Abandono', formatAuditRate(sellerAuditReport.performance_metrics.abandonment_rate)],
+                    ['Objecao mal tratada', formatAuditRate(sellerAuditReport.performance_metrics.poor_objection_handling_rate)],
+                    ['Resposta passiva', formatAuditRate(sellerAuditReport.performance_metrics.passive_response_rate)],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-2xl border border-border bg-card px-4 py-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</p>
+                      <p className="mt-2 text-lg font-semibold text-foreground">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-border bg-background p-5">
+                <div className="flex items-center gap-2">
+                  <Gauge className="h-4 w-4 text-primary" />
+                  <p className="text-sm font-semibold text-foreground">Placar por competencia</p>
+                </div>
+                <div className="mt-4 space-y-3">
+                  {[
+                    ['Abertura', sellerAuditReport.scorecard.abertura],
+                    ['Agilidade', sellerAuditReport.scorecard.agilidade],
+                    ['Diagnostico', sellerAuditReport.scorecard.diagnostico],
+                    ['Conducao', sellerAuditReport.scorecard.conducao],
+                    ['Valor', sellerAuditReport.scorecard.construcao_valor],
+                    ['Objecoes', sellerAuditReport.scorecard.objecoes],
+                    ['Fechamento', sellerAuditReport.scorecard.fechamento],
+                    ['Follow-up', sellerAuditReport.scorecard.follow_up],
+                    ['Comunicacao', sellerAuditReport.scorecard.comunicacao],
+                    ['Consistencia', sellerAuditReport.scorecard.consistencia],
+                  ].map(([label, rawValue]) => {
+                    const numericValue = typeof rawValue === 'number' ? rawValue : null;
+                    const width = numericValue != null ? `${Math.max(8, numericValue * 10)}%` : '8%';
+                    return (
+                      <div key={label}>
+                        <div className="mb-1 flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">{label}</span>
+                          <span className="font-semibold text-foreground">{numericValue != null ? numericValue.toFixed(1) : '--'}</span>
+                        </div>
+                        <div className="h-2 rounded-full bg-muted">
+                          <div className="h-2 rounded-full bg-primary transition-all" style={{ width }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <div className="rounded-2xl border border-border bg-background p-5">
+                <p className="text-sm font-semibold text-foreground">O que esta fazendo de errado</p>
+                <div className="mt-3 space-y-2">
+                  {sellerAuditReport.main_errors.map((item) => (
+                    <div key={item} className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">{item}</div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-border bg-background p-5">
+                <p className="text-sm font-semibold text-foreground">Como esta prejudicando a operacao</p>
+                <div className="mt-3 space-y-2">
+                  {sellerAuditReport.operational_impact.map((item) => (
+                    <div key={item} className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">{item}</div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <div className="rounded-2xl border border-border bg-background p-5">
+                <p className="text-sm font-semibold text-foreground">Falhas mais graves</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {[...sellerAuditReport.critical_failures, ...sellerAuditReport.high_failures].map((item) => (
+                    <span key={item} className="rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700">{item}</span>
+                  ))}
+                  {[...sellerAuditReport.medium_failures, ...sellerAuditReport.low_failures].map((item) => (
+                    <span key={item} className="rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground">{item}</span>
+                  ))}
+                </div>
+                <p className="mt-4 text-sm text-muted-foreground">{sellerAuditReport.unfiltered_manager_note}</p>
+              </div>
+
+              <div className="rounded-2xl border border-border bg-background p-5">
+                <p className="text-sm font-semibold text-foreground">Acoes recomendadas ao gestor</p>
+                <div className="mt-3 space-y-2">
+                  {sellerAuditReport.manager_actions.map((item) => (
+                    <div key={item} className="rounded-2xl border border-primary/15 bg-primary/5 px-4 py-3 text-sm text-foreground">{item}</div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <div className="rounded-2xl border border-border bg-background p-5">
+                <p className="text-sm font-semibold text-foreground">Oportunidades perdidas</p>
+                <div className="mt-3 space-y-3">
+                  {sellerAuditReport.lost_opportunities.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Nenhuma oportunidade perdida consolidada neste recorte.</p>
+                  ) : sellerAuditReport.lost_opportunities.map((item) => (
+                    <div key={`${item.conversation_id}-${item.what_happened}`} className="rounded-2xl border border-border bg-card p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <Link to={`/conversations/${item.conversation_id}`} className="text-sm font-semibold text-primary hover:underline">
+                          Conversa {item.conversation_id.slice(0, 8)}
+                        </Link>
+                        <span className={cn('rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em]', item.impact === 'high' ? 'bg-red-100 text-red-700' : item.impact === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-muted text-muted-foreground')}>
+                          {item.impact}
+                        </span>
+                      </div>
+                      <p className="mt-3 text-sm text-foreground">{item.what_happened}</p>
+                      <p className="mt-2 text-sm text-muted-foreground">Deveria ter feito: {item.what_should_have_been_done}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-border bg-background p-5">
+                <p className="text-sm font-semibold text-foreground">Plano de intervencao - 30 dias</p>
+                <div className="mt-4 space-y-4">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Parar agora</p>
+                    <div className="mt-2 space-y-2">
+                      {sellerAuditReport.intervention_plan_30d.stop_now.map((item) => (
+                        <div key={item} className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">{item}</div>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Comecar agora</p>
+                    <div className="mt-2 space-y-2">
+                      {sellerAuditReport.intervention_plan_30d.start_now.map((item) => (
+                        <div key={item} className="rounded-2xl border border-primary/15 bg-primary/5 px-4 py-3 text-sm text-foreground">{item}</div>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Treinar nos proximos 30 dias</p>
+                    <div className="mt-2 space-y-2">
+                      {sellerAuditReport.intervention_plan_30d.train_next_30_days.map((item) => (
+                        <div key={item} className="rounded-2xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">{item}</div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
 
       {isLoading ? (
         <div className="space-y-4">{[...Array(4)].map((_, index) => <div key={index} className="h-28 animate-pulse rounded-2xl bg-muted" />)}</div>

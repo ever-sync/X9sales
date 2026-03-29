@@ -53,7 +53,7 @@ interface AskSuccessResponse {
   job: {
     job_id: string;
     status: 'queued' | 'running' | 'completed' | 'failed';
-  };
+  } | null;
 }
 
 interface AskFailureResponse {

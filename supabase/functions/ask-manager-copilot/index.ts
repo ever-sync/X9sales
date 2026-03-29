@@ -32,6 +32,7 @@ interface AgentRow {
 
 interface CandidateConversation {
   conversation_id: string;
+  customer_phone: string | null;
 }
 
 interface QuickStats {
@@ -55,6 +56,19 @@ interface ThreadRow {
   user_id: string;
 }
 
+interface CompanySettingsPayload {
+  timezone: string;
+  blockedNumbers: string[];
+}
+
+interface FreshSellerAuditRun {
+  id: string;
+  report_json: Record<string, unknown>;
+  report_markdown: string | null;
+  prompt_version: string;
+  created_at: string;
+}
+
 function json(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
     status,
@@ -72,6 +86,11 @@ function getBearerToken(header: string | null): string | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function normalizePhone(value: string | null | undefined): string {
+  if (!value) return "";
+  return value.replace(/\D/g, "");
 }
 
 function parseBody(value: unknown): AskRequestBody {
@@ -204,10 +223,10 @@ async function getMemberRole(
   return (data as MemberRow).role;
 }
 
-async function getCompanyTimezone(
+async function getCompanySettings(
   supabase: ReturnType<typeof createClient>,
   companyId: string,
-): Promise<string> {
+): Promise<CompanySettingsPayload> {
   const { data, error } = await supabase
     .schema("app")
     .from("companies")
@@ -219,12 +238,57 @@ async function getCompanyTimezone(
     throw new Error(`Falha ao carregar configuracoes da empresa: ${error.message}`);
   }
 
+  let timezone = "UTC";
+  const blockedNumbers = new Set<string>();
+  let blockTeamAnalysis = false;
+
   if (isRecord(data) && isRecord(data.settings) && typeof data.settings.timezone === "string") {
-    const timezone = data.settings.timezone.trim();
-    if (timezone.length > 0) return timezone;
+    const timezoneValue = data.settings.timezone.trim();
+    if (timezoneValue.length > 0) timezone = timezoneValue;
   }
 
-  return "UTC";
+  if (isRecord(data) && isRecord(data.settings) && Array.isArray(data.settings.blocked_report_numbers)) {
+    for (const item of data.settings.blocked_report_numbers) {
+      const normalized = normalizePhone(typeof item === "string" ? item : "");
+      if (normalized) blockedNumbers.add(normalized);
+    }
+  }
+
+  if (isRecord(data) && isRecord(data.settings) && Array.isArray(data.settings.blocked_analysis_customers)) {
+    for (const item of data.settings.blocked_analysis_customers) {
+      if (!isRecord(item)) continue;
+      const normalized = normalizePhone(typeof item.phone === "string" ? item.phone : "");
+      if (normalized) blockedNumbers.add(normalized);
+    }
+  }
+
+  if (isRecord(data) && isRecord(data.settings) && data.settings.block_team_analysis === true) {
+    blockTeamAnalysis = true;
+  }
+
+  if (blockTeamAnalysis) {
+    const { data: agents, error: agentsError } = await supabase
+      .schema("app")
+      .from("agents")
+      .select("phone")
+      .eq("company_id", companyId)
+      .eq("is_active", true)
+      .not("phone", "is", null);
+
+    if (agentsError) {
+      throw new Error(`Falha ao carregar numeros do time: ${agentsError.message}`);
+    }
+
+    for (const agent of agents ?? []) {
+      const normalized = normalizePhone(typeof agent.phone === "string" ? agent.phone : "");
+      if (normalized) blockedNumbers.add(normalized);
+    }
+  }
+
+  return {
+    timezone,
+    blockedNumbers: Array.from(blockedNumbers),
+  };
 }
 
 async function findAgentCandidatesByName(
@@ -321,6 +385,7 @@ async function computeQuickStats(
     periodStart: string;
     periodEnd: string;
     companyTimezone: string;
+    blockedNumbers: string[];
   },
 ): Promise<QuickStats> {
   const zero: QuickStats = {
@@ -353,7 +418,9 @@ async function computeQuickStats(
     throw new Error(`Falha ao buscar conversas do periodo: ${candidatesError.message}`);
   }
 
-  const candidates = (Array.isArray(candidatesData) ? candidatesData : []) as CandidateConversation[];
+  const blockedSet = new Set(params.blockedNumbers);
+  const candidates = ((Array.isArray(candidatesData) ? candidatesData : []) as CandidateConversation[])
+    .filter((row) => !blockedSet.has(normalizePhone(row.customer_phone)));
   const conversationIds = candidates.map((row) => row.conversation_id);
   if (conversationIds.length === 0) return zero;
 
@@ -459,6 +526,65 @@ async function computeQuickStats(
   };
 }
 
+async function findFreshSellerAuditRun(
+  supabase: ReturnType<typeof createClient>,
+  params: {
+    companyId: string;
+    agentId: string;
+    periodStart: string;
+    periodEnd: string;
+  },
+): Promise<FreshSellerAuditRun | null> {
+  const freshCutoff = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .schema("app")
+    .from("ai_seller_audit_runs")
+    .select("id, report_json, report_markdown, prompt_version, created_at")
+    .eq("company_id", params.companyId)
+    .eq("agent_id", params.agentId)
+    .eq("period_start", params.periodStart)
+    .eq("period_end", params.periodEnd)
+    .eq("prompt_version", "v1-manager-hard")
+    .eq("status", "completed")
+    .gte("created_at", freshCutoff)
+    .order("created_at", { ascending: false })
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw new Error(`Falha ao consultar auditoria mensal: ${error.message}`);
+  }
+
+  return (data as FreshSellerAuditRun | null) ?? null;
+}
+
+function buildAuditSources(reportJson: Record<string, unknown>) {
+  const sources: Array<Record<string, unknown>> = [];
+
+  const evidenceSamples = Array.isArray(reportJson.evidence_samples) ? reportJson.evidence_samples : [];
+  for (const sample of evidenceSamples) {
+    if (!isRecord(sample) || typeof sample.conversation_id !== "string") continue;
+    sources.push({
+      type: "seller_audit_evidence",
+      conversation_id: sample.conversation_id,
+      category: sample.category === "forte" ? "forte" : "fraco",
+      customer_phone_masked: typeof sample.customer_phone_masked === "string" ? sample.customer_phone_masked : null,
+    });
+  }
+
+  const lostOpportunities = Array.isArray(reportJson.lost_opportunities) ? reportJson.lost_opportunities : [];
+  for (const item of lostOpportunities) {
+    if (!isRecord(item) || typeof item.conversation_id !== "string") continue;
+    sources.push({
+      type: "seller_audit_opportunity",
+      conversation_id: item.conversation_id,
+      impact: ["low", "medium", "high"].includes(String(item.impact)) ? item.impact : "medium",
+      customer_phone_masked: typeof item.customer_phone_masked === "string" ? item.customer_phone_masked : null,
+    });
+  }
+
+  return sources.slice(0, 20);
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -525,7 +651,8 @@ serve(async (req) => {
       return json(403, { success: false, error: "Seu perfil nao pode usar o Copiloto do Gestor." });
     }
 
-    const companyTimezone = await getCompanyTimezone(supabase, body.company_id);
+    const companySettings = await getCompanySettings(supabase, body.company_id);
+    const companyTimezone = companySettings.timezone;
 
     let resolvedAgent: AgentRow | null = null;
     if (body.agent_id) {
@@ -605,6 +732,7 @@ serve(async (req) => {
       periodStart: parsedStart,
       periodEnd: parsedEnd,
       companyTimezone,
+      blockedNumbers: companySettings.blockedNumbers,
     });
 
     const quickMarkdown = buildQuickAnswerMarkdown(
@@ -639,51 +767,88 @@ serve(async (req) => {
       return json(500, { success: false, error: `Falha ao salvar resposta inicial: ${quickMessageError?.message}` });
     }
 
-    const { data: pendingMessage, error: pendingMessageError } = await supabase
-      .schema("app")
-      .from("manager_copilot_messages")
-      .insert({
-        thread_id: thread.id,
-        company_id: body.company_id,
-        user_id: null,
-        role: "assistant",
-        status: "pending",
-        content_md: "Aprofundando a analise completa do atendente...",
-        sources: [],
-        meta: {
-          mode: "deep",
-          state: "pending",
-        },
-      })
-      .select("id")
-      .single();
+    const freshAudit = await findFreshSellerAuditRun(supabase, {
+      companyId: body.company_id,
+      agentId: resolvedAgent.id,
+      periodStart: parsedStart,
+      periodEnd: parsedEnd,
+    });
 
-    if (pendingMessageError || !pendingMessage) {
-      return json(500, { success: false, error: `Falha ao criar mensagem pendente: ${pendingMessageError?.message}` });
-    }
+    let createdJob: { id: string; status: JobStatus } | null = null;
 
-    const { data: createdJob, error: createJobError } = await supabase
-      .schema("app")
-      .from("manager_feedback_jobs")
-      .insert({
-        thread_id: thread.id,
-        company_id: body.company_id,
-        requested_by_user_id: user.id,
-        agent_id: resolvedAgent.id,
-        period_start: parsedStart,
-        period_end: parsedEnd,
-        company_timezone: companyTimezone,
-        status: "queued" as JobStatus,
-        total_conversations: quickStats.total_conversations,
-        processed_count: 0,
-        quick_answer_message_id: quickMessage.id,
-        final_answer_message_id: pendingMessage.id,
-      })
-      .select("id, status")
-      .single();
+    if (freshAudit) {
+      const { error: finalMessageError } = await supabase
+        .schema("app")
+        .from("manager_copilot_messages")
+        .insert({
+          thread_id: thread.id,
+          company_id: body.company_id,
+          user_id: null,
+          role: "assistant",
+          status: "ready",
+          content_md: freshAudit.report_markdown || "Auditoria mensal reaproveitada, mas o markdown veio vazio.",
+          sources: buildAuditSources(freshAudit.report_json),
+          meta: {
+            mode: "deep",
+            state: "ready",
+            audit_run_id: freshAudit.id,
+            prompt_version: freshAudit.prompt_version,
+            source: "canonical_reuse",
+          },
+        });
 
-    if (createJobError || !createdJob) {
-      return json(500, { success: false, error: `Falha ao criar job de aprofundamento: ${createJobError?.message}` });
+      if (finalMessageError) {
+        return json(500, { success: false, error: `Falha ao salvar auditoria reaproveitada: ${finalMessageError.message}` });
+      }
+    } else {
+      const { data: pendingMessage, error: pendingMessageError } = await supabase
+        .schema("app")
+        .from("manager_copilot_messages")
+        .insert({
+          thread_id: thread.id,
+          company_id: body.company_id,
+          user_id: null,
+          role: "assistant",
+          status: "pending",
+          content_md: "Aprofundando a analise completa do atendente...",
+          sources: [],
+          meta: {
+            mode: "deep",
+            state: "pending",
+          },
+        })
+        .select("id")
+        .single();
+
+      if (pendingMessageError || !pendingMessage) {
+        return json(500, { success: false, error: `Falha ao criar mensagem pendente: ${pendingMessageError?.message}` });
+      }
+
+      const { data: createdJobRow, error: createJobError } = await supabase
+        .schema("app")
+        .from("manager_feedback_jobs")
+        .insert({
+          thread_id: thread.id,
+          company_id: body.company_id,
+          requested_by_user_id: user.id,
+          agent_id: resolvedAgent.id,
+          period_start: parsedStart,
+          period_end: parsedEnd,
+          company_timezone: companyTimezone,
+          status: "queued" as JobStatus,
+          total_conversations: quickStats.total_conversations,
+          processed_count: 0,
+          quick_answer_message_id: quickMessage.id,
+          final_answer_message_id: pendingMessage.id,
+        })
+        .select("id, status")
+        .single();
+
+      if (createJobError || !createdJobRow) {
+        return json(500, { success: false, error: `Falha ao criar job de aprofundamento: ${createJobError?.message}` });
+      }
+
+      createdJob = createdJobRow as { id: string; status: JobStatus };
     }
 
     await supabase
@@ -701,10 +866,12 @@ serve(async (req) => {
         agent_id: resolvedAgent.id,
         agent_name: resolvedAgent.name,
       },
-      job: {
-        job_id: createdJob.id,
-        status: createdJob.status,
-      },
+      job: createdJob
+        ? {
+          job_id: createdJob.id,
+          status: createdJob.status,
+        }
+        : null,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro interno";
