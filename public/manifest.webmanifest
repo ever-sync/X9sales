@@ -1,0 +1,18 @@
+{
+  "name": "X9Sales - MonitoraIA",
+  "short_name": "X9Sales",
+  "description": "Plataforma de Monitoramento de Atendimento e Performance Comercial",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0F172A",
+  "theme_color": "#D3FE18",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/pwa-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

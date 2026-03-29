@@ -2,6 +2,7 @@ import { Outlet, useLocation, Navigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
+import { BottomNav } from './BottomNav';
 import { ManagerCopilotWidget } from '../copilot/ManagerCopilotWidget';
 import { useCompany } from '../../contexts/CompanyContext';
 
@@ -52,12 +53,13 @@ export function MainLayout() {
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} collapsed={collapsed} onToggleCollapse={toggleCollapse} />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Header onOpenSidebar={() => setSidebarOpen(true)} />
-        <main className="flex-1 overflow-y-auto px-4 py-4 text-foreground sm:px-5 lg:px-8 lg:py-6 dark:text-foreground">
+        <main className="flex-1 overflow-y-auto px-4 py-4 text-foreground sm:px-5 lg:px-8 lg:py-6 dark:text-foreground pb-32 md:pb-6">
           <div className="mx-auto w-full max-w-[1600px]">
             <Outlet />
           </div>
         </main>
       </div>
+      <BottomNav />
       <ManagerCopilotWidget />
     </div>
   );

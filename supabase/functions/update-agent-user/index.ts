@@ -24,15 +24,15 @@ serve(async (req) => {
     const password = payload.password?.trim();
 
     if (!payload.company_id || !payload.name) {
-      return json({ error: "company_id and name are required" }, { status: 400 });
+      return json({ error: "O nome é obrigatório" }, { status: 200 });
     }
 
     if (!payload.agent_id) {
-      return json({ error: "agent_id is required" }, { status: 400 });
+      return json({ error: "O id do atendente é obrigatório" }, { status: 200 });
     }
 
     if (password && password.length < 6) {
-      return json({ error: "A senha precisa ter pelo menos 6 caracteres." }, { status: 400 });
+      return json({ error: "A senha precisa ter pelo menos 6 caracteres." }, { status: 200 });
     }
 
     // Apenas Admins podem realizar esta ação em nome da companhia
@@ -47,7 +47,7 @@ serve(async (req) => {
       .single();
 
     if (fetchError || !currentAgent) {
-      return json({ error: "Atendente não localizado nesta empresa." }, { status: 404 });
+      return json({ error: "Atendente não localizado nesta empresa." }, { status: 200 });
     }
 
     let currentMemberId = currentAgent.member_id;
@@ -94,9 +94,9 @@ serve(async (req) => {
 
             if (authError) {
               if (authError.message.includes("already registered")) {
-                 return json({ error: "Um Atendente antigo sem vínculo no painel encontrou conflito. Este e-mail já está em uso na plataforma." }, { status: 409 });
+                 return json({ error: "Este E-mail (credencial) já está em uso na plataforma." }, { status: 200 });
               }
-              throw authError;
+              return json({ error: "Erro de Auth Auth: " + authError.message }, { status: 200 });
             }
 
             if (!newUser.user) throw new Error("Unable to retro-create user on Supabase Auth");
@@ -146,8 +146,8 @@ serve(async (req) => {
       agent: updatedAgent,
     });
     
-  } catch (error) {
+  } catch (error: any) {
     console.error("[update-agent-user] error:", error);
-    return json({ error: error instanceof Error ? error.message : "Internal server error" }, { status: 500 });
+    return json({ error: error.message || "Erro Interno Desconhecido" }, { status: 200 });
   }
 });

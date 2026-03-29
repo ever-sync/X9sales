@@ -21,7 +21,11 @@ export type Permission =
   | 'alerts.manage'
   | 'copilot.manager'
   | 'revenue.view'
+  | 'revenue.view_own'
   | 'revenue.run'
+  | 'revenue.run_own'
+  | 'performance.view'
+  | 'performance.view_all'
   | 'playbooks.view'
   | 'playbooks.manage'
   | 'roi.view'
@@ -58,13 +62,17 @@ const DEFAULT_PERMISSIONS: Record<AppRole, Record<string, boolean>> = {
     'alerts.manage': true,
     'copilot.manager': true,
     'revenue.view': true,
+    'revenue.view_own': true,
     'revenue.run': true,
+    'revenue.run_own': true,
     'playbooks.view': true,
     'playbooks.manage': true,
     'roi.view': true,
     'settings.company': true,
     'settings.users': true,
     'settings.teams': true,
+    'performance.view': true,
+    'performance.view_all': true,
   },
   agent: {
     'dashboard.view': true,
@@ -73,7 +81,7 @@ const DEFAULT_PERMISSIONS: Record<AppRole, Record<string, boolean>> = {
     'agents.view_own': true,
     'conversations.view_all': false,
     'conversations.view_team': false,
-    'conversations.view_own': true,
+    'conversations.view_own': false,
     'metrics.view_all': false,
     'metrics.view_team': false,
     'metrics.view_own': true,
@@ -84,7 +92,11 @@ const DEFAULT_PERMISSIONS: Record<AppRole, Record<string, boolean>> = {
     'alerts.manage': false,
     'copilot.manager': false,
     'revenue.view': false,
+    'revenue.view_own': true,
     'revenue.run': false,
+    'revenue.run_own': true,
+    'performance.view': true,
+    'performance.view_all': false,
     'playbooks.view': true,
     'playbooks.manage': false,
     'roi.view': false,

@@ -120,8 +120,8 @@ serve(async (req) => {
       agent: newAgent,
     });
     
-  } catch (error) {
+  } catch (error: any) {
     console.error("[create-agent-user] error:", error);
-    return json({ error: error instanceof Error ? error.message : "Internal server error" }, { status: 500 });
+    return json({ error: error.message || "Erro Interno Desconhecido" }, { status: 200 });
   }
 });

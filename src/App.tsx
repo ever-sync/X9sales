@@ -18,6 +18,7 @@ import Alerts from './pages/Alerts';
 import Audit from './pages/Audit';
 import AIInsights from './pages/AIInsights';
 import RevenueInsights from './pages/RevenueInsights';
+import Performance from './pages/Performance';
 import Sales from './pages/Sales';
 import Playbooks from './pages/Playbooks';
 import Settings from './pages/Settings';
@@ -143,6 +144,14 @@ function ProtectedRoutes() {
             }
           />
           <Route
+            path="performance"
+            element={
+              <PermissionGate permission="performance.view" fallback={<Navigate to="/" replace />}>
+                <Performance />
+              </PermissionGate>
+            }
+          />
+          <Route
             path="conversations/:id"
             element={
               <PermissionGate permission="conversations.view_own" fallback={<Navigate to="/" replace />}>
@@ -177,7 +186,7 @@ function ProtectedRoutes() {
           <Route
             path="sales"
             element={
-              <PermissionGate permission="revenue.view" fallback={<Navigate to="/" replace />}>
+              <PermissionGate permission="revenue.view_own" fallback={<Navigate to="/" replace />}>
                 <Sales />
               </PermissionGate>
             }

@@ -18,6 +18,7 @@ import {
   Sparkles,
   Contact,
   ShieldAlert,
+  TrendingUp,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -49,9 +50,10 @@ const navGroups: NavGroup[] = [
     label: 'PRINCIPAL',
     items: [
       { to: '/', icon: LayoutDashboard, label: 'Dashboard', permission: 'dashboard.view' },
-      { to: '/sales', icon: HandCoins, label: 'Vendas', permission: 'revenue.view' },
+      { to: '/sales', icon: HandCoins, label: 'Vendas', permission: 'revenue.view_own' },
       { to: '/alerts', icon: ShieldAlert, label: 'Alertas', permission: 'alerts.view' },
       { to: '/conversations', icon: MessageSquare, label: 'Conversas', permission: 'conversations.view_own' },
+      { to: '/performance', icon: TrendingUp, label: 'Performance', permission: 'performance.view' },
     ],
   },
   {
@@ -209,6 +211,7 @@ export function Sidebar({
                                 {isAgent && item.label === 'Dashboard' ? 'Meu Painel' : 
                                  isAgent && item.label === 'Conversas' ? 'Minhas Conversas' : 
                                  isAgent && item.label === 'Alertas' ? 'Meus Alertas' : 
+                                 isAgent && item.label === 'Vendas' ? 'Minhas Vendas' : 
                                  item.label}
                               </span>
                               {item.badge && (

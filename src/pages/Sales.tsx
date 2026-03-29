@@ -20,6 +20,7 @@ import { CACHE } from '../config/constants';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { formatCurrency, formatDateTime, normalizePhone } from '../lib/utils';
+import { useAuth } from '../hooks/useAuth';
 import type { Agent, Customer, SaleRecord, Store as SalesStore } from '../types';
 import { DemoBanner } from '../components/ui/EmptyState';
 
@@ -94,6 +95,43 @@ function saleToForm(sale: SaleRecord): SalesForm {
   };
 }
 
+function sellerInitials(name: string | null | undefined) {
+  return (name ?? '')
+    .split(' ')
+    .map((chunk) => chunk[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+}
+
+function SaleSellerAvatar({
+  name,
+  avatarUrl,
+}: {
+  name: string | null | undefined;
+  avatarUrl: string | null | undefined;
+}) {
+  const [imageError, setImageError] = useState(false);
+  const initials = sellerInitials(name);
+
+  if (avatarUrl && !imageError) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={name ?? 'Vendedor'}
+        className="h-11 w-11 rounded-2xl border border-border object-cover"
+        onError={() => setImageError(true)}
+      />
+    );
+  }
+
+  return (
+    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/12 text-sm font-semibold text-primary">
+      {initials || <UserRound className="h-4 w-4" />}
+    </div>
+  );
+}
+
 function SalesMetric({
   title,
   value,
@@ -113,10 +151,33 @@ function SalesMetric({
 }
 
 export default function Sales() {
-  const { companyId } = useCompany();
+  const { companyId, role } = useCompany();
+  const { user } = useAuth();
   const { can } = usePermissions();
   const queryClient = useQueryClient();
-  const canCreateSale = can('revenue.run');
+  const canCreateSale = can('revenue.run_own');
+  const isAgent = role === 'agent';
+
+  // Buscar qual é o agent ID deste usuário na empresa atual
+  const { data: myAgentProfile } = useQuery({
+    queryKey: ['my-agent-profile', companyId, user?.id],
+    queryFn: async () => {
+      if (!companyId || !user?.id || !user.email) return null;
+      const { data, error } = await supabase
+        .from('agents')
+        .select('id, name, store_id')
+        .eq('company_id', companyId)
+        .eq('email', user.email)
+        .eq('is_active', true)
+        .maybeSingle();
+      if (error && error.code !== 'PGRST116') throw error;
+      return data;
+    },
+    enabled: !!companyId && !!user?.id && isAgent,
+    staleTime: CACHE.STALE_TIME,
+  });
+
+  const myAgentId = myAgentProfile?.id;
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -171,7 +232,7 @@ export default function Sales() {
     queryKey: ['sales-conversation-options', companyId],
     queryFn: async () => {
       if (!companyId) return [];
-      const { data, error } = await supabase
+      let query = supabase
         .from('conversations')
         .select(`
           id,
@@ -179,9 +240,16 @@ export default function Sales() {
           started_at,
           customer:customers(name,phone)
         `)
-        .eq('company_id', companyId)
+        .eq('company_id', companyId);
+
+      if (isAgent && myAgentId) {
+        query = query.eq('agent_id', myAgentId);
+      }
+
+      const { data, error } = await query
         .order('started_at', { ascending: false })
         .limit(300);
+
       if (error) throw error;
       return ((data ?? []) as SalesConversationOptionRow[]).map((conversation) => ({
         id: conversation.id,
@@ -200,7 +268,7 @@ export default function Sales() {
     queryKey: ['sales-records', companyId],
     queryFn: async () => {
       if (!companyId) return [];
-      const { data, error } = await supabase
+      let query = supabase
         .from('sales_records')
         .select(`
           *,
@@ -211,9 +279,16 @@ export default function Sales() {
             customer:customers(name,phone)
           )
         `)
-        .eq('company_id', companyId)
+        .eq('company_id', companyId);
+
+      if (isAgent && myAgentId) {
+        query = query.eq('seller_agent_id', myAgentId);
+      }
+
+      const { data, error } = await query
         .order('sold_at', { ascending: false })
         .limit(500);
+
       if (error) throw error;
       return (data ?? []) as SaleRecord[];
     },
@@ -302,7 +377,10 @@ export default function Sales() {
 
   const openCreateModal = () => {
     setEditingSaleId(null);
-    setForm(emptyForm());
+    setForm({
+      ...emptyForm(),
+      sellerAgentId: isAgent ? (myAgentId ?? '') : '',
+    });
     setConversationSearch('');
     setCustomerForm(emptyCustomerForm());
     setShowCustomerForm(false);
@@ -727,7 +805,8 @@ export default function Sales() {
                           setForm((current) => ({ ...current, sellerAgentId: event.target.value, conversationId: '' }));
                           setConversationSearch('');
                         }}
-                        className="h-12 w-full rounded-xl border border-border bg-card pl-10 pr-3 text-sm text-foreground outline-none"
+                        disabled={isAgent}
+                        className="h-12 w-full rounded-xl border border-border bg-card pl-10 pr-3 text-sm text-foreground outline-none disabled:opacity-70 disabled:cursor-not-allowed"
                       >
                         <option value="">Selecione o vendedor</option>
                         {agents.map((agent) => (
