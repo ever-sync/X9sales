@@ -548,6 +548,7 @@ async function findFreshSellerAuditRun(
     .eq("status", "completed")
     .gte("created_at", freshCutoff)
     .order("created_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (error && error.code !== "PGRST116") {

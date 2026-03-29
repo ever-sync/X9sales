@@ -441,6 +441,7 @@ export default function AIInsights() {
         .eq('period_end', periodEnd)
         .eq('prompt_version', 'v1-manager-hard')
         .order('created_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (error) throw error;
