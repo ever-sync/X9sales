@@ -807,7 +807,7 @@ export default function Dashboard() {
         <div className="col-span-1 xl:col-span-8">
           <DashboardCard title="Vendas por Dia" action={<span className="text-sm font-semibold rounded-full bg-muted/50 px-3 py-1 text-muted-foreground">Últimos 7 dias</span>}>
             <div className="h-[300px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <BarChart data={salesByDay} margin={{ top: 8, right: 10, left: -20, bottom: 8 }}>
                   <CartesianGrid vertical={false} strokeDasharray="4 4" stroke="#ECEBE8" />
                   <XAxis dataKey="shortDate" tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: COLORS.soft }} />
@@ -867,7 +867,7 @@ export default function Dashboard() {
               <div className="mt-2 text-[32px] font-bold tracking-tight">{leadsToday}</div>
               <p className="text-sm font-medium text-muted-foreground mt-1 mb-4">Novas conversas iniciadas hoje</p>
               <div className="h-16 w-full relative">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <LineChart data={recentTrend}>
                     <Line type="monotone" dataKey="conversations" stroke={COLORS.purple} strokeWidth={3} dot={{ stroke: COLORS.purple, strokeWidth: 2, r: 4, fill: '#fff' }} />
                   </LineChart>
@@ -879,7 +879,7 @@ export default function Dashboard() {
               <div className="mt-2 text-[32px] font-bold tracking-tight">{leadsMonth}</div>
               <p className="text-sm font-medium text-muted-foreground mt-1 mb-4">Novas conversas iniciadas nos ultimos 30 dias</p>
               <div className="h-16 w-full relative">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <LineChart data={recentTrend}>
                     <Line type="monotone" dataKey="conversations" stroke={COLORS.purple} strokeWidth={3} dot={{ stroke: COLORS.purple, strokeWidth: 2, r: 4, fill: '#fff' }} />
                   </LineChart>
@@ -890,7 +890,7 @@ export default function Dashboard() {
 
           <DashboardCard title="Evolução de Leads" action={<span className="text-sm font-semibold rounded-full bg-muted/50 px-3 py-1 text-muted-foreground flex items-center">Últimos 30 dias <ChevronDown size={14} className="inline ml-1" /></span>}>
             <div className="h-[280px] w-full mt-4">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <AreaChart data={trendData} margin={{ top: 12, right: 10, left: -20, bottom: 0 }}>
                   <defs>
                     <linearGradient id="dashboardLeadsArea" x1="0" y1="0" x2="0" y2="1">
@@ -1002,7 +1002,7 @@ export default function Dashboard() {
           <DashboardCard title="SLA de Clientes" action={<span className="text-sm font-semibold rounded-full bg-muted/50 px-3 py-1 text-muted-foreground flex items-center">Últimos 30 dias <ChevronDown size={14} className="inline ml-1" /></span>}>
             <div className="flex flex-col sm:flex-row items-center gap-8 mt-4">
               <div className="relative h-[180px] w-[220px]">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <PieChart>
                     <Pie
                       data={[pieData[0]]}

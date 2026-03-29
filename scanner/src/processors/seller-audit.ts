@@ -519,35 +519,33 @@ function inferBehaviorFlags(
 
   const closeAttempted =
     existing?.close_attempted ??
-    closeAttemptRegex.test(agentText) ||
-    /confirma|segue|avanco|avanço|pagamento|pedido/i.test(lastMessageText);
+    (closeAttemptRegex.test(agentText) ||
+      /confirma|segue|avanco|avanço|pagamento|pedido/i.test(lastMessageText));
 
   const followUpPresent =
     existing?.follow_up_present ??
-    followUpRegex.test(agentText) ||
-    agentMessages.length >= 3;
+    (followUpRegex.test(agentText) || agentMessages.length >= 3);
 
   const realDiagnosis =
     existing?.real_diagnosis ??
-    agentQuestionCount >= 2 ||
-    /necessidade|objetivo|cenario|cenário|dor/i.test(agentText);
+    (agentQuestionCount >= 2 || /necessidade|objetivo|cenario|cenário|dor/i.test(agentText));
 
   const passiveResponse =
     existing?.passive_response ??
-    failureTags.includes('passividade') ||
-    failureTags.includes('sem_conducao') ||
-    (agentQuestionCount === 0 && !closeAttemptRegex.test(agentText));
+    (failureTags.includes('passividade') ||
+      failureTags.includes('sem_conducao') ||
+      (agentQuestionCount === 0 && !closeAttemptRegex.test(agentText)));
 
   const objectionMishandled =
     existing?.objection_mishandled ??
-    failureTags.includes('objecao_ignorada') ||
-    (objectionRegex.test(customerText) && !/porque|entendo|faz sentido|o que te trava|o que te preocupa/i.test(agentText));
+    (failureTags.includes('objecao_ignorada') ||
+      (objectionRegex.test(customerText) && !/porque|entendo|faz sentido|o que te trava|o que te preocupa/i.test(agentText)));
 
   const abandonedWithoutNextStep =
     existing?.abandoned_without_next_step ??
-    failureTags.includes('sem_proximo_passo') ||
-    failureTags.includes('perda_timing') ||
-    (!!lastMessage && lastMessage.sender_type === 'customer' && !closeAttempted);
+    (failureTags.includes('sem_proximo_passo') ||
+      failureTags.includes('perda_timing') ||
+      (!!lastMessage && lastMessage.sender_type === 'customer' && !closeAttempted));
 
   return {
     close_attempted: !!closeAttempted,
@@ -1049,7 +1047,7 @@ function deriveLostOpportunities(memories: ConversationMemory[]): LostOpportunit
         ? 'A conversa perdeu conducao e o vendedor nao criou avancar.'
         : 'Houve sinal de risco ou perda sem recuperacao consistente.',
       what_should_have_been_done: memory.signals.next_best_action || 'Definir proximo passo claro, trabalhar objecao e retomar com timing.',
-      impact: memory.signals.loss_risk_level === 'alto' ? 'high' : 'medium',
+      impact: (memory.signals.loss_risk_level === 'alto' ? 'high' : 'medium') as 'high' | 'medium',
       evidence: memory.closing_excerpt,
     }))
     .slice(0, MAX_OPPORTUNITIES);
@@ -1394,7 +1392,7 @@ function mergeEvidenceSamples(parsed: unknown, fallback: EvidenceSample[]): Evid
       conversation_id: sanitizeText(item.conversation_id, 80),
       customer_name: sanitizeText(item.customer_name, 120) || null,
       customer_phone_masked: sanitizeText(item.customer_phone_masked, 40) || null,
-      category: item.category === 'forte' ? 'forte' : 'fraco',
+      category: (item.category === 'forte' ? 'forte' : 'fraco') as 'forte' | 'fraco',
       excerpt: sanitizeText(item.excerpt, 240),
     }))
     .filter((item) => item.conversation_id.length > 0 && item.excerpt.length > 0)
@@ -1414,8 +1412,8 @@ function mergeAuditReport(
 
   const recommendedTraining = isRecord(parsed.recommended_training)
     ? {
-      priority: sanitizeText(parsed.recommended_training.priority, 40) || fallback.recommended_training?.priority || 'conducao',
-      reason: sanitizeText(parsed.recommended_training.reason, 220) || fallback.recommended_training?.reason || '',
+      priority: sanitizeText(parsed.recommended_training.priority, 40) || (fallback.recommended_training?.priority || 'conducao'),
+      reason: sanitizeText(parsed.recommended_training.reason, 220) || (fallback.recommended_training?.reason || ''),
     }
     : fallback.recommended_training;
 

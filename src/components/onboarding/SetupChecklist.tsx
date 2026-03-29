@@ -81,7 +81,7 @@ function useSetupStatus(companyId: string | null) {
         supabase.from('conversations').select('id', { count: 'exact', head: true }).eq('company_id', companyId),
         supabase.from('agents').select('id', { count: 'exact', head: true }).eq('company_id', companyId).eq('is_active', true),
         supabase.from('playbooks').select('id', { count: 'exact', head: true }).eq('company_id', companyId),
-        supabase.from('ai_analyses').select('id', { count: 'exact', head: true }).eq('company_id', companyId),
+        supabase.from('ai_conversation_analysis').select('id', { count: 'exact', head: true }).eq('company_id', companyId),
         supabase.from('sales_records').select('id', { count: 'exact', head: true }).eq('company_id', companyId),
       ]);
 

@@ -115,25 +115,27 @@ async function fetchAgentAnalysisSummary(
 
   if (error || !analyses || analyses.length === 0) return null;
 
-  const scores = analyses.map(a => a.quality_score).filter((s): s is number => s != null);
+  const typedAnalyses = analyses as Array<Record<string, any>>;
+
+  const scores = typedAnalyses.map(a => a.quality_score).filter((s): s is number => s != null);
   const avgScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
 
-  const allFailureTags = analyses.flatMap(a =>
+  const allFailureTags = typedAnalyses.flatMap(a =>
     Array.isArray(a.failure_tags) ? a.failure_tags : [],
   );
-  const allTrainingTags = analyses.flatMap(a =>
+  const allTrainingTags = typedAnalyses.flatMap(a =>
     Array.isArray(a.training_tags) ? a.training_tags : [],
   );
-  const allImprovements = analyses.flatMap(a =>
+  const allImprovements = typedAnalyses.flatMap(a =>
     Array.isArray((a as any).improvements) ? (a as any).improvements : [],
   );
-  const allCoachingTips = analyses.flatMap(a =>
+  const allCoachingTips = typedAnalyses.flatMap(a =>
     Array.isArray(a.coaching_tips) ? a.coaching_tips : [],
   );
 
   // missed opportunity samples from structured_analysis
   const missedOpportunitySamples: string[] = [];
-  for (const a of analyses.slice(0, 5)) {
+  for (const a of typedAnalyses.slice(0, 5)) {
     const sa = (a as any).structured_analysis;
     if (sa && Array.isArray(sa.missed_opportunities)) {
       for (const mo of sa.missed_opportunities.slice(0, 2)) {

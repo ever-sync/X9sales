@@ -149,16 +149,41 @@ function mapHttpError(status: number, backendMessage: string): string {
   return backendMessage || `Falha HTTP ${status} ao executar analise manual.`;
 }
 
-async function invokeRunAiAnalysis<T>(
-  accessToken: string,
+async function getValidAccessToken(forceRefresh = false): Promise<string> {
+  if (forceRefresh) {
+    const { data, error } = await supabase.auth.refreshSession();
+    const refreshedToken = data.session?.access_token;
+    if (error || !refreshedToken) {
+      throw new Error('Sessao expirada. Faca login novamente.');
+    }
+    return refreshedToken;
+  }
+
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) {
+    throw new Error('Nao foi possivel validar a sessao. Faca login novamente.');
+  }
+
+  const accessToken = sessionData.session?.access_token;
+  if (accessToken) return accessToken;
+
+  return getValidAccessToken(true);
+}
+
+async function invokeProtectedFunction<T>(
+  path: string,
   payload: Record<string, unknown>,
+  invalidMessage: string,
+  retryOnAuthError = true,
+  accessToken?: string,
 ): Promise<T> {
-  const response = await fetch(`${env.VITE_SUPABASE_URL}/functions/v1/run-ai-analysis`, {
+  const resolvedToken = accessToken ?? await getValidAccessToken();
+  const response = await fetch(`${env.VITE_SUPABASE_URL}/functions/v1/${path}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       apikey: env.VITE_SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${accessToken}`,
+      Authorization: `Bearer ${resolvedToken}`,
     },
     body: JSON.stringify(payload),
   });
@@ -174,45 +199,29 @@ async function invokeRunAiAnalysis<T>(
 
   const backendMessage = (parsed && typeof parsed.error === 'string' ? parsed.error : rawText).trim();
 
+  if (response.status === 401 && retryOnAuthError) {
+    const refreshedToken = await getValidAccessToken(true);
+    return invokeProtectedFunction<T>(path, payload, invalidMessage, false, refreshedToken);
+  }
+
   if (!response.ok) throw new Error(mapHttpError(response.status, backendMessage));
   if (!parsed || parsed.success !== true) {
-    throw new Error(backendMessage || 'Resposta invalida da funcao run-ai-analysis.');
+    throw new Error(backendMessage || invalidMessage);
   }
 
   return parsed as T;
 }
 
-async function invokeRunSellerAudit<T>(
-  accessToken: string,
+async function invokeRunAiAnalysis<T>(
   payload: Record<string, unknown>,
 ): Promise<T> {
-  const response = await fetch(`${env.VITE_SUPABASE_URL}/functions/v1/run-seller-audit`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: env.VITE_SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify(payload),
-  });
+  return invokeProtectedFunction<T>('run-ai-analysis', payload, 'Resposta invalida da funcao run-ai-analysis.');
+}
 
-  const rawText = await response.text();
-  let parsed: FunctionPayload | null = null;
-
-  try {
-    parsed = rawText ? (JSON.parse(rawText) as FunctionPayload) : null;
-  } catch {
-    parsed = null;
-  }
-
-  const backendMessage = (parsed && typeof parsed.error === 'string' ? parsed.error : rawText).trim();
-
-  if (!response.ok) throw new Error(mapHttpError(response.status, backendMessage));
-  if (!parsed || parsed.success !== true) {
-    throw new Error(backendMessage || 'Resposta invalida da funcao run-seller-audit.');
-  }
-
-  return parsed as T;
+async function invokeRunSellerAudit<T>(
+  payload: Record<string, unknown>,
+): Promise<T> {
+  return invokeProtectedFunction<T>('run-seller-audit', payload, 'Resposta invalida da funcao run-seller-audit.');
 }
 
 function candidateLabel(candidate: PreviewCandidate): string {
@@ -478,13 +487,7 @@ export default function AIInsights() {
     queryFn: async () => {
       if (!companyId) throw new Error('Empresa nao selecionada.');
 
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError) throw new Error('Nao foi possivel validar a sessao. Faca login novamente.');
-
-      const accessToken = sessionData.session?.access_token;
-      if (!accessToken) throw new Error('Sessao expirada. Entre novamente na plataforma.');
-
-      return invokeRunAiAnalysis<PreviewResponse>(accessToken, {
+      return invokeRunAiAnalysis<PreviewResponse>({
         action: 'preview',
         company_id: companyId,
         agent_id: effectiveAgentId,
@@ -550,12 +553,6 @@ export default function AIInsights() {
       const validationError = validatePeriod(form.periodStart, form.periodEnd);
       if (validationError) throw new Error(validationError);
 
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError) throw new Error('Nao foi possivel validar a sessao. Faca login novamente.');
-
-      const accessToken = sessionData.session?.access_token;
-      if (!accessToken) throw new Error('Sessao expirada. Faca login novamente.');
-
       if (effectiveAgentId === ALL_AGENTS) {
         if (agents.length === 0) throw new Error('Nenhum atendente encontrado.');
 
@@ -563,7 +560,7 @@ export default function AIInsights() {
         let errors = 0;
         for (const agent of agents) {
           try {
-            await invokeRunAiAnalysis<StartResponse>(accessToken, {
+            await invokeRunAiAnalysis<StartResponse>({
               action: 'start',
               company_id: companyId,
               agent_id: agent.id,
@@ -586,7 +583,7 @@ export default function AIInsights() {
         if (previewCandidates.length === 0) throw new Error('Nao ha conversas elegiveis para os filtros informados.');
       }
 
-      return invokeRunAiAnalysis<StartResponse>(accessToken, {
+      return invokeRunAiAnalysis<StartResponse>({
         action: 'start',
         company_id: companyId,
         agent_id: effectiveAgentId,
@@ -619,13 +616,7 @@ export default function AIInsights() {
     mutationFn: async (forceRefresh) => {
       if (!companyId || selectedAgentId === ALL_AGENTS) throw new Error('Selecione um atendente para gerar auditoria mensal.');
 
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError) throw new Error('Nao foi possivel validar a sessao. Faca login novamente.');
-
-      const accessToken = sessionData.session?.access_token;
-      if (!accessToken) throw new Error('Sessao expirada. Faca login novamente.');
-
-      return invokeRunSellerAudit<SellerAuditStartResponse>(accessToken, {
+      return invokeRunSellerAudit<SellerAuditStartResponse>({
         action: 'start',
         company_id: companyId,
         agent_id: selectedAgentId,
@@ -637,6 +628,9 @@ export default function AIInsights() {
     onSuccess: (result) => {
       toast.success(result.reused ? 'Auditoria mensal reaproveitada.' : 'Auditoria mensal enfileirada.');
       queryClient.invalidateQueries({ queryKey: ['ai-seller-audit'] });
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Falha ao iniciar auditoria mensal.');
     },
   });
 
