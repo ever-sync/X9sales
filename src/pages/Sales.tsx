@@ -15,6 +15,7 @@ import {
 import { toast } from 'sonner';
 import { useCompany } from '../contexts/CompanyContext';
 import { usePermissions } from '../hooks/usePermissions';
+import { useBlockedPhones } from '../hooks/useBlockedPhones';
 import { supabase } from '../integrations/supabase/client';
 import { CACHE } from '../config/constants';
 import { Button } from '../components/ui/button';
@@ -154,6 +155,7 @@ export default function Sales() {
   const { companyId, role } = useCompany();
   const { user } = useAuth();
   const { can } = usePermissions();
+  const { isBlockedPhone } = useBlockedPhones();
   const queryClient = useQueryClient();
   const canCreateSale = can('revenue.run_own');
   const isAgent = role === 'agent';
@@ -251,14 +253,16 @@ export default function Sales() {
         .limit(300);
 
       if (error) throw error;
-      return ((data ?? []) as SalesConversationOptionRow[]).map((conversation) => ({
-        id: conversation.id,
-        agent_id: conversation.agent_id,
-        started_at: conversation.started_at,
-        customer: Array.isArray(conversation.customer)
-          ? (conversation.customer[0] ?? null)
-          : (conversation.customer ?? null),
-      }));
+      return ((data ?? []) as SalesConversationOptionRow[])
+        .map((conversation) => ({
+          id: conversation.id,
+          agent_id: conversation.agent_id,
+          started_at: conversation.started_at,
+          customer: Array.isArray(conversation.customer)
+            ? (conversation.customer[0] ?? null)
+            : (conversation.customer ?? null),
+        }))
+        .filter((conversation) => !isBlockedPhone(conversation.customer?.phone));
     },
     enabled: !!companyId,
     staleTime: CACHE.STALE_TIME,
@@ -290,7 +294,7 @@ export default function Sales() {
         .limit(500);
 
       if (error) throw error;
-      return (data ?? []) as SaleRecord[];
+      return ((data ?? []) as SaleRecord[]).filter((sale) => !isBlockedPhone((sale.conversation as any)?.customer?.phone));
     },
     enabled: !!companyId,
     staleTime: CACHE.STALE_TIME,
@@ -508,6 +512,7 @@ export default function Sales() {
 
       if (!customerName) throw new Error('Informe o nome do cliente.');
       if (customerPhone.length < 10) throw new Error('Informe um telefone válido.');
+      if (isBlockedPhone(customerPhone)) throw new Error('Esse cliente esta bloqueado e nao pode entrar no fluxo.');
 
       let customerId: string | null = null;
 

@@ -28,6 +28,7 @@ import { CACHE } from '../config/constants';
 import { formatCurrency } from '../lib/utils';
 import { cn } from '../lib/utils';
 import { getPercentDelta, usePeriodComparison } from '../hooks/usePeriodComparison';
+import { useBlockedPhones } from '../hooks/useBlockedPhones';
 import type { AgentRanking, DailyTrend } from '../types';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -58,6 +59,7 @@ export default function Performance() {
   const { companyId } = useCompany();
   const { user } = useAuth();
   const { can } = usePermissions();
+  const { isBlockedConversationId } = useBlockedPhones();
   const [days, setDays] = useState(30);
 
   const isAdmin = can('performance.view_all');
@@ -168,7 +170,7 @@ export default function Performance() {
             .lte('conversation_date', end),
           supabase
             .from('ai_conversation_analysis')
-            .select('quality_score')
+            .select('conversation_id, quality_score')
             .eq('company_id', companyId)
             .gte('analyzed_at', `${start}T00:00:00`)
             .lte('analyzed_at', `${end}T23:59:59`),
@@ -184,7 +186,8 @@ export default function Performance() {
         if (qualityRes.error) throw qualityRes.error;
         if (revenueRes.error) throw revenueRes.error;
 
-        const qualityRows = qualityRes.data ?? [];
+        const qualityRows = ((qualityRes.data ?? []) as Array<{ conversation_id?: string | null; quality_score?: number | null }>)
+          .filter((row) => !isBlockedConversationId(row.conversation_id ?? null));
         const trendRows = trendRes.data ?? [];
         const revenueRows = revenueRes.data ?? [];
 
@@ -220,7 +223,7 @@ export default function Performance() {
           .lte('metric_date', end),
         supabase
           .from('ai_conversation_analysis')
-          .select('quality_score')
+          .select('conversation_id, quality_score')
           .eq('company_id', companyId)
           .eq('agent_id', myAgentId)
           .gte('analyzed_at', `${start}T00:00:00`)
@@ -230,7 +233,8 @@ export default function Performance() {
       if (agentMetricsRes.error) throw agentMetricsRes.error;
       if (qualityRes.error) throw qualityRes.error;
 
-      const qualityRows = qualityRes.data ?? [];
+      const qualityRows = ((qualityRes.data ?? []) as Array<{ conversation_id?: string | null; quality_score?: number | null }>)
+        .filter((row) => !isBlockedConversationId(row.conversation_id ?? null));
       const metricRows = agentMetricsRes.data ?? [];
 
       return {

@@ -1,12 +1,14 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
-import { AlertTriangle, ArrowRight, Brain, MapPin, MessageSquare, Pencil, Plus, Search, Store, User, X } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Brain, Camera, FilterX, Loader2, MapPin, MessageSquare, Pencil, Plus, Search, Store, User, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { supabase } from '../integrations/supabase/client';
 import { useCompany } from '../contexts/CompanyContext';
 import { usePermissions } from '../hooks/usePermissions';
 import type { Agent, AgentRanking, AIConversationAnalysis, Store as AgentStore } from '../types';
 import { CACHE } from '../config/constants';
+import { invokeSyncAgentAvatars } from '../lib/agentAvatarSync';
 import { cn } from '../lib/utils';
 
 const AVATAR_COLORS = ['#7C3AED', '#2563EB', '#059669', '#D97706', '#DC2626', '#0891B2', '#DB2777', '#EA580C'];
@@ -96,12 +98,20 @@ function formatSecondsCompact(seconds: number | null | undefined) {
   return `${(seconds / 3600).toFixed(1)} h`;
 }
 
+function managementTone(label?: ReturnType<typeof alertMeta>['label']) {
+  if (label === 'Vermelho') return 'border-red-200 bg-red-50/80';
+  if (label === 'Laranja') return 'border-orange-200 bg-orange-50/80';
+  if (label === 'Amarelo') return 'border-amber-200 bg-amber-50/80';
+  return 'border-secondary/10 bg-secondary/5';
+}
+
 export default function Agents() {
   const { companyId } = useCompany();
   const { can } = usePermissions();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const canManageAgents = can('agents.view_all');
+  const avatarAutoSyncTriggered = useRef(false);
 
   const [showModal, setShowModal] = useState(false);
   const [showStoreModal, setShowStoreModal] = useState(false);
@@ -352,6 +362,11 @@ export default function Agents() {
     const criticalAgents = Object.values(managerSnapshots).filter((item) => item.alert.label === 'Vermelho' || item.alert.label === 'Laranja').length;
     return { totalAgents, activeStores, totalAlerts, avgQuality, criticalAgents };
   }, [agents, liveStatsMap, managerSnapshots, rankingMap]);
+  const hasActiveFilters = Boolean(search.trim() || storeFilter);
+  const missingAvatarCount = useMemo(
+    () => agents.filter((agent) => !agent.avatar_url).length,
+    [agents],
+  );
 
   const closeModal = useCallback(() => { setShowModal(false); setEditingAgentId(null); setForm(emptyForm); setFormError(null); }, []);
   const closeStoreModal = useCallback(() => { setShowStoreModal(false); setStoreName(''); setStoreError(null); }, []);
@@ -438,6 +453,45 @@ export default function Agents() {
     onError: (error: Error) => setStoreError(error.message),
   });
 
+  const syncAgentAvatars = useMutation({
+    mutationFn: async (_options?: { silent?: boolean }) => {
+      if (!companyId) throw new Error('Empresa nao encontrada');
+      return invokeSyncAgentAvatars(companyId);
+    },
+    onSuccess: (result, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['agents', companyId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-ranking', companyId] });
+      queryClient.invalidateQueries({ queryKey: ['agents-live-stats', companyId] });
+      if (!variables?.silent) {
+        toast.success(
+          result.stats?.updated
+            ? `${result.stats.updated} foto(s) sincronizada(s) da UazAPI.`
+            : 'As fotos ja estavam atualizadas.',
+        );
+      }
+    },
+    onError: (error: Error, variables) => {
+      if (!variables?.silent) {
+        toast.error(error.message);
+      } else {
+        console.error('[Agents] avatar sync failed:', error.message);
+      }
+    },
+  });
+
+  useEffect(() => {
+    avatarAutoSyncTriggered.current = false;
+  }, [companyId]);
+
+  useEffect(() => {
+    if (!canManageAgents || !companyId || isLoading || missingAvatarCount === 0 || syncAgentAvatars.isPending || avatarAutoSyncTriggered.current) {
+      return;
+    }
+
+    avatarAutoSyncTriggered.current = true;
+    syncAgentAvatars.mutate({ silent: true });
+  }, [canManageAgents, companyId, isLoading, missingAvatarCount, syncAgentAvatars]);
+
   const handleSubmit = useCallback((event: React.FormEvent) => {
     event.preventDefault();
     setFormError(null);
@@ -475,14 +529,56 @@ export default function Agents() {
         </div>
       </section>
 
+      {canManageAgents && (
+        <section className="rounded-[24px] border border-border bg-card px-5 py-4 shadow-sm">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Fotos da equipe</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {missingAvatarCount > 0 ? `${missingAvatarCount} vendedor(es) ainda sem foto sincronizada da UazAPI.` : 'Todas as fotos disponiveis ja foram sincronizadas.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => syncAgentAvatars.mutate(undefined)}
+              disabled={syncAgentAvatars.isPending}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-border bg-white px-4 text-sm font-semibold text-foreground shadow-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {syncAgentAvatars.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+              Sincronizar fotos
+            </button>
+          </div>
+        </section>
+      )}
+
       <section className="rounded-[28px] border border-border bg-card p-5 shadow-sm">
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(220px,0.8fr)]">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Busca e organização</p>
+            <h3 className="mt-2 text-lg font-semibold text-foreground">{filteredAgents.length} atendentes visíveis</h3>
+            <p className="mt-1 text-sm text-muted-foreground">Filtre a operação por loja ou encontre um vendedor específico mais rápido.</p>
+          </div>
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearch('');
+                setStoreFilter('');
+              }}
+              className="inline-flex h-11 items-center gap-2 rounded-full border border-border bg-background px-4 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
+            >
+              <FilterX className="h-4 w-4" />
+              Limpar filtros
+            </button>
+          )}
+        </div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(240px,0.8fr)]">
           <label className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input type="text" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por nome, email, telefone, loja ou ID" className="h-12 w-full rounded-2xl border border-border bg-background pl-10 pr-4 text-sm text-foreground outline-none transition-colors focus:border-primary" /></label>
           <select value={storeFilter} onChange={(event) => setStoreFilter(event.target.value)} className="h-12 rounded-2xl border border-border bg-background px-4 text-sm text-foreground outline-none transition-colors focus:border-primary"><option value="">Todas as lojas</option>{stores.map((store) => <option key={store.id} value={store.name}>{store.name}</option>)}</select>
         </div>
       </section>
 
-      {isLoading ? <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">{[...Array(6)].map((_, index) => <div key={index} className="rounded-[28px] border border-border bg-card p-5 shadow-sm animate-pulse"><div className="flex items-center gap-4"><div className="h-16 w-16 rounded-[22px] bg-muted" /><div className="flex-1 space-y-2"><div className="h-5 w-36 rounded bg-muted" /><div className="h-3 w-24 rounded bg-muted" /></div></div><div className="mt-5 grid grid-cols-3 gap-2"><div className="h-20 rounded-2xl bg-muted" /><div className="h-20 rounded-2xl bg-muted" /><div className="h-20 rounded-2xl bg-muted" /></div></div>)}</div> : filteredAgents.length === 0 ? (
+      {isLoading ? <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">{[...Array(6)].map((_, index) => <div key={index} className="rounded-[30px] border border-border bg-card p-6 shadow-sm animate-pulse"><div className="flex items-start justify-between gap-4"><div className="flex items-start gap-4"><div className="h-[72px] w-[72px] rounded-[24px] bg-muted" /><div className="space-y-2"><div className="h-5 w-36 rounded bg-muted" /><div className="h-3 w-24 rounded bg-muted" /><div className="h-3 w-28 rounded bg-muted" /></div></div><div className="h-10 w-10 rounded-full bg-muted" /></div><div className="mt-6 grid grid-cols-2 gap-3"><div className="h-20 rounded-2xl bg-muted" /><div className="h-20 rounded-2xl bg-muted" /><div className="h-20 rounded-2xl bg-muted" /><div className="h-20 rounded-2xl bg-muted" /></div><div className="mt-4 h-24 rounded-[22px] bg-muted" /></div>)}</div> : filteredAgents.length === 0 ? (
         <div className="rounded-[28px] border border-border bg-card p-12 text-center shadow-sm">
           <User className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
           <p className="mb-4 text-muted-foreground">Nenhum atendente encontrado para os filtros atuais.</p>
@@ -497,29 +593,26 @@ export default function Agents() {
         const openAlerts = ranking?.open_alerts ?? live?.open_alerts ?? 0;
         const avgFirstResponse = ranking?.avg_first_response_sec ?? live?.avg_first_response_sec ?? null;
         return (
-          <Link key={agent.id} to={`/agents/${agent.id}`} className="group relative overflow-hidden rounded-[28px] border border-border bg-card p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-lg">
+          <Link key={agent.id} to={`/agents/${agent.id}`} className="group relative overflow-hidden rounded-[30px] border border-border bg-card p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-lg">
             <div className="absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,#d3fe18_0%,#b7f200_45%,rgba(211,254,24,0.05)_100%)]" />
-            {canManageAgents && <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); openEditModal(agent); }} className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full border border-border bg-background/95 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted"><Pencil className="h-3.5 w-3.5" />Editar</button>}
+            {canManageAgents && <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); openEditModal(agent); }} className="absolute right-5 top-5 inline-flex items-center gap-1 rounded-full border border-border bg-background/95 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted"><Pencil className="h-3.5 w-3.5" />Editar</button>}
             <div className="flex items-start gap-4 pr-20">
-              <div className="relative shrink-0"><AgentAvatar agent={agent} className="h-16 w-16 rounded-[22px] border border-border object-cover" /><span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-background bg-green-500" /></div>
+              <div className="relative shrink-0"><AgentAvatar agent={agent} className="h-[72px] w-[72px] rounded-[24px] border border-border object-cover" /><span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-background bg-green-500" /></div>
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2"><p className="truncate text-[22px] font-semibold leading-tight text-foreground transition-colors group-hover:text-primary">{agent.name}</p><span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700">Ativo</span>{managerSnapshot && <span className={cn('inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em]', managerSnapshot.alert.className)}>{managerSnapshot.alert.label}</span>}</div>
-                {agent.store?.name && <p className="mt-2 inline-flex rounded-full bg-slate-100 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">{agent.store.name}</p>}
-                <div className="mt-3 space-y-1.5">{agent.email ? <p className="truncate text-sm text-muted-foreground">{agent.email}</p> : agent.phone ? <p className="text-sm text-muted-foreground">{agent.phone}</p> : agent.external_id && !isUUID(agent.external_id) ? <p className="text-sm font-mono text-muted-foreground/80">{agent.external_id}</p> : <p className="text-sm text-muted-foreground">Sem contato principal informado</p>}<p className="text-xs text-muted-foreground">ID: <span className="font-mono">{agent.external_id && !isUUID(agent.external_id) ? agent.external_id : agent.id.slice(0, 8)}</span></p></div>
+                <div className="flex flex-wrap items-center gap-2"><p className="truncate text-[24px] font-semibold leading-tight tracking-[-0.03em] text-foreground transition-colors group-hover:text-primary">{agent.name}</p><span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700">Ativo</span>{managerSnapshot && <span className={cn('inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em]', managerSnapshot.alert.className)}>{managerSnapshot.alert.label}</span>}</div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">{agent.store?.name && <p className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">{agent.store.name}</p>}<p className="inline-flex rounded-full bg-muted px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">ID {agent.external_id && !isUUID(agent.external_id) ? agent.external_id : agent.id.slice(0, 8)}</p></div>
+                <div className="mt-3 space-y-1.5">{agent.email ? <p className="truncate text-sm text-muted-foreground">{agent.email}</p> : agent.phone ? <p className="text-sm text-muted-foreground">{agent.phone}</p> : <p className="text-sm text-muted-foreground">Sem contato principal informado</p>}{agent.email && agent.phone && <p className="text-sm text-muted-foreground">{agent.phone}</p>}</div>
               </div>
               <ArrowRight className="mt-2 h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
             </div>
-            <div className="mt-5 grid grid-cols-3 gap-2 border-t border-border/80 pt-4">
+            <div className="mt-6 grid grid-cols-2 gap-3 border-t border-border/80 pt-5">
               <MetricMini icon={<MessageSquare className="h-3.5 w-3.5" />} label="Conversas" value={String(totalConversations)} />
               <MetricMini icon={<Brain className="h-3.5 w-3.5" />} label="Qualidade" value={avgQuality != null ? String(Math.round(avgQuality)) : '—'} valueClass={avgQuality != null ? qualityColor(avgQuality) : 'text-muted-foreground'} />
               <MetricMini icon={<AlertTriangle className="h-3.5 w-3.5" />} label="Alertas" value={String(openAlerts)} valueClass={openAlerts > 0 ? 'text-red-600' : 'text-emerald-600'} />
+              <MetricMini icon={<ArrowRight className="h-3.5 w-3.5" />} label="1ª resposta" value={formatSecondsCompact(avgFirstResponse)} />
             </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <div className="mt-3">
               <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Primeira resposta média</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{formatSecondsCompact(avgFirstResponse)}</p>
-              </div>
-              <div className="rounded-2xl bg-slate-50 px-4 py-3 text-right">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{managerSnapshot ? 'Status de gestão' : 'Status operacional'}</p>
                 {managerSnapshot ? (
                   <div className="mt-1 space-y-1">
@@ -545,14 +638,18 @@ export default function Agents() {
               </div>
             </div>
             {managerSnapshot && (
-              <div className="mt-3 rounded-[22px] border border-secondary/10 bg-secondary/5 px-4 py-3">
-                <div className="flex items-center justify-between gap-3">
+              <div className={cn('mt-4 rounded-[22px] border px-4 py-4', managementTone(managerSnapshot.alert.label))}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-secondary">Leitura do gestor</p>
-                  <span className="text-xs font-semibold text-muted-foreground">{managerSnapshot.passiveRate}% passivo</span>
+                  <div className="flex items-center gap-3 text-xs font-semibold text-muted-foreground">
+                    <span>{managerSnapshot.passiveRate}% passivo</span>
+                    <span>{managerSnapshot.opportunityLosses} perdas</span>
+                    <span>Nota {managerSnapshot.finalScore.toFixed(1)}</span>
+                  </div>
                 </div>
                 <p className="mt-2 text-sm font-semibold leading-6 text-foreground">{managerSnapshot.verdict}</p>
                 <div className="mt-3 flex items-center justify-between gap-3 text-xs">
-                  <span className="text-muted-foreground">{managerSnapshot.opportunityLosses} oportunidades perdidas</span>
+                  <span className="text-muted-foreground">Diagnóstico resumido visível para gestão</span>
                   <span className="font-semibold text-secondary">Abrir diagnóstico</span>
                 </div>
               </div>

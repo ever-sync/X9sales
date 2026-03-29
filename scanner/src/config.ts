@@ -13,6 +13,7 @@ export const config = {
   revenueCopilotCron: process.env.SCANNER_REVENUE_COPILOT_CRON || '*/1 * * * *',
   managerCopilotCron: process.env.SCANNER_MANAGER_COPILOT_CRON || '*/1 * * * *',
   dailyDigestCron: process.env.SCANNER_DIGEST_CRON || '0 18 * * *', // Runs at 18:00 daily
+  morningCoachingCron: process.env.SCANNER_MORNING_COACHING_CRON || '0 8 * * *', // Runs at 08:00 daily
   batchSize: parseInt(process.env.SCANNER_BATCH_SIZE || '1000', 10),
   maxRetries: parseInt(process.env.SCANNER_MAX_RETRIES || '3', 10),
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',

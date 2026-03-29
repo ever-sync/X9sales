@@ -29,6 +29,7 @@ import {
   Medal,
 } from 'lucide-react';
 import { useDashboardOverview } from '../hooks/useDashboardMetrics';
+import { filterBlockedItems, useBlockedPhones } from '../hooks/useBlockedPhones';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../integrations/supabase/client';
 import { CACHE } from '../config/constants';
@@ -55,6 +56,7 @@ type AuditPreview = Partial<AIConversationAnalysis> & {
 type CustomerLeadMessage = {
   started_at: string;
   customer_id: string | null;
+  customer?: { phone?: string | null } | null;
 };
 
 type AgentSlaMetric = {
@@ -64,6 +66,7 @@ type AgentSlaMetric = {
 };
 
 type AgentScoreMetric = {
+  conversation_id?: string | null;
   quality_score?: number | null;
   agent?: { id?: string | null; name?: string | null; avatar_url?: string | null } | null;
 };
@@ -194,6 +197,7 @@ function HeroBadge({
 export default function Dashboard() {
   const queryClient = useQueryClient();
   const { company, isLoading: companyLoading } = useCompany();
+  const { blockedPhones, blockedConversationIds, isLoading: isLoadingBlockedPhones } = useBlockedPhones();
   const overviewQuery = useDashboardOverview();
 
   const businessTimezone = company?.settings?.timezone;
@@ -226,7 +230,7 @@ export default function Dashboard() {
     enabled: !!company?.id,
     staleTime: CACHE.STALE_TIME,
   });
-  const { data: auditItems = [] } = auditItemsQuery;
+  const { data: rawAuditItems = [] } = auditItemsQuery;
 
   const leadMessagesQuery = useQuery<CustomerLeadMessage[]>({
     queryKey: ['dashboard-lead-messages', company?.id, businessTimezone],
@@ -238,17 +242,30 @@ export default function Dashboard() {
 
       const { data, error } = await supabase
         .from('conversations')
-        .select('started_at, customer_id')
+        .select('started_at, customer_id, customer:customers(phone)')
         .eq('company_id', company.id)
         .gte('started_at', since.toISOString());
 
       if (error) throw error;
-      return (data ?? []) as CustomerLeadMessage[];
+      return ((data ?? []) as any[]).map((item) => ({
+        ...item,
+        customer: Array.isArray(item.customer) ? (item.customer[0] ?? null) : (item.customer ?? null),
+      })) as CustomerLeadMessage[];
     },
-    enabled: !!company?.id,
+    enabled: !!company?.id && !isLoadingBlockedPhones,
     staleTime: CACHE.STALE_TIME,
   });
-  const { data: leadMessages = [] } = leadMessagesQuery;
+  const { data: rawLeadMessages = [] } = leadMessagesQuery;
+
+  const auditItems = useMemo(
+    () => filterBlockedItems(rawAuditItems, (item) => item.conversation?.customer?.phone, blockedPhones),
+    [blockedPhones, rawAuditItems],
+  );
+
+  const leadMessages = useMemo(
+    () => filterBlockedItems(rawLeadMessages, (item) => item.customer?.phone, blockedPhones),
+    [blockedPhones, rawLeadMessages],
+  );
 
   const slaMetricsQuery = useQuery<AgentSlaMetric[]>({
     queryKey: ['dashboard-sla-metrics', company?.id],
@@ -285,14 +302,14 @@ export default function Dashboard() {
 
       const { data, error } = await supabase
         .from('ai_conversation_analysis')
-        .select('quality_score, agent:agents(id, name, avatar_url)')
+        .select('conversation_id, quality_score, agent:agents(id, name, avatar_url)')
         .eq('company_id', company.id)
         .gte('analyzed_at', since.toISOString())
         .not('quality_score', 'is', null)
         .not('agent_id', 'is', null);
 
       if (error) throw error;
-      return (data ?? []) as unknown as AgentScoreMetric[];
+      return ((data ?? []) as unknown as AgentScoreMetric[]).filter((item) => !blockedConversationIds.has(item.conversation_id ?? ''));
     },
     enabled: !!company?.id,
     staleTime: CACHE.STALE_TIME,

@@ -88,6 +88,7 @@ export function getStripeWebhookSecret() {
 export function getUazapiConfig() {
   return {
     baseUrl: Deno.env.get("UAZAPI_BASE_URL") ?? "",
+    adminToken: Deno.env.get("UAZAPI_ADMIN_TOKEN") ?? "",
     instance: Deno.env.get("UAZAPI_INSTANCE") ?? "",
     token: Deno.env.get("UAZAPI_TOKEN") ?? "",
     managerPhone: Deno.env.get("WHATSAPP_NOTIFY_PHONE") ?? "",

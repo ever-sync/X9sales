@@ -49,7 +49,10 @@
       "Bash(grep -n \"mv_agent_ranking\\\\|mv_daily_trend\\\\|mv_dashboard\" supabase/migrations/*.sql)",
       "Bash(grep -n \"metrics_agent_daily\" supabase/migrations/*.sql)",
       "Bash(grep -v \"^\\\\.$\")",
-      "Bash(wc -l src/pages/*.tsx)"
+      "Bash(wc -l src/pages/*.tsx)",
+      "Bash(grep -l \"ai_conversation_analysis\\\\|ai_analysis_jobs\" \"c:/Users/rapha/OneDrive/Documentos/X9Sales/supabase/migrations\"/*.sql)",
+      "Bash(find c:/Users/rapha/OneDrive/Documentos/X9Sales -maxdepth 3 -name deno.json* -o -name supabase.json -o -name *.env*)",
+      "Bash(grep -r functions/v1 c:/Users/rapha/OneDrive/Documentos/X9Sales/supabase/functions --include=*.ts)"
     ]
   }
 }

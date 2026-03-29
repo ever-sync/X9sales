@@ -3,6 +3,7 @@ import { supabase } from '../integrations/supabase/client';
 import { useCompany } from '../contexts/CompanyContext';
 import type { Conversation } from '../types';
 import { CACHE, PAGINATION } from '../config/constants';
+import { filterBlockedItems, useBlockedPhones } from './useBlockedPhones';
 
 interface UseConversationsOptions {
   agentId?: string;
@@ -14,10 +15,11 @@ interface UseConversationsOptions {
 
 export function useConversations(options: UseConversationsOptions = {}) {
   const { companyId } = useCompany();
+  const { blockedPhones, isLoading: isLoadingBlockedPhones } = useBlockedPhones();
   const { agentId, status, channel, page = 1, pageSize = PAGINATION.DEFAULT_PAGE_SIZE } = options;
 
   return useQuery<{ data: Conversation[]; count: number }>({
-    queryKey: ['conversations', companyId, agentId, status, channel, page, pageSize],
+    queryKey: ['conversations', companyId, agentId, status, channel, page, pageSize, Array.from(blockedPhones).join(',')],
     queryFn: async () => {
       if (!companyId) return { data: [], count: 0 };
 
@@ -32,12 +34,14 @@ export function useConversations(options: UseConversationsOptions = {}) {
       if (status) query = query.eq('status', status);
       if (channel) query = query.eq('channel', channel);
 
-      const { data, error, count } = await query;
+      const { data, error } = await query;
 
       if (error) throw error;
-      return { data: (data ?? []) as Conversation[], count: count ?? 0 };
+
+      const filtered = filterBlockedItems((data ?? []) as Conversation[], (conversation) => conversation.customer?.phone, blockedPhones);
+      return { data: filtered, count: filtered.length };
     },
-    enabled: !!companyId,
+    enabled: !!companyId && !isLoadingBlockedPhones,
     staleTime: CACHE.STALE_TIME,
   });
 }

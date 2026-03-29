@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../integrations/supabase/client';
 import { useCompany } from '../contexts/CompanyContext';
+import { useBlockedPhones } from '../hooks/useBlockedPhones';
 import type {
   Agent,
   AIAnalysisJob,
@@ -203,6 +204,7 @@ function buildRpcParams(filters: {
 
 export default function AIInsights() {
   const { companyId, company, role } = useCompany();
+  const { isBlockedPhone } = useBlockedPhones();
   const queryClient = useQueryClient();
   const reviewSectionRef = useRef<HTMLDivElement | null>(null);
   const canRunManualAnalysis = role === 'owner_admin';
@@ -321,7 +323,8 @@ export default function AIInsights() {
         p_offset: (reviewPage - 1) * REVIEW_PAGE_SIZE,
       });
       if (error) throw error;
-      return (data ?? []) as AIInsightsReviewItem[];
+      const items = (data ?? []) as AIInsightsReviewItem[];
+      return items.filter(i => !isBlockedPhone(i.customer_phone));
     },
     enabled: filtersReady && !!rpcBaseParams,
     staleTime: CACHE.STALE_TIME,

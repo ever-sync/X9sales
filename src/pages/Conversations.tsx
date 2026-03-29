@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../integrations/supabase/client';
+import { useBlockedPhones } from '../hooks/useBlockedPhones';
 import { channelLabel, cn, normalizePhone, stripAgentPrefix } from '../lib/utils';
 import { CACHE, PAGINATION } from '../config/constants';
 import type { Agent } from '../types';
@@ -265,6 +266,7 @@ function AgentCard({ agent, convs, total, loading }: AgentCardProps) {
 function FlatList({ agentId, status, channel }: { agentId: string; status: string; channel: string }) {
   const [page, setPage] = useState(1);
   const { companyId } = useCompany();
+  const { isBlockedPhone } = useBlockedPhones();
   const pageSize = PAGINATION.DEFAULT_PAGE_SIZE;
 
   const { data, isLoading } = useQuery({
@@ -284,7 +286,7 @@ function FlatList({ agentId, status, channel }: { agentId: string; status: strin
     staleTime: CACHE.STALE_TIME,
   });
 
-  const conversations = data?.convs ?? [];
+  const conversations = (data?.convs ?? []).filter(c => !isBlockedPhone(c.customer_phone));
   const totalCount = data?.total ?? 0;
   const totalPages = Math.ceil(totalCount / pageSize);
 
@@ -340,6 +342,7 @@ function GroupedView({ agents, status, channel, companyId }: {
   channel: string;
   companyId: string | null;
 }) {
+  const { isBlockedPhone } = useBlockedPhones();
   const results = useQueries({
     queries: agents.map(agent => ({
       queryKey: agentConvQueryKey({ companyId, agentId: agent.id, status: status || undefined, channel: channel || undefined }),
@@ -354,7 +357,7 @@ function GroupedView({ agents, status, channel, companyId }: {
         <AgentCard
           key={agent.id}
           agent={agent}
-          convs={results[i]?.data?.convs ?? []}
+          convs={(results[i]?.data?.convs ?? []).filter(c => !isBlockedPhone(c.customer_phone))}
           total={results[i]?.data?.total ?? 0}
           loading={results[i]?.isLoading ?? true}
         />

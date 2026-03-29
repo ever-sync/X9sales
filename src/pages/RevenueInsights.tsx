@@ -23,6 +23,7 @@ import {
 import { toast } from 'sonner';
 import { supabase } from '../integrations/supabase/client';
 import { useCompany } from '../contexts/CompanyContext';
+import { useBlockedPhones } from '../hooks/useBlockedPhones';
 import type { Agent, RevenueCopilotJob, ROIReportSummary } from '../types';
 import { CACHE } from '../config/constants';
 import { env } from '../config/env';
@@ -196,6 +197,7 @@ async function invokeEdge<T>(
 
 export default function RevenueInsights() {
   const { companyId, company, role } = useCompany();
+  const { isBlockedPhone } = useBlockedPhones();
   const queryClient = useQueryClient();
   const canRun = role === 'owner_admin';
   const businessTimezone = company?.settings?.timezone || 'UTC';
@@ -274,7 +276,8 @@ export default function RevenueInsights() {
         p_limit: 300,
       });
       if (error) throw error;
-      return (data ?? []) as RevenueSignalFeedRow[];
+      const items = (data ?? []) as RevenueSignalFeedRow[];
+      return items.filter(i => !isBlockedPhone(i.customer_phone));
     },
     enabled: !!companyId,
     staleTime: CACHE.STALE_TIME,

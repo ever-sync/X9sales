@@ -17,6 +17,7 @@ import type {
 import { CACHE } from '../config/constants';
 import { MetricCard } from '../components/dashboard/MetricCard';
 import { formatSeconds, formatDateTime, channelLabel, cn, getMessageDisplayContent } from '../lib/utils';
+import { useBlockedPhones } from '../hooks/useBlockedPhones';
 import { toast } from 'sonner';
 import {
   ArrowLeft,
@@ -104,6 +105,7 @@ export default function ConversationDetail() {
   const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { isBlockedPhone, isLoading: isLoadingBlockedPhones } = useBlockedPhones();
 
   const { data: conv, isLoading } = useQuery<Conversation | null>({
     queryKey: ['conversation', id],
@@ -115,9 +117,11 @@ export default function ConversationDetail() {
         .eq('id', id)
         .maybeSingle();
       if (error) throw error;
-      return (data as Conversation | null) ?? null;
+      const conversation = (data as Conversation | null) ?? null;
+      if (conversation && isBlockedPhone(conversation.customer?.phone)) return null;
+      return conversation;
     },
-    enabled: !!id,
+    enabled: !!id && !isLoadingBlockedPhones,
     staleTime: CACHE.STALE_TIME,
   });
 
@@ -133,7 +137,7 @@ export default function ConversationDetail() {
       if (error) throw error;
       return (data ?? []) as AppEvent[];
     },
-    enabled: !!id,
+    enabled: !!conv?.id,
     staleTime: CACHE.STALE_TIME,
   });
 
@@ -149,7 +153,7 @@ export default function ConversationDetail() {
       if (error) throw error;
       return (data ?? []) as ConversationMessage[];
     },
-    enabled: !!id,
+    enabled: !!conv?.id,
     staleTime: CACHE.STALE_TIME,
   });
 
@@ -165,7 +169,7 @@ export default function ConversationDetail() {
       if (error) throw error;
       return (data as DealSignal | null) ?? null;
     },
-    enabled: !!id,
+    enabled: !!conv?.id,
     staleTime: CACHE.STALE_TIME,
   });
 
@@ -199,7 +203,7 @@ export default function ConversationDetail() {
       if (error) throw error;
       return (data as AIConversationAnalysis | null) ?? null;
     },
-    enabled: !!id,
+    enabled: !!conv?.id,
     staleTime: CACHE.STALE_TIME,
   });
 
@@ -216,7 +220,7 @@ export default function ConversationDetail() {
       if (error) throw error;
       return (data ?? []) as ConversationComment[];
     },
-    enabled: !!id && !!conv?.company_id,
+    enabled: !!conv?.id && !!conv?.company_id,
     staleTime: CACHE.STALE_TIME,
   });
 

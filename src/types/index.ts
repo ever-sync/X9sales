@@ -417,6 +417,30 @@ export interface WeightedBreakdown {
   closing_weighted: number;
 }
 
+export interface BehaviorFlags {
+  close_attempted: boolean;
+  follow_up_present: boolean;
+  real_diagnosis: boolean;
+  passive_response: boolean;
+  objection_mishandled: boolean;
+  abandoned_without_next_step: boolean;
+}
+
+export interface CompetencyScores {
+  opening: number | null;
+  timing: number | null;
+  authority: number | null;
+  follow_up: number | null;
+  closing: number | null;
+}
+
+export interface SeverityFinding {
+  tag: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  evidence: string;
+  impact: string;
+}
+
 export interface StructuredAnalysis {
   missed_opportunities: MissedOpportunity[];
   strengths: string[];
@@ -425,6 +449,10 @@ export interface StructuredAnalysis {
   pillar_evidence: Record<string, string>;
   weighted_breakdown: WeightedBreakdown;
   failure_tags: string[];
+  behavior_flags?: BehaviorFlags | null;
+  competency_scores?: CompetencyScores | null;
+  severity_findings?: SeverityFinding[] | null;
+  seller_profile_hint?: string | null;
 }
 
 export interface AIConversationAnalysis {
@@ -531,6 +559,126 @@ export interface AIInsightsFailureHeatmapCell {
   agent_name: string;
   failure_tag: string;
   failure_count: number;
+}
+
+export type AISellerAuditAlertLevel = 'verde' | 'amarelo' | 'laranja' | 'vermelho';
+
+export interface AISellerAuditScorecard {
+  abertura: number | null;
+  agilidade: number | null;
+  diagnostico: number | null;
+  conducao: number | null;
+  construcao_valor: number | null;
+  objecoes: number | null;
+  fechamento: number | null;
+  follow_up: number | null;
+  comunicacao: number | null;
+  consistencia: number | null;
+}
+
+export interface AISellerAuditPerformanceMetrics {
+  close_attempt_rate: number;
+  follow_up_rate: number;
+  real_diagnosis_rate: number;
+  abandonment_rate: number;
+  poor_objection_handling_rate: number;
+  passive_response_rate: number;
+}
+
+export interface AISellerAuditOpportunity {
+  conversation_id: string;
+  customer_name: string | null;
+  customer_phone_masked: string | null;
+  what_happened: string;
+  why_it_was_lost: string;
+  what_should_have_been_done: string;
+  impact: 'low' | 'medium' | 'high';
+  evidence: string | null;
+}
+
+export interface AISellerAuditEvidenceSample {
+  conversation_id: string;
+  customer_name: string | null;
+  customer_phone_masked: string | null;
+  category: 'forte' | 'fraco';
+  excerpt: string;
+}
+
+export interface AISellerAuditInterventionPlan {
+  stop_now: string[];
+  start_now: string[];
+  train_next_30_days: string[];
+}
+
+export interface AISellerAuditRecommendedTraining {
+  priority: string;
+  reason: string;
+}
+
+export interface AISellerAuditFinalQuestions {
+  extracts_opportunities_well: string;
+  needs_more_leads_or_skill: string;
+  main_problem_skill_or_posture: string;
+  next_30_days_if_nothing_changes: string;
+  train_pressure_monitor_or_replace: string;
+}
+
+export interface AISellerAuditReport {
+  executive_verdict: string;
+  alert_level: AISellerAuditAlertLevel;
+  final_score: number | null;
+  seller_level: string;
+  scorecard: AISellerAuditScorecard;
+  performance_metrics: AISellerAuditPerformanceMetrics;
+  strengths: string[];
+  main_errors: string[];
+  recurring_patterns: string[];
+  operational_impact: string[];
+  behavior_profile: string;
+  critical_failures: string[];
+  high_failures: string[];
+  medium_failures: string[];
+  low_failures: string[];
+  lost_opportunities: AISellerAuditOpportunity[];
+  unfiltered_manager_note: string;
+  manager_actions: string[];
+  intervention_plan_30d: AISellerAuditInterventionPlan;
+  recommended_training: AISellerAuditRecommendedTraining | null;
+  final_conclusion: string;
+  final_questions: AISellerAuditFinalQuestions;
+  evidence_samples: AISellerAuditEvidenceSample[];
+  totals: {
+    conversations_considered: number;
+    analyzed_conversations: number;
+    open_alerts: number;
+  };
+}
+
+export type AISellerAuditRunStatus = 'queued' | 'running' | 'completed' | 'failed';
+
+export interface AISellerAuditRun {
+  id: string;
+  company_id: string;
+  requested_by_user_id: string;
+  agent_id: string;
+  period_start: string;
+  period_end: string;
+  company_timezone: string;
+  source: 'manual' | 'ai_analysis_auto' | 'manager_copilot';
+  status: AISellerAuditRunStatus;
+  total_conversations: number;
+  processed_count: number;
+  analyzed_count: number;
+  failed_count: number;
+  report_json: AISellerAuditReport | null;
+  report_markdown: string | null;
+  prompt_version: string;
+  model_used: string | null;
+  error_message: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  updated_at: string;
 }
 
 // ============================================================

@@ -1,16 +1,20 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../integrations/supabase/client';
 import { useCompany } from '../contexts/CompanyContext';
+import { usePermissions } from '../hooks/usePermissions';
 import type { Agent, AgentBadge, AgentDailyMetrics, AIConversationAnalysis } from '../types';
 import { useConversations } from '../hooks/useConversations';
+import { useBlockedPhones } from '../hooks/useBlockedPhones';
 import { getPercentDelta, usePeriodComparison } from '../hooks/usePeriodComparison';
 import { CACHE } from '../config/constants';
 import { MetricCard } from '../components/dashboard/MetricCard';
 import { BadgePill } from '../components/gamification/BadgePill';
+import { invokeSyncAgentAvatars } from '../lib/agentAvatarSync';
 import { formatSeconds, formatPercent, formatCurrency, formatDateTime, channelLabel, cn, stripAgentPrefix } from '../lib/utils';
-import { ArrowLeft, User, Clock, CheckCircle, MessageSquare, TrendingUp, Brain, BookOpen, Copy, Check, Link2 } from 'lucide-react';
+import { ArrowLeft, User, Clock, CheckCircle, MessageSquare, TrendingUp, Brain, BookOpen, Copy, Check, Link2, Camera, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 function ScoreBar({ value, max = 10 }: { value: number | null; max?: number }) {
   if (value == null) return <span className="text-muted-foreground text-xs">—</span>;
@@ -109,6 +113,11 @@ function ManagerStat({ label, value, tone = 'neutral' }: { label: string; value:
 export default function AgentDetail() {
   const { id } = useParams<{ id: string }>();
   const { companyId } = useCompany();
+  const { can } = usePermissions();
+  const queryClient = useQueryClient();
+  const { isBlockedPhone } = useBlockedPhones();
+  const canManageAgents = can('agents.view_all');
+  const avatarAutoSyncTriggered = useRef(false);
   const periodEnd = new Date().toISOString().split('T')[0];
   const periodStart = (() => {
     const date = new Date();
@@ -185,7 +194,7 @@ export default function AgentDetail() {
         .order('analyzed_at', { ascending: false })
         .limit(80);
       if (error) throw error;
-      return (data ?? []) as AIConversationAnalysis[];
+      return ((data ?? []) as AIConversationAnalysis[]).filter((analysis) => !isBlockedPhone((analysis.conversation as any)?.customer?.phone));
     },
     enabled: !!id,
     staleTime: CACHE.STALE_TIME,
@@ -475,7 +484,48 @@ export default function AgentDetail() {
     needsCoachingList.length,
     scoredAnalyses,
   ]);
+  const syncAgentAvatars = useMutation({
+    mutationFn: async (_options?: { silent?: boolean }) => {
+      if (!companyId) throw new Error('Empresa nao encontrada');
+      return invokeSyncAgentAvatars(companyId);
+    },
+    onSuccess: (result, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['agents', companyId] });
+      queryClient.invalidateQueries({ queryKey: ['agent', id] });
+      if (!variables?.silent) {
+        toast.success(
+          result.stats?.updated
+            ? `${result.stats.updated} foto(s) sincronizada(s) da UazAPI.`
+            : 'A foto deste vendedor ja estava atualizada.',
+        );
+      }
+    },
+    onError: (error: Error, variables) => {
+      if (!variables?.silent) {
+        toast.error(error.message);
+      } else {
+        console.error('[AgentDetail] avatar sync failed:', error.message);
+      }
+    },
+  });
   const [avatarError, setAvatarError] = useState(false);
+
+  useEffect(() => {
+    setAvatarError(false);
+  }, [agent?.avatar_url]);
+
+  useEffect(() => {
+    avatarAutoSyncTriggered.current = false;
+  }, [companyId, id]);
+
+  useEffect(() => {
+    if (!canManageAgents || !companyId || !agent || agent.avatar_url || syncAgentAvatars.isPending || avatarAutoSyncTriggered.current) {
+      return;
+    }
+
+    avatarAutoSyncTriggered.current = true;
+    syncAgentAvatars.mutate({ silent: true });
+  }, [agent, canManageAgents, companyId, syncAgentAvatars]);
 
   if (!agent) {
     return (
@@ -506,6 +556,17 @@ export default function AgentDetail() {
             <h2 className="text-2xl font-bold text-foreground">{agent.name}</h2>
             {agent.email && <p className="text-muted-foreground">{agent.email}</p>}
             {agent.store?.name && <p className="text-sm text-muted-foreground mt-1">Loja: {agent.store.name}</p>}
+            {canManageAgents && (
+              <button
+                type="button"
+                onClick={() => syncAgentAvatars.mutate(undefined)}
+                disabled={syncAgentAvatars.isPending}
+                className="mt-3 inline-flex h-10 items-center gap-2 rounded-full border border-border bg-white px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {syncAgentAvatars.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                {agent.avatar_url ? 'Atualizar foto pela UazAPI' : 'Buscar foto na UazAPI'}
+              </button>
+            )}
             {badges.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-2">
                 {badges.map((badge) => (

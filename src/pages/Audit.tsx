@@ -4,6 +4,7 @@ import { AlertTriangle, Brain, ClipboardCheck, ShieldAlert } from 'lucide-react'
 import { supabase } from '../integrations/supabase/client';
 import { useCompany } from '../contexts/CompanyContext';
 import { usePermissions } from '../hooks/usePermissions';
+import { useBlockedPhones } from '../hooks/useBlockedPhones';
 import type { AIConversationAnalysis, Conversation, ConversationMetrics, SpamRiskEvent } from '../types';
 import { CACHE } from '../config/constants';
 import { channelLabel, cn, formatDateTime, formatSeconds, severityColor, stripAgentPrefix } from '../lib/utils';
@@ -32,6 +33,7 @@ function ErrorState({
 export default function Audit() {
   const { companyId } = useCompany();
   const { can } = usePermissions();
+  const { isBlockedPhone } = useBlockedPhones();
 
   const canReviewAudit = can('audit.review');
 
@@ -54,7 +56,8 @@ export default function Audit() {
         .limit(20);
 
       if (error) throw error;
-      return (data ?? []) as AuditWorstSlaRow[];
+      const rows = (data ?? []) as AuditWorstSlaRow[];
+      return rows.filter(r => !isBlockedPhone((r.conversation as any)?.customer?.phone));
     },
     enabled: !!companyId,
     staleTime: CACHE.STALE_TIME,
@@ -103,7 +106,8 @@ export default function Audit() {
         .limit(20);
 
       if (error) throw error;
-      return (data ?? []) as AIConversationAnalysis[];
+      const rows = (data ?? []) as AIConversationAnalysis[];
+      return rows.filter(r => !isBlockedPhone((r.conversation as any)?.customer?.phone));
     },
     enabled: !!companyId && canReviewAudit,
     staleTime: CACHE.STALE_TIME,

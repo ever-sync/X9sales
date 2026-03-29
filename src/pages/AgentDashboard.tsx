@@ -2,6 +2,7 @@ import { useEffect, useRef, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
+  ArrowUpRight,
   Clock,
   Target,
   MessageSquare,
@@ -13,8 +14,13 @@ import {
   BrainCircuit,
   ListTodo,
   Award,
+  Medal,
+  ShieldAlert,
+  ShieldCheck,
+  Sparkles,
 } from 'lucide-react';
 import { useCompany } from '../contexts/CompanyContext';
+import { useBlockedPhones } from '../hooks/useBlockedPhones';
 import { supabase } from '../integrations/supabase/client';
 import { useAuth } from '../hooks/useAuth';
 import { Button } from '../components/ui/button';
@@ -171,8 +177,57 @@ function topEntries(counts: Map<string, number>, limit: number) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+function AgentPanelCard({
+  children,
+  className = '',
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={cn(
+        'rounded-[30px] border border-border bg-card p-6 shadow-[0_12px_40px_rgba(15,23,42,0.04)] transition-all hover:-translate-y-0.5 hover:shadow-[0_18px_50px_rgba(15,23,42,0.07)]',
+        className,
+      )}
+    >
+      {children}
+    </section>
+  );
+}
+
+function HeroHighlight({
+  label,
+  value,
+  hint,
+  tone = 'neutral',
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  tone?: 'neutral' | 'purple' | 'lime';
+}) {
+  const toneClass =
+    tone === 'purple'
+      ? 'border-secondary/10 bg-secondary/5'
+      : tone === 'lime'
+        ? 'border-primary/30 bg-primary/10'
+        : 'border-border/70 bg-white/80';
+
+  return (
+    <div className={cn('rounded-[24px] border p-4 shadow-sm backdrop-blur', toneClass)}>
+      <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
+      <div className="mt-2 flex items-end justify-between gap-4">
+        <span className="text-3xl font-bold tracking-[-0.04em] text-foreground">{value}</span>
+        <span className="text-right text-[11px] font-medium leading-4 text-muted-foreground">{hint}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function AgentDashboard() {
   const { company } = useCompany();
+  const { blockedConversationIds, isBlockedConversationId } = useBlockedPhones();
   const { user } = useAuth();
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -295,7 +350,7 @@ export default function AgentDashboard() {
         .gte('analyzed_at', coachingWindowStart)
         .order('analyzed_at', { ascending: false })
         .limit(12);
-      return (data ?? []) as CoachingAnalysis[];
+      return ((data ?? []) as CoachingAnalysis[]).filter((analysis) => !isBlockedConversationId(analysis.conversation_id));
     },
     enabled: !!myAgent?.id,
     staleTime: 1000 * 60 * 5,
@@ -423,7 +478,9 @@ export default function AgentDashboard() {
       }
 
       const { data } = await query.maybeSingle();
-      return (data ?? null) as unknown as CoachingExample | null;
+      const example = (data ?? null) as unknown as CoachingExample | null;
+      if (example?.conversation_id && blockedConversationIds.has(example.conversation_id)) return null;
+      return example;
     },
     enabled: !!company?.id && !!weeklyCoaching.weakestPillar?.key,
     staleTime: 1000 * 60 * 10,
@@ -534,9 +591,40 @@ export default function AgentDashboard() {
     ?? coachingExample?.[weeklyCoaching.weakestPillar?.key ?? 'score_investigation']
     ?? 90;
   const coachingSourceDate = backendCoaching?.createdAt ?? weeklyCoaching.latestAnalysisAt;
+  const firstName = myAgent?.name?.split(' ')[0] ?? 'Atendente';
+  const todayLabel = new Intl.DateTimeFormat('pt-BR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  }).format(new Date());
+  const slaScore = Math.round(dailyMetrics?.sla_first_response_pct ?? myRanking?.avg_sla_first_response_pct ?? 0);
+  const aiScoreRounded = Math.round(aiScore);
+  const coachingPending = myRanking?.coaching_needed_count ?? 0;
+  const hasPriorityRisk = nextActions.length > 0 || metrics.noResponse > 0;
+  const heroHighlights = [
+    {
+      label: 'Conversas em andamento',
+      value: String(metrics.started),
+      hint: metrics.started > 0 ? 'carteira ativa agora' : 'sem conversas abertas',
+      tone: metrics.started > 0 ? 'lime' : 'neutral',
+    },
+    {
+      label: 'SLA da 1a resposta',
+      value: `${slaScore}%`,
+      hint: slaScore >= 85 ? 'ritmo forte no atendimento' : 'vale acelerar retornos',
+      tone: slaScore >= 85 ? 'purple' : 'neutral',
+    },
+    {
+      label: 'Coaching pendente',
+      value: String(coachingPending),
+      hint: coachingPending > 0 ? 'ajustes para revisar' : 'sem pendencias abertas',
+      tone: coachingPending > 0 ? 'neutral' : 'lime',
+    },
+  ] as const;
+  const actionPreview = nextActions.slice(0, 2);
 
   return (
-    <div ref={containerRef} className="space-y-8 pb-32 overflow-hidden">
+    <div ref={containerRef} className="space-y-6 pb-24 overflow-hidden">
 
       {/* 1. Header Hero */}
       <div className="reveal-item px-4 md:px-0 pt-6">

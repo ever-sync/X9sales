@@ -9,6 +9,7 @@ import { processManagerFeedbackJobs } from './processors/manager-feedback';
 import { sendDailyDigest } from './processors/daily-digest';
 import { sendWeeklyAgentFeedback } from './processors/weekly-agent-feedback';
 import { syncAgentAvatars } from './processors/avatar-sync';
+import { sendMorningCoaching } from './processors/morning-coaching';
 
 let isProcessing = false;
 let isAggregating = false;
@@ -19,6 +20,7 @@ let isManagerCopilot = false;
 let isDigesting = false;
 let isWeeklyFeedback = false;
 let isAvatarSync = false;
+let isMorningCoaching = false;
 
 console.log('=== MonitoraIA Scanner Agent ===');
 console.log(`Message processing cron: ${config.scannerCron}`);
@@ -27,6 +29,7 @@ console.log(`Spam detection cron: ${config.spamDetectorCron}`);
 console.log(`AI manual jobs cron: ${config.aiJobsCron}`);
 console.log(`Revenue copilot cron: ${config.revenueCopilotCron}`);
 console.log(`Manager copilot cron: ${config.managerCopilotCron}`);
+console.log(`Morning coaching cron: ${config.morningCoachingCron}`);
 console.log(`Batch size: ${config.batchSize}`);
 console.log('Starting...\n');
 
@@ -159,6 +162,23 @@ cron.schedule('0 */6 * * *', async () => {
     console.error('[Scheduler] Avatar sync failed:', err);
   } finally {
     isAvatarSync = false;
+  }
+});
+
+// Morning Coaching: runs daily at 08:00
+cron.schedule(config.morningCoachingCron, async () => {
+  if (isMorningCoaching) {
+    console.log('[Scheduler] Morning coaching still running, skipping...');
+    return;
+  }
+
+  isMorningCoaching = true;
+  try {
+    await sendMorningCoaching();
+  } catch (err) {
+    console.error('[Scheduler] Morning coaching failed:', err);
+  } finally {
+    isMorningCoaching = false;
   }
 });
 
