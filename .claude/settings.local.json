@@ -39,7 +39,11 @@
       "Bash(curl -s \"https://eversync2.uazapi.com/\" -H \"apikey: JEptcvj1tzbJQNBQ1sjGzpb01Tx51fv7zEi83YAKC12RNIO77p\")",
       "Bash(# Check the UazApi docs site to discover available endpoints curl -s \"\"https://docs.uazapi.com/api.json\"\")",
       "Bash(python3 -m json.tool)",
-      "Bash(python3 -c \":*)"
+      "Bash(python3 -c \":*)",
+      "mcp__TestSprite__testsprite_check_account_info",
+      "Bash(find C:/Users/rapha -name *.json)",
+      "Bash(xargs grep:*)",
+      "Bash(find C:/Users/rapha/AppData -name *.json)"
     ]
   }
 }

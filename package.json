@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:testsprite": "vite --host 127.0.0.1 --port 4173",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "preview:testsprite": "vite preview --host 127.0.0.1 --port 4173"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
