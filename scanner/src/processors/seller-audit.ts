@@ -700,3 +700,158 @@ function parseImprovements(analysis: AnalysisRow | null): string[] {
   if (!structured) return [];
   return sanitizeStringArray(structured.improvements, 5, 180);
 }
+
+function parseMissedOpportunities(
+  analysis: AnalysisRow | null,
+  conversation: FeedbackConversation,
+): LostOpportunity[] {
+  const structured = isRecord(analysis?.structured_analysis) ? analysis?.structured_analysis : null;
+  if (!structured || !Array.isArray(structured.missed_opportunities)) return [];
+  return structured.missed_opportunities
+    .filter((item): item is Record<string, unknown> => isRecord(item))
+    .map((item) => ({
+      conversation_id: conversation.conversation_id,
+      customer_name: conversation.customer_name,
+      customer_phone_masked: maskPhone(conversation.customer_phone),
+      what_happened: sanitizeText(item.agent_message, 220),
+      why_it_was_lost: sanitizeText(item.missed_action, 220),
+      what_should_have_been_done: sanitizeText(item.missed_action, 220),
+      impact: ['low', 'medium', 'high'].includes(String(item.impact))
+        ? (String(item.impact) as 'low' | 'medium' | 'high')
+        : 'medium',
+      evidence: sanitizeText(item.agent_message, 220) || null,
+    }))
+    .slice(0, 4);
+}
+
+function deriveSellerProfileHint(
+  behaviorFlags: BehaviorFlags,
+  analysis: AnalysisRow | null,
+): string {
+  const structured = isRecord(analysis?.structured_analysis) ? analysis?.structured_analysis : null;
+  const explicit = structured ? sanitizeText(structured.seller_profile_hint, 120) : '';
+  if (explicit) return explicit;
+  if (behaviorFlags.passive_response && !behaviorFlags.close_attempted) return 'educado, mas passivo';
+  if (behaviorFlags.follow_up_present && !behaviorFlags.real_diagnosis) return 'rapido, porem superficial';
+  if (behaviorFlags.real_diagnosis && !behaviorFlags.close_attempted) return 'consultivo, mas pouco incisivo';
+  if (!behaviorFlags.follow_up_present && behaviorFlags.close_attempted) return 'pressiona o fechamento, mas nao sustenta continuidade';
+  return 'atendimento presente, mas sem consistencia comercial';
+}
+
+function buildConversationMemory(
+  conversation: FeedbackConversation,
+  messages: RawMessageRow[],
+  analysis: AnalysisRow | null,
+  metric: MetricRow | null,
+  signal: SignalRow | null,
+  outcome: OutcomeRow | null,
+): ConversationMemory {
+  const openingExcerpt = buildSnippet(messages, true);
+  const closingExcerpt = buildSnippet(messages, false);
+  const failureTags = parseFailureTags(analysis);
+  const behaviorFlags = inferBehaviorFlags(messages, failureTags, parseExistingBehaviorFlags(analysis));
+  const competencyScores = inferCompetencyScores(analysis, metric, behaviorFlags, parseExistingCompetencyScores(analysis));
+  const severityFindings = deriveSeverityFindings(
+    failureTags,
+    openingExcerpt,
+    closingExcerpt,
+    parseExistingSeverityFindings(analysis),
+  );
+
+  return {
+    conversation_id: conversation.conversation_id,
+    started_at: conversation.started_at,
+    status: conversation.status,
+    customer_name: conversation.customer_name,
+    customer_phone_masked: maskPhone(conversation.customer_phone),
+    message_count: getTextualMessages(messages).length,
+    opening_excerpt: openingExcerpt,
+    closing_excerpt: closingExcerpt,
+    quality_score: analysis?.quality_score ?? null,
+    predicted_csat: analysis?.predicted_csat ?? null,
+    needs_coaching: analysis?.needs_coaching ?? false,
+    training_tags: sanitizeStringArray(analysis?.training_tags, 8, 80),
+    failure_tags: failureTags,
+    strengths: parseStrengths(analysis),
+    improvements: parseImprovements(analysis),
+    missed_opportunities: parseMissedOpportunities(analysis, conversation),
+    behavior_flags: behaviorFlags,
+    competency_scores: competencyScores,
+    severity_findings: severityFindings,
+    seller_profile_hint: deriveSellerProfileHint(behaviorFlags, analysis),
+    diagnosis: parseDiagnosis(analysis),
+    metrics: {
+      first_response_time_sec: metric?.first_response_time_sec ?? null,
+      avg_response_gap_sec: metric?.avg_response_gap_sec ?? null,
+      sla_first_response_met: metric?.sla_first_response_met ?? null,
+    },
+    signals: {
+      loss_risk_level: signal?.loss_risk_level ?? null,
+      intent_level: signal?.intent_level ?? null,
+      close_probability: signal?.close_probability ?? null,
+      next_best_action: signal?.next_best_action ?? null,
+      estimated_value: signal?.estimated_value ?? null,
+      stage: signal?.stage ?? null,
+    },
+    outcome: {
+      outcome: outcome?.outcome ?? null,
+      value: outcome?.value ?? null,
+      loss_reason: outcome?.loss_reason ?? null,
+    },
+  };
+}
+
+function buildScorecard(memories: ConversationMemory[]): AuditScorecard {
+  const qualityScores = memories
+    .map((memory) => (memory.quality_score != null ? memory.quality_score / 10 : null))
+    .filter((value): value is number => value != null);
+  const avgCore = average(qualityScores);
+  const variance = qualityScores.length
+    ? Math.sqrt(
+      qualityScores.reduce((sum, value) => sum + Math.pow(value - (avgCore ?? 0), 2), 0) /
+      qualityScores.length,
+    )
+    : null;
+
+  return {
+    abertura: roundScore(average(memories.map((memory) => memory.competency_scores.opening))),
+    agilidade: roundScore(average(memories.map((memory) => memory.competency_scores.timing))),
+    diagnostico: roundScore(
+      average(memories.map((memory) => memory.behavior_flags.real_diagnosis ? 8 : (memory.quality_score ?? 50) / 15)),
+    ),
+    conducao: roundScore(
+      average(memories.map((memory) => [
+        memory.behavior_flags.passive_response ? 3 : 7,
+        memory.quality_score != null ? memory.quality_score / 10 : null,
+      ]).flat()),
+    ),
+    construcao_valor: roundScore(
+      average(memories.map((memory) => memory.quality_score != null ? memory.quality_score / 10 : null)),
+    ),
+    objecoes: roundScore(
+      average(memories.map((memory) => memory.behavior_flags.objection_mishandled ? 3 : 6.5)),
+    ),
+    fechamento: roundScore(average(memories.map((memory) => memory.competency_scores.closing))),
+    follow_up: roundScore(average(memories.map((memory) => memory.competency_scores.follow_up))),
+    comunicacao: roundScore(
+      average(memories.map((memory) => [
+        memory.competency_scores.opening,
+        memory.competency_scores.authority,
+      ]).flat()),
+    ),
+    consistencia: roundScore(avgCore != null ? Math.max(0, avgCore - (variance ?? 0) * 0.9) : null),
+  };
+}
+
+function buildPerformanceMetrics(memories: ConversationMemory[]): AuditPerformanceMetrics {
+  const denominator = Math.max(memories.length, 1);
+  const count = (predicate: (memory: ConversationMemory) => boolean) => memories.filter(predicate).length;
+  return {
+    close_attempt_rate: roundRate((count((memory) => memory.behavior_flags.close_attempted) / denominator) * 100),
+    follow_up_rate: roundRate((count((memory) => memory.behavior_flags.follow_up_present) / denominator) * 100),
+    real_diagnosis_rate: roundRate((count((memory) => memory.behavior_flags.real_diagnosis) / denominator) * 100),
+    abandonment_rate: roundRate((count((memory) => memory.behavior_flags.abandoned_without_next_step) / denominator) * 100),
+    poor_objection_handling_rate: roundRate((count((memory) => memory.behavior_flags.objection_mishandled) / denominator) * 100),
+    passive_response_rate: roundRate((count((memory) => memory.behavior_flags.passive_response) / denominator) * 100),
+  };
+}
