@@ -1,22 +1,18 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../integrations/supabase/client';
 import { cn } from '../lib/utils';
 import type { AgentRanking } from '../types';
-import { DemoBanner } from '../components/ui/EmptyState';
 import {
   Trophy,
   Medal,
-  TrendingUp,
-  Clock,
-  MessageSquare,
   Star,
-  AlertTriangle,
-  DollarSign,
-  BookOpen,
+  HandCoins,
+  Activity
 } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { EmptyState } from '../components/ui/EmptyState';
 
 // ── hook ──────────────────────────────────────────────────────────────────────
 
@@ -38,75 +34,17 @@ function useRanking() {
   });
 }
 
-// ── demo data ─────────────────────────────────────────────────────────────────
-
-const DEMO_AGENTS: AgentRanking[] = [
-  { company_id: 'demo', agent_id: 'd1', agent_name: 'Ana Lima', agent_avatar: null, total_conversations: 142, total_closed: 118, avg_first_response_sec: 210, avg_sla_first_response_pct: 91, avg_sla_resolution_pct: 88, total_messages_sent: 890, total_messages_received: 1120, total_deals_won: 34, total_deals_lost: 8, total_revenue: 48200, open_alerts: 0, avg_ai_quality_score: 87, avg_predicted_csat: 4.5, coaching_needed_count: 2 },
-  { company_id: 'demo', agent_id: 'd2', agent_name: 'Carlos Souza', agent_avatar: null, total_conversations: 98, total_closed: 76, avg_first_response_sec: 380, avg_sla_first_response_pct: 74, avg_sla_resolution_pct: 71, total_messages_sent: 620, total_messages_received: 780, total_deals_won: 19, total_deals_lost: 12, total_revenue: 22800, open_alerts: 2, avg_ai_quality_score: 71, avg_predicted_csat: 3.9, coaching_needed_count: 6 },
-  { company_id: 'demo', agent_id: 'd3', agent_name: 'Fernanda Reis', agent_avatar: null, total_conversations: 127, total_closed: 104, avg_first_response_sec: 155, avg_sla_first_response_pct: 95, avg_sla_resolution_pct: 93, total_messages_sent: 810, total_messages_received: 1040, total_deals_won: 41, total_deals_lost: 5, total_revenue: 61500, open_alerts: 0, avg_ai_quality_score: 92, avg_predicted_csat: 4.8, coaching_needed_count: 0 },
-  { company_id: 'demo', agent_id: 'd4', agent_name: 'João Pereira', agent_avatar: null, total_conversations: 63, total_closed: 44, avg_first_response_sec: 720, avg_sla_first_response_pct: 52, avg_sla_resolution_pct: 49, total_messages_sent: 340, total_messages_received: 430, total_deals_won: 9, total_deals_lost: 18, total_revenue: 10200, open_alerts: 5, avg_ai_quality_score: 48, avg_predicted_csat: 3.2, coaching_needed_count: 14 },
-  { company_id: 'demo', agent_id: 'd5', agent_name: 'Mariana Costa', agent_avatar: null, total_conversations: 110, total_closed: 89, avg_first_response_sec: 290, avg_sla_first_response_pct: 83, avg_sla_resolution_pct: 80, total_messages_sent: 710, total_messages_received: 920, total_deals_won: 27, total_deals_lost: 9, total_revenue: 35700, open_alerts: 1, avg_ai_quality_score: 79, avg_predicted_csat: 4.2, coaching_needed_count: 4 },
-];
-
-// ── sort options ──────────────────────────────────────────────────────────────
-
-type SortKey =
-  | 'avg_ai_quality_score'
-  | 'total_conversations'
-  | 'total_revenue'
-  | 'avg_first_response_sec'
-  | 'avg_predicted_csat'
-  | 'total_deals_won';
-
-const SORT_OPTIONS: { key: SortKey; label: string; desc: boolean }[] = [
-  { key: 'avg_ai_quality_score', label: 'Qualidade IA', desc: true },
-  { key: 'total_conversations', label: 'Conversas', desc: true },
-  { key: 'total_revenue', label: 'Receita', desc: true },
-  { key: 'total_deals_won', label: 'Negócios ganhos', desc: true },
-  { key: 'avg_predicted_csat', label: 'CSAT', desc: true },
-  { key: 'avg_first_response_sec', label: 'Tempo de resposta', desc: false }, // lower is better
-];
-
-function sortRanking(agents: AgentRanking[], sortKey: SortKey, desc: boolean): AgentRanking[] {
-  return [...agents].sort((a, b) => {
-    const av = (a[sortKey] as number | null) ?? -Infinity;
-    const bv = (b[sortKey] as number | null) ?? -Infinity;
-    return desc ? bv - av : av - bv;
-  });
-}
-
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 function qualityColor(score: number | null) {
   if (score == null) return 'text-muted-foreground';
-  if (score >= 80) return 'text-green-600 dark:text-green-400';
-  if (score >= 60) return 'text-yellow-600 dark:text-yellow-400';
-  return 'text-red-600 dark:text-red-400';
-}
-
-function qualityBg(score: number | null) {
-  if (score == null) return 'bg-muted';
-  if (score >= 80) return 'bg-green-500';
-  if (score >= 60) return 'bg-yellow-500';
-  return 'bg-red-500';
-}
-
-function fmtTime(sec: number | null) {
-  if (sec == null) return '—';
-  if (sec < 60) return `${Math.round(sec)}s`;
-  if (sec < 3600) return `${Math.round(sec / 60)}min`;
-  return `${(sec / 3600).toFixed(1)}h`;
+  if (score >= 80) return 'text-emerald-500 font-bold';
+  if (score >= 60) return 'text-amber-500 font-bold';
+  return 'text-red-500 font-bold';
 }
 
 function fmtRevenue(v: number) {
-  if (v >= 1000000) return `R$ ${(v / 1000000).toFixed(1)}M`;
-  if (v >= 1000) return `R$ ${(v / 1000).toFixed(1)}k`;
-  return `R$ ${v.toFixed(0)}`;
-}
-
-function fmtPct(v: number | null) {
-  if (v == null) return '—';
-  return `${Math.round(v)}%`;
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
 }
 
 function AgentInitials({ name }: { name: string }) {
@@ -114,276 +52,313 @@ function AgentInitials({ name }: { name: string }) {
   const initials = parts.length >= 2
     ? `${parts[0][0]}${parts[parts.length - 1][0]}`
     : name.slice(0, 2);
-  return <span className="text-sm font-bold text-white uppercase">{initials}</span>;
+  return <span className="text-sm font-black text-black uppercase">{initials}</span>;
 }
-
-// ── podium card ───────────────────────────────────────────────────────────────
 
 const PODIUM = [
-  { rank: 1, icon: <Trophy className="h-5 w-5 text-yellow-500" />, ring: 'ring-yellow-400', bg: 'bg-yellow-50 dark:bg-yellow-900/20', label: '1º lugar' },
-  { rank: 2, icon: <Medal className="h-5 w-5 text-slate-400" />, ring: 'ring-slate-300', bg: 'bg-slate-50 dark:bg-slate-800/40', label: '2º lugar' },
-  { rank: 3, icon: <Medal className="h-5 w-5 text-orange-400" />, ring: 'ring-orange-300', bg: 'bg-orange-50 dark:bg-orange-900/20', label: '3º lugar' },
+  { rank: 1, icon: <Trophy className="h-6 w-6 text-yellow-400" />, border: 'border-yellow-400', bg: 'bg-yellow-400/10', label: '1º Lugar' },
+  { rank: 2, icon: <Medal className="h-6 w-6 text-slate-300" />, border: 'border-slate-300', bg: 'bg-slate-300/10', label: '2º Lugar' },
+  { rank: 3, icon: <Medal className="h-6 w-6 text-orange-400" />, border: 'border-orange-400', bg: 'bg-orange-400/10', label: '3º Lugar' },
 ];
 
-function PodiumCard({ agent, rank }: { agent: AgentRanking; rank: number }) {
-  const p = PODIUM.find(x => x.rank === rank)!;
-  return (
-    <Link
-      to={`/agents/${agent.agent_id}`}
-      className={cn('rounded-2xl border border-border p-5 flex flex-col items-center gap-3 hover:shadow-md transition-shadow', p.bg)}
-    >
-      <div className="flex items-center gap-1 text-xs font-semibold text-muted-foreground">
-        {p.icon} {p.label}
-      </div>
-      <div className={cn('h-14 w-14 rounded-full ring-2 flex items-center justify-center bg-primary', p.ring)}>
-        <AgentInitials name={agent.agent_name} />
-      </div>
-      <div className="text-center">
-        <p className="text-sm font-bold text-foreground">{agent.agent_name}</p>
-        <p className={cn('text-xl font-black mt-1', qualityColor(agent.avg_ai_quality_score))}>
-          {agent.avg_ai_quality_score ?? '—'}
-          <span className="text-xs font-normal text-muted-foreground ml-1">/ 100</span>
-        </p>
-        <p className="text-xs text-muted-foreground">Qualidade IA</p>
-      </div>
-      <div className="w-full grid grid-cols-2 gap-2 text-center border-t border-border pt-3">
-        <div>
-          <p className="text-xs text-muted-foreground">Conversas</p>
-          <p className="text-sm font-bold text-foreground">{agent.total_conversations}</p>
-        </div>
-        <div>
-          <p className="text-xs text-muted-foreground">CSAT</p>
-          <p className="text-sm font-bold text-foreground">{agent.avg_predicted_csat?.toFixed(1) ?? '—'}</p>
-        </div>
-      </div>
-    </Link>
-  );
-}
-
-// ── rank badge ────────────────────────────────────────────────────────────────
-
-function RankBadge({ position }: { position: number }) {
-  if (position === 1) return <span className="text-yellow-500 font-black text-base">🥇</span>;
-  if (position === 2) return <span className="text-slate-400 font-black text-base">🥈</span>;
-  if (position === 3) return <span className="text-orange-400 font-black text-base">🥉</span>;
-  return <span className="text-xs font-bold text-muted-foreground w-6 text-center">{position}º</span>;
-}
-
-// ── quality bar ───────────────────────────────────────────────────────────────
-
-function QualityBar({ score }: { score: number | null }) {
-  if (score == null) return <span className="text-xs text-muted-foreground">—</span>;
-  return (
-    <div className="flex items-center gap-2">
-      <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
-        <div
-          className={cn('h-full rounded-full', qualityBg(score))}
-          style={{ width: `${score}%` }}
-        />
-      </div>
-      <span className={cn('text-xs font-semibold tabular-nums', qualityColor(score))}>{score}</span>
-    </div>
-  );
-}
-
-// ── main page ─────────────────────────────────────────────────────────────────
+// ── Ranking Page ──────────────────────────────────────────────────────────────
 
 export default function Ranking() {
-  const [sortKey, setSortKey] = useState<SortKey>('avg_ai_quality_score');
-  const { data, isLoading, isError, error } = useRanking();
+  const { data, isLoading } = useRanking();
+  const agents = data ?? [];
 
-  const currentSort = SORT_OPTIONS.find(o => o.key === sortKey)!;
-  const sorted = sortRanking(data ?? [], sortKey, currentSort.desc).sort((a, b) => {
-    const av = a[sortKey] as number | null;
-    const bv = b[sortKey] as number | null;
+  const salesRanking = useMemo(() => {
+    return [...agents].sort((a, b) => b.total_revenue - a.total_revenue);
+  }, [agents]);
 
-    if (av == null && bv == null) return 0;
-    if (av == null) return 1;
-    if (bv == null) return -1;
-    return 0;
-  });
+  const serviceRanking = useMemo(() => {
+    return [...agents].sort((a, b) => (b.avg_ai_quality_score ?? 0) - (a.avg_ai_quality_score ?? 0));
+  }, [agents]);
 
-  const isDemo = !isLoading && !isError && sorted.length === 0;
-  const display = isDemo ? sortRanking(DEMO_AGENTS, sortKey, currentSort.desc) : sorted;
-  const top3 = display.slice(0, 3);
+  if (isLoading) {
+    return <div className="p-8 animate-pulse space-y-4">
+      <div className="h-10 w-48 bg-slate-200 dark:bg-slate-800 rounded-lg" />
+      <div className="grid grid-cols-3 gap-4">
+        <div className="h-48 bg-slate-100 dark:bg-slate-800/50 rounded-3xl" />
+        <div className="h-48 bg-slate-100 dark:bg-slate-800/50 rounded-3xl" />
+        <div className="h-48 bg-slate-100 dark:bg-slate-800/50 rounded-3xl" />
+      </div>
+    </div>;
+  }
+
+  if (agents.length === 0) {
+    return (
+      <div className="flex-1 p-4 md:p-8 pt-6">
+        <div className="flex flex-col gap-2 mb-8">
+          <h2 className="text-4xl font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-3">
+            <Trophy className="text-yellow-400 h-10 w-10 shrink-0" />
+            Copa de Performance
+          </h2>
+        </div>
+        <EmptyState
+          icon={Trophy}
+          title="Nenhum dado de ranking ainda"
+          description="O ranking será exibido após os atendentes registrarem conversas e vendas. Os dados são atualizados a cada 5 minutos."
+        />
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      {/* header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            <Trophy className="h-6 w-6 text-yellow-500" />
-            Ranking de Atendentes
-          </h2>
-          <p className="text-muted-foreground mt-1 text-sm">Últimos 30 dias · atualizado pela view materializada</p>
-        </div>
-
-        {/* sort selector */}
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Ordenar por</span>
-          <select
-            value={sortKey}
-            onChange={e => setSortKey(e.target.value as SortKey)}
-            className="text-sm border border-border rounded-lg px-3 py-2 bg-background focus:ring-2 focus:ring-ring/40 focus:border-primary outline-none"
-          >
-            {SORT_OPTIONS.map(o => (
-              <option key={o.key} value={o.key}>{o.label}</option>
-            ))}
-          </select>
-        </div>
+    <div className="flex-1 space-y-8 p-4 md:p-8 pt-6 pb-32">
+      {/* Header */}
+      <div className="flex flex-col gap-2">
+        <h2 className="text-4xl font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-3">
+           <Trophy className="text-yellow-400 h-10 w-10 shrink-0" />
+           Copa de Performance
+        </h2>
+        <p className="text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest text-xs">
+          Onde os melhores se destacam • Dados atualizados em tempo real
+        </p>
       </div>
 
-      {isLoading ? (
-        <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-4">
-            {[...Array(3)].map((_, i) => <div key={i} className="h-52 bg-muted rounded-2xl animate-pulse" />)}
+      <Tabs defaultValue="sales" className="w-full">
+        <TabsList className="bg-slate-100 dark:bg-slate-900 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 mb-8 h-14">
+          <TabsTrigger 
+            value="sales" 
+            className="rounded-xl px-8 py-2.5 data-[state=active]:bg-primary data-[state=active]:text-black data-[state=active]:shadow-lg font-black uppercase text-xs tracking-widest transition-all"
+          >
+            <HandCoins className="mr-2 h-4 w-4" /> Ranking de Vendas
+          </TabsTrigger>
+          <TabsTrigger 
+            value="service" 
+            className="rounded-xl px-8 py-2.5 data-[state=active]:bg-primary data-[state=active]:text-black data-[state=active]:shadow-lg font-black uppercase text-xs tracking-widest transition-all"
+          >
+            <Activity className="mr-2 h-4 w-4" /> Ranking de Atendimento
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="sales" className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+          {/* Podium Vendas */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
+            {[salesRanking[1], salesRanking[0], salesRanking[2]].map((agent, i) => {
+              if (!agent) return null;
+              const rank = [2, 1, 3][i];
+              const p = PODIUM.find(x => x.rank === rank)!;
+              return (
+                <div 
+                  key={agent.agent_id} 
+                  className={cn(
+                    "relative flex flex-col items-center p-6 rounded-[2.5rem] border-2 transition-all hover:scale-105",
+                    p.border, p.bg,
+                    rank === 1 ? "pb-12 border-b-8 order-1 md:order-2" : rank === 2 ? "order-2 md:order-1" : "order-3"
+                  )}
+                >
+                  <div className="absolute -top-4 w-10 h-10 rounded-full bg-white dark:bg-slate-900 border-2 border-inherit flex items-center justify-center shadow-lg">
+                    {p.icon}
+                  </div>
+                  <div className="h-20 w-20 rounded-full bg-primary flex items-center justify-center mb-4 shadow-xl ring-4 ring-white/20">
+                     <AgentInitials name={agent.agent_name} />
+                  </div>
+                  <h3 className="font-black text-lg text-slate-900 dark:text-white text-center leading-tight">{agent.agent_name}</h3>
+                  <div className="mt-4 text-center">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Receita Total</p>
+                    <p className="text-2xl font-black text-primary-foreground">{fmtRevenue(agent.total_revenue)}</p>
+                  </div>
+                  <div className="mt-2 flex gap-4">
+                     <div className="text-center">
+                        <p className="text-[8px] font-black uppercase text-slate-500">Vendas</p>
+                        <p className="text-xs font-black">{agent.total_deals_won}</p>
+                     </div>
+                     <div className="text-center">
+                        <p className="text-[8px] font-black uppercase text-slate-500">Conv.</p>
+                        <p className="text-xs font-black">{Math.round((agent.total_deals_won / agent.total_conversations) * 100)}%</p>
+                     </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-          <div className="h-64 bg-muted rounded-2xl animate-pulse" />
-        </div>
-      ) : isError ? (
-        <div className="bg-card rounded-2xl border border-border p-16 text-center text-muted-foreground">
-          <AlertTriangle className="h-10 w-10 mx-auto mb-3 opacity-50 text-red-500" />
-          <p className="font-medium text-foreground">Nao foi possivel carregar o ranking.</p>
-          <p className="mt-2 text-sm">
-            {error instanceof Error ? error.message : 'Verifique a conexao com o Supabase e as permissoes da view.'}
-          </p>
-        </div>
-      ) : (
-        <>
-          {isDemo && <DemoBanner />}
 
-          {/* podium top 3 */}
-          {top3.length > 0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {top3.map((agent, i) => (
-                <PodiumCard key={agent.agent_id} agent={agent} rank={i + 1} />
-              ))}
-            </div>
-          )}
-
-          {/* full table */}
-          <div className="bg-card rounded-2xl border border-border overflow-hidden">
-            <div className="px-6 py-4 border-b border-border">
-              <h3 className="text-sm font-semibold text-foreground">Classificação completa</h3>
+          {/* Tabela Vendas */}
+          <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xl">
+            <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+               <h4 className="font-black uppercase tracking-tighter text-lg">Classificação de Vendas</h4>
+               <span className="text-[10px] font-black bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full text-slate-500 italic">Ordenado por faturamento</span>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full">
                 <thead>
-                  <tr className="border-b border-border bg-muted/40">
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground w-10">#</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">Atendente</th>
-                    <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground">
-                      <span className="flex items-center justify-center gap-1"><Star className="h-3 w-3" />Qualidade IA</span>
-                    </th>
-                    <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground">
-                      <span className="flex items-center justify-center gap-1"><MessageSquare className="h-3 w-3" />Conversas</span>
-                    </th>
-                    <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground">
-                      <span className="flex items-center justify-center gap-1"><Clock className="h-3 w-3" />1ª Resp.</span>
-                    </th>
-                    <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground">
-                      <span className="flex items-center justify-center gap-1"><TrendingUp className="h-3 w-3" />SLA</span>
-                    </th>
-                    <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground">
-                      <span className="flex items-center justify-center gap-1"><DollarSign className="h-3 w-3" />Receita</span>
-                    </th>
-                    <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground">CSAT</th>
-                    <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground">
-                      <span className="flex items-center justify-center gap-1"><BookOpen className="h-3 w-3" />Coaching</span>
-                    </th>
-                    <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground">
-                      <span className="flex items-center justify-center gap-1"><AlertTriangle className="h-3 w-3" />Alertas</span>
-                    </th>
+                  <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-100 dark:border-slate-800">
+                    <th className="px-6 py-4 text-left w-16">Rank</th>
+                    <th className="px-6 py-4 text-left">Vendedor</th>
+                    <th className="px-6 py-4 text-center">Negócios</th>
+                    <th className="px-6 py-4 text-center">Ticket Médio</th>
+                    <th className="px-6 py-4 text-center">Conversão</th>
+                    <th className="px-6 py-4 text-right">Faturamento</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
-                  {display.map((agent, i) => (
-                    <tr
-                      key={agent.agent_id}
-                      className="hover:bg-muted/40 transition-colors"
-                    >
-                      <td className="px-4 py-3">
-                        <RankBadge position={i + 1} />
-                      </td>
-                      <td className="px-4 py-3">
-                        <Link
-                          to={`/agents/${agent.agent_id}`}
-                          className="flex items-center gap-2.5 hover:underline"
-                        >
-                          <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center shrink-0">
-                            <AgentInitials name={agent.agent_name} />
-                          </div>
-                          <span className="font-medium text-foreground">{agent.agent_name}</span>
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex justify-center">
-                          <QualityBar score={agent.avg_ai_quality_score} />
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <span className="font-semibold text-foreground">{agent.total_conversations}</span>
-                        <span className="text-xs text-muted-foreground ml-1">({agent.total_closed} fech.)</span>
-                      </td>
-                      <td className="px-4 py-3 text-center text-foreground font-medium">
-                        {fmtTime(agent.avg_first_response_sec)}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <span className={cn(
-                          'font-medium',
-                          agent.avg_sla_first_response_pct != null && agent.avg_sla_first_response_pct >= 80
-                            ? 'text-green-600 dark:text-green-400'
-                            : agent.avg_sla_first_response_pct != null && agent.avg_sla_first_response_pct >= 60
-                              ? 'text-yellow-600 dark:text-yellow-400'
-                              : 'text-muted-foreground',
-                        )}>
-                          {fmtPct(agent.avg_sla_first_response_pct)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-center font-medium text-foreground">
-                        {agent.total_revenue > 0 ? fmtRevenue(agent.total_revenue) : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {agent.avg_predicted_csat != null ? (
-                          <span className={cn(
-                            'font-semibold',
-                            agent.avg_predicted_csat >= 4 ? 'text-green-600 dark:text-green-400'
-                              : agent.avg_predicted_csat >= 3 ? 'text-yellow-600 dark:text-yellow-400'
-                              : 'text-red-600 dark:text-red-400',
-                          )}>
-                            {agent.avg_predicted_csat.toFixed(1)} ★
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {agent.coaching_needed_count > 0 ? (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 font-medium">
-                            {agent.coaching_needed_count}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {agent.open_alerts > 0 ? (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 font-medium">
-                            {agent.open_alerts}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
+                   {salesRanking.map((agent, i) => (
+                     <tr key={agent.agent_id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors group">
+                        <td className="px-6 py-5">
+                           <span className={cn(
+                             "w-8 h-8 rounded-full flex items-center justify-center font-black text-sm transition-all group-hover:scale-110",
+                             i === 0 ? "bg-yellow-400 text-black border-2 border-yellow-500 shadow-lg shadow-yellow-400/20" :
+                             i === 1 ? "bg-slate-200 text-slate-700" :
+                             i === 2 ? "bg-orange-200 text-orange-700" :
+                             "text-slate-400"
+                           )}>
+                              {i + 1}
+                           </span>
+                        </td>
+                        <td className="px-6 py-5">
+                           <div className="flex items-center gap-3">
+                              <div className="h-10 w-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-bold">
+                                 {agent.agent_name[0]}
+                              </div>
+                              <div>
+                                 <p className="font-black text-slate-900 dark:text-white leading-none">{agent.agent_name}</p>
+                                 <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase">Top Seller</p>
+                              </div>
+                           </div>
+                        </td>
+                        <td className="px-6 py-5 text-center">
+                           <p className="font-black text-slate-700 dark:text-slate-300">{agent.total_deals_won}</p>
+                           <p className="text-[9px] font-bold text-slate-400 uppercase">Ganhos</p>
+                        </td>
+                        <td className="px-6 py-5 text-center">
+                           <p className="font-black text-slate-700 dark:text-slate-300">
+                              {agent.total_deals_won > 0 ? fmtRevenue(Math.round(agent.total_revenue / agent.total_deals_won)) : 'R$ 0'}
+                           </p>
+                        </td>
+                        <td className="px-6 py-5 text-center">
+                           <div className="flex flex-col items-center gap-1">
+                              <span className="font-black text-emerald-500">{Math.round((agent.total_deals_won / agent.total_conversations) * 100)}%</span>
+                              <div className="w-12 h-1 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                                 <div className="h-full bg-emerald-500" style={{ width: `${(agent.total_deals_won / agent.total_conversations) * 100}%` }} />
+                              </div>
+                           </div>
+                        </td>
+                        <td className="px-6 py-5 text-right">
+                           <span className="font-black text-lg text-primary-foreground tracking-tighter">
+                              {fmtRevenue(agent.total_revenue)}
+                           </span>
+                        </td>
+                     </tr>
+                   ))}
                 </tbody>
               </table>
             </div>
           </div>
-        </>
-      )}
+        </TabsContent>
+
+        <TabsContent value="service" className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+           {/* Podium Atendimento */}
+           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
+            {[serviceRanking[1], serviceRanking[0], serviceRanking[2]].map((agent, i) => {
+              if (!agent) return null;
+              const rank = [2, 1, 3][i];
+              const p = PODIUM.find(x => x.rank === rank)!;
+              return (
+                <div 
+                  key={agent.agent_id} 
+                  className={cn(
+                    "relative flex flex-col items-center p-6 rounded-[2.5rem] border-2 transition-all hover:scale-105",
+                    p.border, p.bg,
+                    rank === 1 ? "pb-12 border-b-8 order-1 md:order-2" : rank === 2 ? "order-2 md:order-1" : "order-3"
+                  )}
+                >
+                  <div className="absolute -top-4 w-10 h-10 rounded-full bg-white dark:bg-slate-900 border-2 border-inherit flex items-center justify-center shadow-lg">
+                    <Star className="h-6 w-6 text-primary filled" />
+                  </div>
+                  <div className="h-20 w-20 rounded-full bg-primary flex items-center justify-center mb-4 shadow-xl ring-4 ring-white/20 group">
+                     <AgentInitials name={agent.agent_name} />
+                  </div>
+                  <h3 className="font-black text-lg text-slate-900 dark:text-white text-center leading-tight">{agent.agent_name}</h3>
+                  <div className="mt-4 text-center">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Qualidade IA</p>
+                    <p className="text-4xl font-black text-primary-foreground">{agent.avg_ai_quality_score}/100</p>
+                  </div>
+                  <div className="mt-2 flex gap-4">
+                     <div className="text-center">
+                        <p className="text-[8px] font-black uppercase text-slate-500">CSAT</p>
+                        <p className="text-xs font-black">{agent.avg_predicted_csat?.toFixed(1)} ★</p>
+                     </div>
+                     <div className="text-center">
+                        <p className="text-[8px] font-black uppercase text-slate-500">SLA</p>
+                        <p className="text-xs font-black">{agent.avg_sla_first_response_pct}%</p>
+                     </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Tabela Atendimento */}
+          <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xl">
+             <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+               <h4 className="font-black uppercase tracking-tighter text-lg">Mestres do Atendimento</h4>
+               <span className="text-[10px] font-black bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full text-slate-500 italic">Ordenado por qualidade técnica</span>
+            </div>
+            <div className="overflow-x-auto">
+               <table className="w-full">
+                  <thead>
+                     <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-100 dark:border-slate-800">
+                        <th className="px-6 py-4 text-left w-16">Rank</th>
+                        <th className="px-6 py-4 text-left">Atendente</th>
+                        <th className="px-6 py-4 text-center">Tempo Resposta</th>
+                        <th className="px-6 py-4 text-center">SLA 1ª Resp.</th>
+                        <th className="px-6 py-4 text-center">CSAT Médio</th>
+                        <th className="px-6 py-4 text-right">Nota IA</th>
+                     </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
+                     {serviceRanking.map((agent, i) => (
+                        <tr key={agent.agent_id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors group">
+                           <td className="px-6 py-5">
+                              <span className={cn(
+                                "w-8 h-8 rounded-full flex items-center justify-center font-black text-sm",
+                                i === 0 ? "bg-primary text-black" : "text-slate-400"
+                              )}>
+                                 {i + 1}
+                              </span>
+                           </td>
+                           <td className="px-6 py-5 font-black text-slate-900 dark:text-white">
+                              {agent.agent_name}
+                           </td>
+                           <td className="px-6 py-5 text-center">
+                              <p className="font-black text-slate-700 dark:text-slate-300">
+                                 {Math.round((agent.avg_first_response_sec ?? 0) / 60)} min
+                              </p>
+                           </td>
+                           <td className="px-6 py-5 text-center">
+                              <span className={cn(
+                                "font-black",
+                                (agent.avg_sla_first_response_pct ?? 0) >= 90 ? "text-emerald-500" :
+                                (agent.avg_sla_first_response_pct ?? 0) >= 70 ? "text-amber-500" : "text-red-500"
+                              )}>
+                                 {agent.avg_sla_first_response_pct ?? 0}%
+                              </span>
+                           </td>
+                           <td className="px-6 py-5 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                 <span className="font-black">{agent.avg_predicted_csat?.toFixed(1)}</span>
+                                 <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                              </div>
+                           </td>
+                           <td className="px-6 py-5 text-right">
+                              <div className="inline-flex items-center gap-2">
+                                 <div className="flex flex-col items-end">
+                                    <span className={cn("text-xl font-black tracking-tighter", qualityColor(agent.avg_ai_quality_score))}>
+                                       {agent.avg_ai_quality_score}
+                                    </span>
+                                 </div>
+                              </div>
+                           </td>
+                        </tr>
+                     ))}
+                  </tbody>
+               </table>
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

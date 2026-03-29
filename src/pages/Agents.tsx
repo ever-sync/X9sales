@@ -33,6 +33,32 @@ function qualityColor(score: number) {
   if (score >= 60) return 'text-amber-600';
   return 'text-red-600';
 }
+
+function AgentAvatar({ agent, className }: { agent: Agent; className: string }) {
+  const [imageError, setImageError] = useState(false);
+  const color = agentColor(agent.name);
+  const initials = agent.name.split(' ').map((chunk) => chunk[0]).slice(0, 2).join('').toUpperCase();
+
+  if (agent.avatar_url && !imageError) {
+    return (
+      <img
+        src={agent.avatar_url}
+        alt={agent.name}
+        className={className}
+        onError={() => setImageError(true)}
+      />
+    );
+  }
+
+  return (
+    <div
+      className={cn('flex items-center justify-center font-bold text-white shadow-sm', className)}
+      style={{ backgroundColor: color }}
+    >
+      {initials || <User className="h-6 w-6" />}
+    </div>
+  );
+}
 function formatSecondsCompact(seconds: number | null | undefined) {
   if (seconds == null) return '—';
   if (seconds < 60) return `${seconds}s`;
@@ -352,14 +378,12 @@ export default function Agents() {
         const avgQuality = ranking?.avg_ai_quality_score ?? live?.avg_ai_quality_score ?? null;
         const openAlerts = ranking?.open_alerts ?? live?.open_alerts ?? 0;
         const avgFirstResponse = ranking?.avg_first_response_sec ?? live?.avg_first_response_sec ?? null;
-        const color = agentColor(agent.name);
-        const initials = agent.name.split(' ').map((chunk) => chunk[0]).slice(0, 2).join('').toUpperCase();
         return (
           <Link key={agent.id} to={`/agents/${agent.id}`} className="group relative overflow-hidden rounded-[28px] border border-border bg-card p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-lg">
             <div className="absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,#d3fe18_0%,#b7f200_45%,rgba(211,254,24,0.05)_100%)]" />
             {canManageAgents && <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); openEditModal(agent); }} className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full border border-border bg-background/95 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted"><Pencil className="h-3.5 w-3.5" />Editar</button>}
             <div className="flex items-start gap-4 pr-20">
-              <div className="relative shrink-0">{agent.avatar_url ? <img src={agent.avatar_url} alt={agent.name} className="h-16 w-16 rounded-[22px] border border-border object-cover shadow-sm" onError={(event) => { (event.target as HTMLImageElement).style.display = 'none'; }} /> : <div className="flex h-16 w-16 items-center justify-center rounded-[22px] text-lg font-bold text-white shadow-sm" style={{ backgroundColor: color }}>{initials || <User className="h-6 w-6" />}</div>}<span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-background bg-green-500" /></div>
+              <div className="relative shrink-0"><AgentAvatar agent={agent} className="h-16 w-16 rounded-[22px] border border-border object-cover" /><span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-background bg-green-500" /></div>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2"><p className="truncate text-[22px] font-semibold leading-tight text-foreground transition-colors group-hover:text-primary">{agent.name}</p><span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700">Ativo</span></div>
                 {agent.store?.name && <p className="mt-2 inline-flex rounded-full bg-slate-100 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">{agent.store.name}</p>}

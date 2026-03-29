@@ -698,8 +698,20 @@ export default function Sales() {
               <div key={sale.id} className="grid gap-4 px-5 py-4 lg:grid-cols-[minmax(0,1.2fr)_repeat(4,minmax(0,1fr))] lg:items-center">
                 <div className="min-w-0">
                   <div className="flex items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <p className="truncate text-sm font-semibold text-foreground">{sale.seller?.name ?? sale.seller_name_snapshot}</p>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <SaleSellerAvatar
+                        name={sale.seller?.name ?? sale.seller_name_snapshot}
+                        avatarUrl={sale.seller?.avatar_url}
+                      />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-foreground">{sale.seller?.name ?? sale.seller_name_snapshot}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{sale.notes || 'Sem observaÃ§Ãµes adicionais.'}</p>
+                        {sale.conversation && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Conversa: {sale.conversation.customer?.name || sale.conversation.customer?.phone || sale.conversation.id.slice(0, 8)}
+                          </p>
+                        )}
+                      </div>
                       <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                         {sale.store_name}
                       </span>
@@ -744,7 +756,13 @@ export default function Sales() {
 
                 <div className="rounded-2xl bg-background px-3 py-3">
                   <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Vendedor</p>
-                  <p className="mt-1 text-sm font-medium text-foreground">{sale.seller?.name ?? sale.seller_name_snapshot}</p>
+                  <div className="mt-1 flex items-center gap-2">
+                    <SaleSellerAvatar
+                      name={sale.seller?.name ?? sale.seller_name_snapshot}
+                      avatarUrl={sale.seller?.avatar_url}
+                    />
+                    <p className="text-sm font-medium text-foreground">{sale.seller?.name ?? sale.seller_name_snapshot}</p>
+                  </div>
                 </div>
 
                 <div className="rounded-2xl bg-background px-3 py-3">

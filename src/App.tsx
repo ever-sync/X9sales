@@ -138,7 +138,7 @@ function ProtectedRoutes() {
           <Route
             path="ranking"
             element={
-              <PermissionGate permission="agents.view_team" fallback={<Navigate to="/" replace />}>
+              <PermissionGate permission="performance.view" fallback={<Navigate to="/" replace />}>
                 <Ranking />
               </PermissionGate>
             }

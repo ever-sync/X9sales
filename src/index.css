@@ -210,4 +210,29 @@
   .text-primary {
     color: hsl(var(--foreground)) !important;
   }
+
+  /* --- Glassmorphism & Effects --- */
+  .glass-card {
+    @apply bg-white/5 backdrop-blur-md border border-white/10 shadow-xl;
+  }
+
+  .dark .glass-card {
+    @apply bg-black/20 backdrop-blur-md border border-white/5 shadow-2xl;
+  }
+
+  .bg-gradient-lime {
+    background: linear-gradient(135deg, #d3fe18 0%, #a3cf0a 100%);
+  }
+
+  .glow-lime {
+    box-shadow: 0 0 20px rgba(211, 254, 24, 0.3);
+  }
+
+  .glow-primary {
+    box-shadow: 0 10px 40px -10px rgba(211, 254, 24, 0.4);
+  }
+
+  .tracking-tight-titles {
+    letter-spacing: -0.05em;
+  }
 }

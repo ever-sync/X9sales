@@ -175,6 +175,7 @@ export default function AgentDetail() {
   const topImprovements = [...improvementCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
 
   const needsCoachingList = aiAnalyses?.filter(a => a.needs_coaching) ?? [];
+  const [avatarError, setAvatarError] = useState(false);
 
   if (!agent) {
     return (
@@ -194,8 +195,8 @@ export default function AgentDetail() {
           <ArrowLeft className="h-5 w-5 text-muted-foreground" />
         </Link>
         <div className="flex items-center gap-3">
-          {agent.avatar_url ? (
-            <img src={agent.avatar_url} alt={agent.name} className="h-12 w-12 rounded-full object-cover" />
+          {agent.avatar_url && !avatarError ? (
+            <img src={agent.avatar_url} alt={agent.name} className="h-12 w-12 rounded-full object-cover" onError={() => setAvatarError(true)} />
           ) : (
             <div className="h-12 w-12 bg-accent rounded-full flex items-center justify-center">
               <User className="h-6 w-6 text-primary" />

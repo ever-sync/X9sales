@@ -180,6 +180,7 @@ export default function ConversationDetail() {
   });
 
   const [expandedPillar, setExpandedPillar] = React.useState<string | null>(null);
+  const [agentAvatarError, setAgentAvatarError] = React.useState(false);
 
   const coachingActionMutation = useMutation({
     mutationFn: async ({
@@ -364,8 +365,8 @@ export default function ConversationDetail() {
           <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wider">Atendente</h3>
           {agent ? (
             <div className="flex items-center gap-3">
-              {agent.avatar_url ? (
-                <img src={agent.avatar_url} alt={agent.name} className="h-10 w-10 rounded-full object-cover" />
+              {agent.avatar_url && !agentAvatarError ? (
+                <img src={agent.avatar_url} alt={agent.name} className="h-10 w-10 rounded-full object-cover" onError={() => setAgentAvatarError(true)} />
               ) : (
                 <div className="h-10 w-10 bg-accent rounded-full flex items-center justify-center">
                   <User className="h-5 w-5 text-primary" />

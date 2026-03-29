@@ -43,7 +43,7 @@ export function Header({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   };
 
   return (
-    <header className="shrink-0 z-30 flex h-[64px] items-center justify-between border-b border-border bg-background px-4 sm:px-5 lg:px-8">
+    <header className="shrink-0 z-30 flex h-[64px] items-center justify-between border-b border-border bg-background/80 backdrop-blur-md px-4 sm:px-5 lg:px-8">
       <div className="flex min-w-0 items-center gap-2">
         <button
           type="button"

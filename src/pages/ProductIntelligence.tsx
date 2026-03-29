@@ -1,27 +1,49 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
-  Sparkles,
-  Brain,
-  TrendingUp,
-  TrendingDown,
-  Minus,
-  Package,
-  MessageSquare,
-  ThumbsDown,
-  HelpCircle,
-  ChevronRight,
-  AlertTriangle,
-  Flame,
-  Activity,
+  Sparkles, Brain, TrendingUp, TrendingDown, Minus, Package, MessageSquare,
+  ThumbsDown, HelpCircle, ChevronRight, AlertTriangle, Flame, Activity, Loader2, BarChart2,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { useCompany } from '../contexts/CompanyContext';
+import { supabase } from '../integrations/supabase/client';
+import { EmptyState } from '../components/ui/EmptyState';
 
 type Tab = 'produto' | 'objecoes';
 
+type PIReport = {
+  produto_citado: string | null;
+  produto_interesse: string | null;
+  produtos_comparados: string[];
+  motivo_interesse: string | null;
+  dificuldade_entendimento: string | null;
+  barreiras_produto: string[];
+  objecao_tratada: boolean | null;
+  oportunidade_perdida: boolean | null;
+};
+
+// ── Aggregation helpers ───────────────────────────────────────────────────────
+
+function countOcc(arr: (string | null)[]): Record<string, number> {
+  return arr.reduce((acc, v) => {
+    const key = v?.trim();
+    if (!key) return acc;
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+}
+
+function pct(count: number, total: number) {
+  if (total === 0) return 0;
+  return Math.round((count / total) * 100);
+}
+
+function topN(counts: Record<string, number>, n: number): [string, number][] {
+  return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, n);
+}
+
 // ── Shared ───────────────────────────────────────────────────────────────────
-function MetricCard({
-  label, value, icon: Icon, sub, accent,
-}: {
+function MetricCard({ label, value, icon: Icon, sub, accent }: {
   label: string; value: string; icon: React.ElementType; sub?: string; accent?: boolean;
 }) {
   return (
@@ -72,15 +94,7 @@ function Trend({ dir }: { dir: 'up' | 'down' | 'stable' }) {
   return <Minus className="h-3.5 w-3.5 text-muted-foreground" />;
 }
 
-// ── Product rank row ──────────────────────────────────────────────────────────
-interface ProductRow {
-  rank: number;
-  name: string;
-  pct: number;
-  trend: 'up' | 'down' | 'stable';
-  badge?: string;
-  badgeCls?: string;
-}
+interface ProductRow { rank: number; name: string; pct: number; trend: 'up' | 'down' | 'stable'; badge?: string; badgeCls?: string; }
 
 function ProductRankRow({ p }: { p: ProductRow }) {
   return (
@@ -100,14 +114,7 @@ function ProductRankRow({ p }: { p: ProductRow }) {
   );
 }
 
-// ── Product sub-issue row ─────────────────────────────────────────────────────
-interface ProductIssueRow {
-  product: string;
-  issue: string;
-  pct: number;
-  icon: React.ElementType;
-  iconCls: string;
-}
+interface ProductIssueRow { product: string; issue: string; pct: number; icon: React.ElementType; iconCls: string; }
 
 function ProductIssueItem({ item }: { item: ProductIssueRow }) {
   return (
@@ -124,15 +131,7 @@ function ProductIssueItem({ item }: { item: ProductIssueRow }) {
   );
 }
 
-// ── Objection card ─────────────────────────────────────────────────────────────
-interface ObjCard {
-  text: string;
-  pct: number;
-  trend: 'up' | 'down' | 'stable';
-  impact: 'alto' | 'medio' | 'baixo';
-  context: string;
-  tip: string;
-}
+interface ObjCard { text: string; pct: number; trend: 'up' | 'down' | 'stable'; impact: 'alto' | 'medio' | 'baixo'; context: string; tip: string; }
 
 function ObjectionCard({ obj }: { obj: ObjCard }) {
   const impactCls = {
@@ -164,80 +163,96 @@ function ObjectionCard({ obj }: { obj: ObjCard }) {
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function ProductIntelligence() {
   const [tab, setTab] = useState<Tab>('produto');
+  const { companyId } = useCompany();
 
-  // ── Mock data ─────────────────────────────────────────────────────────────
-  const mostSearched: ProductRow[] = [
-    { rank: 1, name: 'Plano Pro — Monitoramento completo', pct: 38, trend: 'up', badge: 'mais buscado', badgeCls: 'bg-primary/15 text-primary' },
-    { rank: 2, name: 'Plano Starter — Ate 5 atendentes', pct: 24, trend: 'stable' },
-    { rank: 3, name: 'Add-on IA Avancada', pct: 19, trend: 'up' },
-    { rank: 4, name: 'Plano Enterprise — Ilimitado', pct: 12, trend: 'down' },
-    { rank: 5, name: 'Consultoria de Implantacao', pct: 7, trend: 'stable' },
-  ];
-
-  const mostDoubts: ProductIssueRow[] = [
-    { product: 'Add-on IA Avancada', issue: 'Como funciona a analise automatica', pct: 61, icon: HelpCircle, iconCls: 'bg-blue-100 text-blue-600' },
-    { product: 'Plano Pro', issue: 'Limite de conversas e custo por extra', pct: 47, icon: HelpCircle, iconCls: 'bg-blue-100 text-blue-600' },
-    { product: 'Plano Enterprise', issue: 'SLA e clausulas contratuais', pct: 38, icon: HelpCircle, iconCls: 'bg-blue-100 text-blue-600' },
-    { product: 'Consultoria de Implantacao', issue: 'Prazo e escopo incluido', pct: 29, icon: HelpCircle, iconCls: 'bg-blue-100 text-blue-600' },
-  ];
-
-  const mostObjections: ProductIssueRow[] = [
-    { product: 'Plano Pro', issue: 'Custo-beneficio vs concorrente', pct: 54, icon: ThumbsDown, iconCls: 'bg-rose-100 text-rose-600' },
-    { product: 'Add-on IA Avancada', issue: 'Complexidade percebida de uso', pct: 43, icon: ThumbsDown, iconCls: 'bg-rose-100 text-rose-600' },
-    { product: 'Plano Starter', issue: 'Limite de atendentes muito restrito', pct: 31, icon: ThumbsDown, iconCls: 'bg-rose-100 text-rose-600' },
-    { product: 'Consultoria de Implantacao', issue: 'Nao ve necessidade — quer implantar sozinho', pct: 22, icon: ThumbsDown, iconCls: 'bg-rose-100 text-rose-600' },
-  ];
-
-  const losingTraction: ProductIssueRow[] = [
-    { product: 'Plano Enterprise', issue: 'Interesse caiu 18% vs mes anterior — decisores nao chegam na conversa', pct: 12, icon: TrendingDown, iconCls: 'bg-amber-100 text-amber-600' },
-    { product: 'Consultoria de Implantacao', issue: 'Clientes preferem onboarding self-service', pct: 7, icon: TrendingDown, iconCls: 'bg-amber-100 text-amber-600' },
-  ];
-
-  const productPatterns = [
-    { text: 'Plano Pro e o mais buscado — mas tambem o que mais gera objecao de preco', tone: 'rose' as const },
-    { text: 'Add-on IA gera alto interesse mas baixo entendimento — precisa de demo', tone: 'violet' as const },
-    { text: 'Clientes que entendem o ROI do produto Pro convertem 3x mais', tone: 'green' as const },
-    { text: 'Plano Starter e porta de entrada mas converte mal — clientes saem para o Pro ou saem', tone: 'amber' as const },
-    { text: 'Enterprise perde tração — decisores nao chegam a conversa com o vendedor', tone: 'blue' as const },
-  ];
-
-  const objections: ObjCard[] = [
-    {
-      text: 'Preco alto — nao vejo o retorno',
-      pct: 41, trend: 'up', impact: 'alto',
-      context: 'Aparece apos apresentacao do Plano Pro — derruba 60% das conversas',
-      tip: 'Mostre calculo de ROI: quantas horas economizadas x salario do gestor',
+  const { data: rawReports = [], isLoading } = useQuery<PIReport[]>({
+    queryKey: ['product-intelligence', companyId],
+    queryFn: async () => {
+      if (!companyId) return [];
+      const since = new Date();
+      since.setDate(since.getDate() - 30);
+      const { data, error } = await supabase
+        .from('product_intelligence_reports')
+        .select('produto_citado, produto_interesse, produtos_comparados, motivo_interesse, dificuldade_entendimento, barreiras_produto, objecao_tratada, oportunidade_perdida')
+        .eq('company_id', companyId)
+        .gte('analyzed_at', since.toISOString());
+      if (error) throw error;
+      return (data ?? []) as PIReport[];
     },
-    {
-      text: 'Ja tenho outro sistema — nao vou trocar',
-      pct: 22, trend: 'stable', impact: 'medio',
-      context: 'Clientes que vieram do Google com termos de concorrentes',
-      tip: 'Ofeca comparativo direto e migracao assistida gratuita',
-    },
-    {
-      text: 'Vai dar muito trabalho implementar',
-      pct: 18, trend: 'up', impact: 'alto',
-      context: 'Aparece ao falar do Add-on IA — percebido como complexo',
-      tip: 'Destaque que a implantacao media e de 3 dias com suporte dedicado',
-    },
-    {
-      text: 'Nao tenho orcamento agora',
-      pct: 14, trend: 'down', impact: 'medio',
-      context: 'Sazonal — pico em dezembro e janeiro',
-      tip: 'Ofeca plano Starter com upgrade garantido nos 90 dias',
-    },
-    {
-      text: 'Minha equipe nao vai usar',
-      pct: 5, trend: 'stable', impact: 'baixo',
-      context: 'Aparece em conversas com gestores sem apoio da equipe',
-      tip: 'Propose um piloto de 15 dias com 2 atendentes antes de contratar',
-    },
-  ];
+    enabled: !!companyId,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const agg = useMemo(() => {
+    const total = rawReports.length;
+    if (total === 0) return null;
+
+    // Top products by interest
+    const interestCounts = countOcc(rawReports.map(r => r.produto_interesse));
+    const topInterest = topN(interestCounts, 5);
+
+    // Products with most understanding difficulty
+    const highDiffReports = rawReports.filter(r => r.dificuldade_entendimento === 'alto');
+    const highDiffCounts = countOcc(highDiffReports.map(r => r.produto_citado));
+    const topHighDiff = topN(highDiffCounts, 4);
+
+    // Products with most lost opportunities (objections not handled)
+    const lostReports = rawReports.filter(r => r.oportunidade_perdida === true);
+    const lostCounts = countOcc(lostReports.map(r => r.produto_citado));
+    const topLost = topN(lostCounts, 4);
+
+    // Products losing traction (high loss rate)
+    const productStats: Record<string, { total: number; lost: number }> = {};
+    rawReports.forEach(r => {
+      const prod = r.produto_citado ?? r.produto_interesse;
+      if (!prod) return;
+      if (!productStats[prod]) productStats[prod] = { total: 0, lost: 0 };
+      productStats[prod].total++;
+      if (r.oportunidade_perdida) productStats[prod].lost++;
+    });
+    const losingTraction = Object.entries(productStats)
+      .filter(([, s]) => s.total >= 3 && s.lost / s.total > 0.4)
+      .sort((a, b) => (b[1].lost / b[1].total) - (a[1].lost / a[1].total))
+      .slice(0, 3);
+
+    // Top barriers/objections
+    const allBarriers = rawReports.flatMap(r => r.barreiras_produto ?? []);
+    const topBarriers = topN(countOcc(allBarriers), 5);
+
+    // Most common motivo_interesse per product
+    const motivoByProduct: Record<string, string> = {};
+    rawReports.forEach(r => {
+      const prod = r.produto_citado ?? r.produto_interesse;
+      if (prod && r.motivo_interesse && !motivoByProduct[prod]) {
+        motivoByProduct[prod] = r.motivo_interesse;
+      }
+    });
+
+    return {
+      total,
+      topInterest,
+      topHighDiff,
+      topLost,
+      losingTraction,
+      topBarriers,
+      motivoByProduct,
+      highDiffTotal: highDiffReports.length,
+      lostTotal: lostReports.length,
+    };
+  }, [rawReports]);
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'produto', label: 'Produto' },
     { id: 'objecoes', label: 'Objecoes' },
   ];
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center p-16">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 p-6">
@@ -275,90 +290,224 @@ export default function ProductIntelligence() {
         ))}
       </div>
 
-      {/* ── Tab: Produto ──────────────────────────────────────────────────── */}
-      {tab === 'produto' && (
-        <div className="space-y-6">
-
-          {/* Metric cards */}
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <MetricCard label="Produto mais buscado" value="Plano Pro" icon={Flame} sub="38% das conversas" accent />
-            <MetricCard label="Produto com mais duvidas" value="Add-on IA" icon={HelpCircle} sub="61% das conversas sobre o produto" />
-            <MetricCard label="Produto com mais objecoes" value="Plano Pro" icon={ThumbsDown} sub="54% das objecoes de preco" />
-            <MetricCard label="Maior interesse recorrente" value="Add-on IA" icon={TrendingUp} sub="crescendo +22% este mes" />
-          </div>
-
-          {/* Ranking de interesse */}
-          <div className="rounded-2xl border border-border bg-card p-5">
-            <SectionHeader icon={Flame} title="Produtos mais buscados" sub="por presenca nas conversas — seta indica tendencia" />
-            <div className="space-y-2">
-              {mostSearched.map((p) => <ProductRankRow key={p.name} p={p} />)}
-            </div>
-          </div>
-
-          {/* Produtos com mais duvidas */}
-          <div className="rounded-2xl border border-border bg-card p-5">
-            <SectionHeader icon={HelpCircle} title="Produtos com mais duvidas" sub="duvida principal por produto" />
-            <div className="space-y-2">
-              {mostDoubts.map((item) => <ProductIssueItem key={item.product} item={item} />)}
-            </div>
-          </div>
-
-          {/* Produtos com mais objecoes */}
-          <div className="rounded-2xl border border-border bg-card p-5">
-            <SectionHeader icon={AlertTriangle} title="Produtos com mais objecoes" sub="objecao principal por produto" />
-            <div className="space-y-2">
-              {mostObjections.map((item) => <ProductIssueItem key={item.product} item={item} />)}
-            </div>
-          </div>
-
-          {/* Produtos que perdem tracao */}
-          <div className="rounded-2xl border border-border bg-card p-5">
-            <SectionHeader icon={Activity} title="Produtos que mais perdem tracao" sub="interesse em queda — requer atencao" />
-            {losingTraction.length > 0 ? (
-              <div className="space-y-2">
-                {losingTraction.map((item) => <ProductIssueItem key={item.product} item={item} />)}
+      {!agg ? (
+        <EmptyState
+          icon={BarChart2}
+          title="Nenhum dado de inteligência ainda"
+          description="As análises de produto aparecerão aqui após as conversas serem processadas."
+        />
+      ) : (
+        <>
+          {/* ── Tab: Produto ─────────────────────────────────────────────── */}
+          {tab === 'produto' && (
+            <div className="space-y-6">
+              {/* Metric cards */}
+              <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                <MetricCard
+                  label="Produto mais buscado"
+                  value={agg.topInterest[0]?.[0]?.slice(0, 20) ?? '—'}
+                  icon={Flame}
+                  sub={agg.topInterest[0] ? `${pct(agg.topInterest[0][1], agg.total)}% das conversas` : undefined}
+                  accent
+                />
+                <MetricCard
+                  label="Produto com mais duvidas"
+                  value={agg.topHighDiff[0]?.[0]?.slice(0, 20) ?? '—'}
+                  icon={HelpCircle}
+                  sub={agg.highDiffTotal > 0 ? `${pct(agg.highDiffTotal, agg.total)}% com dificuldade alta` : undefined}
+                />
+                <MetricCard
+                  label="Mais oportunidades perdidas"
+                  value={agg.topLost[0]?.[0]?.slice(0, 20) ?? '—'}
+                  icon={ThumbsDown}
+                  sub={agg.lostTotal > 0 ? `${pct(agg.lostTotal, agg.total)}% das conversas` : undefined}
+                />
+                <MetricCard
+                  label="Conversas analisadas"
+                  value={String(agg.total)}
+                  icon={TrendingUp}
+                  sub="ultimos 30 dias"
+                />
               </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">Nenhum produto com queda significativa neste periodo.</p>
-            )}
-          </div>
 
-          {/* Padroes IA */}
-          <div className="rounded-2xl border border-border bg-card p-5">
-            <SectionHeader icon={Brain} title="Padroes Identificados pela IA" />
-            <div className="grid gap-2 sm:grid-cols-2">
-              {productPatterns.map((p) => <PatternTag key={p.text} text={p.text} tone={p.tone} />)}
+              {/* Ranking de interesse */}
+              {agg.topInterest.length > 0 && (
+                <div className="rounded-2xl border border-border bg-card p-5">
+                  <SectionHeader icon={Flame} title="Produtos mais buscados" sub="por presenca nas conversas" />
+                  <div className="space-y-2">
+                    {agg.topInterest.map(([name, count], i) => (
+                      <ProductRankRow
+                        key={name}
+                        p={{
+                          rank: i + 1,
+                          name,
+                          pct: pct(count, agg.total),
+                          trend: 'stable',
+                          badge: i === 0 ? 'mais buscado' : undefined,
+                          badgeCls: i === 0 ? 'bg-primary/15 text-primary' : undefined,
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Produtos com mais duvidas */}
+              {agg.topHighDiff.length > 0 && (
+                <div className="rounded-2xl border border-border bg-card p-5">
+                  <SectionHeader icon={HelpCircle} title="Produtos com mais duvidas" sub="dificuldade de entendimento alta" />
+                  <div className="space-y-2">
+                    {agg.topHighDiff.map(([product, count]) => (
+                      <ProductIssueItem
+                        key={product}
+                        item={{
+                          product,
+                          issue: agg.motivoByProduct[product] ?? 'Dificuldade de entendimento identificada',
+                          pct: pct(count, agg.total),
+                          icon: HelpCircle,
+                          iconCls: 'bg-blue-100 text-blue-600',
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Produtos com mais oportunidades perdidas */}
+              {agg.topLost.length > 0 && (
+                <div className="rounded-2xl border border-border bg-card p-5">
+                  <SectionHeader icon={AlertTriangle} title="Produtos com mais objecoes" sub="oportunidades perdidas por produto" />
+                  <div className="space-y-2">
+                    {agg.topLost.map(([product, count]) => (
+                      <ProductIssueItem
+                        key={product}
+                        item={{
+                          product,
+                          issue: 'Objecao nao tratada — oportunidade perdida',
+                          pct: pct(count, agg.total),
+                          icon: ThumbsDown,
+                          iconCls: 'bg-rose-100 text-rose-600',
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Produtos que perdem tracao */}
+              <div className="rounded-2xl border border-border bg-card p-5">
+                <SectionHeader icon={Activity} title="Produtos que mais perdem tracao" sub="taxa de perda acima de 40%" />
+                {agg.losingTraction.length > 0 ? (
+                  <div className="space-y-2">
+                    {agg.losingTraction.map(([product, stats]) => (
+                      <ProductIssueItem
+                        key={product}
+                        item={{
+                          product,
+                          issue: `${Math.round((stats.lost / stats.total) * 100)}% das conversas resultam em perda — requer atencao`,
+                          pct: pct(stats.lost, stats.total),
+                          icon: TrendingDown,
+                          iconCls: 'bg-amber-100 text-amber-600',
+                        }}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Nenhum produto com queda significativa neste periodo.</p>
+                )}
+              </div>
+
+              {/* Padroes IA */}
+              <div className="rounded-2xl border border-border bg-card p-5">
+                <SectionHeader icon={Brain} title="Padroes Identificados pela IA" />
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {agg.topInterest[0] && (
+                    <PatternTag
+                      text={`${agg.topInterest[0][0]} e o mais buscado — ${pct(agg.topInterest[0][1], agg.total)}% das conversas`}
+                      tone="rose"
+                    />
+                  )}
+                  {agg.highDiffTotal > 0 && (
+                    <PatternTag
+                      text={`${pct(agg.highDiffTotal, agg.total)}% das conversas com dificuldade alta de entendimento — requer demo ou material explicativo`}
+                      tone="violet"
+                    />
+                  )}
+                  {agg.lostTotal > 0 && (
+                    <PatternTag
+                      text={`${pct(agg.lostTotal, agg.total)}% das conversas resultaram em oportunidade perdida — revisar abordagem de objecoes`}
+                      tone="amber"
+                    />
+                  )}
+                  {agg.topBarriers[0] && (
+                    <PatternTag
+                      text={`Barreira mais comum: "${agg.topBarriers[0][0]}" — presente em ${agg.topBarriers[0][1]} conversas`}
+                      tone="blue"
+                    />
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          )}
 
-      {/* ── Tab: Objecoes ─────────────────────────────────────────────────── */}
-      {tab === 'objecoes' && (
-        <div className="space-y-6">
-          {/* Metric cards */}
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
-            <MetricCard label="Objecao mais frequente" value="Preco alto" icon={ThumbsDown} sub="41% das conversas" accent />
-            <MetricCard label="Objecao crescendo" value="Impl. complexo" icon={TrendingUp} sub="+9pp no ultimo mes" />
-            <MetricCard label="Objecao em queda" value="Sem orcamento" icon={TrendingDown} sub="−4pp este mes" />
-          </div>
+          {/* ── Tab: Objecoes ────────────────────────────────────────────── */}
+          {tab === 'objecoes' && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+                <MetricCard
+                  label="Objecao mais frequente"
+                  value={agg.topBarriers[0]?.[0]?.slice(0, 20) ?? '—'}
+                  icon={ThumbsDown}
+                  sub={agg.topBarriers[0] ? `${pct(agg.topBarriers[0][1], agg.total)}% das conversas` : undefined}
+                  accent
+                />
+                <MetricCard
+                  label="Oportunidades perdidas"
+                  value={`${pct(agg.lostTotal, agg.total)}%`}
+                  icon={TrendingDown}
+                  sub={`${agg.lostTotal} de ${agg.total} conversas`}
+                />
+                <MetricCard
+                  label="Conversas analisadas"
+                  value={String(agg.total)}
+                  icon={MessageSquare}
+                  sub="ultimos 30 dias"
+                />
+              </div>
 
-          <div className="rounded-2xl border border-border bg-card p-5">
-            <SectionHeader
-              icon={MessageSquare}
-              title="Principais Objecoes de Produto"
-              sub="contexto, impacto, tendencia e sugestao de resposta"
-            />
-            <div className="space-y-3">
-              {objections.map((o) => <ObjectionCard key={o.text} obj={o} />)}
+              {agg.topBarriers.length > 0 ? (
+                <div className="rounded-2xl border border-border bg-card p-5">
+                  <SectionHeader
+                    icon={MessageSquare}
+                    title="Principais Barreiras de Produto"
+                    sub="identificadas pela IA nas conversas"
+                  />
+                  <div className="space-y-3">
+                    {agg.topBarriers.map(([text, count], i) => (
+                      <ObjectionCard
+                        key={text}
+                        obj={{
+                          text,
+                          pct: pct(count, agg.total),
+                          trend: 'stable',
+                          impact: i < 2 ? 'alto' : i < 4 ? 'medio' : 'baixo',
+                          context: `Identificada em ${count} conversa${count !== 1 ? 's' : ''}`,
+                          tip: 'Revisar playbook de objecoes para este produto.',
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <EmptyState
+                  icon={ThumbsDown}
+                  title="Nenhuma barreira identificada"
+                  description="As barreiras de produto aparecerão após análise das conversas."
+                />
+              )}
             </div>
-            <p className="mt-4 text-xs text-muted-foreground leading-relaxed">
-              <span className="font-medium text-foreground">Legenda: </span>
-              seta vermelha = objecao crescendo (alerta), verde = caindo (positivo), traco = estavel.
-              Impacto alto = derruba a conversa em mais de 50% dos casos.
-            </p>
-          </div>
-        </div>
+          )}
+        </>
       )}
     </div>
   );

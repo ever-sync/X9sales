@@ -51,6 +51,7 @@ const navGroups: NavGroup[] = [
     items: [
       { to: '/', icon: LayoutDashboard, label: 'Dashboard', permission: 'dashboard.view' },
       { to: '/sales', icon: HandCoins, label: 'Vendas', permission: 'revenue.view_own' },
+      { to: '/ranking', icon: Trophy, label: 'Ranking', permission: 'performance.view' },
       { to: '/alerts', icon: ShieldAlert, label: 'Alertas', permission: 'alerts.view' },
       { to: '/conversations', icon: MessageSquare, label: 'Conversas', permission: 'conversations.view_own' },
       { to: '/performance', icon: TrendingUp, label: 'Performance', permission: 'performance.view' },
@@ -60,7 +61,6 @@ const navGroups: NavGroup[] = [
     label: 'GESTAO',
     items: [
       { to: '/agents', icon: Users, label: 'Atendentes', permission: 'agents.view_team' },
-      { to: '/ranking', icon: Trophy, label: 'Ranking', permission: 'agents.view_team' },
       { to: '/audit', icon: ClipboardCheck, label: 'Auditoria', permission: 'audit.view' },
       { to: '/ai-insights', icon: Brain, label: 'Analise IA', permission: 'audit.review', badge: 'IA' },
       { to: '/revenue-insights', icon: HandCoins, label: 'Revenue Insights', permission: 'revenue.view', badge: 'ROI' },
@@ -113,7 +113,7 @@ export function Sidebar({
 
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex h-screen flex-col border-r border-white/6 bg-[#0f1115] text-white shadow-[0_24px_80px_rgba(0,0,0,0.35)] transition-all duration-300 lg:static lg:z-auto lg:shadow-none lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 flex h-screen flex-col border-r border-white/6 bg-slate-950/80 backdrop-blur-xl text-white shadow-[0_24px_80px_rgba(0,0,0,0.35)] transition-all duration-300 lg:static lg:z-auto lg:shadow-none lg:translate-x-0',
           isOpen ? 'translate-x-0' : '-translate-x-full',
           collapsed ? 'w-[68px]' : 'w-[272px]',
         )}
@@ -242,7 +242,7 @@ export function Sidebar({
             </div>
           ) : companies.length > 1 ? (
             <DropdownMenu>
-              <DropdownMenuTrigger className="group flex w-full items-center gap-3 rounded-2xl border border-white/6 bg-white/[0.03] p-2.5 transition-colors outline-none hover:bg-white/5">
+            <DropdownMenuTrigger className="group flex w-full items-center gap-3 rounded-2xl border border-white/6 bg-white/3 p-2.5 transition-colors outline-none hover:bg-white/5">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10">
                   <Building2 className="h-5 w-5 text-primary" />
                 </div>
@@ -283,7 +283,7 @@ export function Sidebar({
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <div className="group relative flex items-center gap-3 overflow-hidden rounded-2xl border border-white/6 bg-white/[0.03] p-2.5">
+            <div className="group relative flex items-center gap-3 overflow-hidden rounded-2xl border border-white/6 bg-white/3 p-2.5">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10">
                 <Building2 className="h-5 w-5 text-primary" />
               </div>
