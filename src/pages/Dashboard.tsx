@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   ResponsiveContainer,
@@ -35,6 +34,7 @@ import { supabase } from '../integrations/supabase/client';
 import { CACHE } from '../config/constants';
 import { formatCurrency, formatPercent } from '../lib/utils';
 import type { AIConversationAnalysis } from '../types';
+import { SetupChecklist } from '../components/onboarding/SetupChecklist';
 
 type AuditPreview = Partial<AIConversationAnalysis> & {
   id: string;
@@ -586,6 +586,8 @@ export default function Dashboard() {
           </button>
         </div>
       </div>
+
+      <SetupChecklist />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
         <DashboardCard

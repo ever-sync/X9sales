@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../integrations/supabase/client';
 import { useCompany } from '../contexts/CompanyContext';
@@ -14,6 +15,8 @@ import {
   CheckCircle2,
   XCircle,
   Bell,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 
 // ── humanização ───────────────────────────────────────────────────────────────
@@ -109,9 +112,11 @@ interface AlertCardProps {
   alert: Alert;
   onAcknowledge: (id: string) => void;
   isPending: boolean;
+  selected?: boolean;
+  onToggleSelect?: (id: string) => void;
 }
 
-function AlertCard({ alert, onAcknowledge, isPending }: AlertCardProps) {
+function AlertCard({ alert, onAcknowledge, isPending, selected, onToggleSelect }: AlertCardProps) {
   const typeInfo = getTypeInfo(alert.alert_type);
   const sevCfg = getSeverityConfig(alert.severity);
   const statuCfg = getStatusConfig(alert.status);
@@ -124,7 +129,23 @@ function AlertCard({ alert, onAcknowledge, isPending }: AlertCardProps) {
       sevCfg.border,
       sevCfg.bg,
       alert.status !== 'open' && 'opacity-60',
+      selected && 'bg-primary/5',
     )}>
+      {/* checkbox de seleção (apenas alertas abertos) */}
+      {alert.status === 'open' && onToggleSelect && (
+        <button
+          type="button"
+          onClick={() => onToggleSelect(alert.id)}
+          className="mt-0.5 shrink-0 text-muted-foreground hover:text-primary transition-colors"
+          aria-label={selected ? 'Desselecionar alerta' : 'Selecionar alerta'}
+        >
+          {selected
+            ? <CheckSquare className="h-4.5 w-4.5 text-primary" />
+            : <Square className="h-4.5 w-4.5" />
+          }
+        </button>
+      )}
+
       {/* ícone do tipo */}
       <div className={cn('h-9 w-9 rounded-xl flex items-center justify-center shrink-0', sevCfg.iconBg)}>
         <Icon className={cn('h-5 w-5', sevCfg.iconColor)} />
@@ -189,11 +210,26 @@ function AlertCard({ alert, onAcknowledge, isPending }: AlertCardProps) {
   );
 }
 
+// ── filtro de severidade ──────────────────────────────────────────────────────
+
+type SeverityFilter = 'all' | 'critical' | 'high' | 'medium' | 'low';
+
+const SEVERITY_FILTER_OPTIONS: { key: SeverityFilter; label: string; activeClass: string }[] = [
+  { key: 'all', label: 'Todos', activeClass: 'bg-foreground text-background' },
+  { key: 'critical', label: 'Crítico', activeClass: 'bg-red-600 text-white' },
+  { key: 'high', label: 'Alto', activeClass: 'bg-orange-500 text-white' },
+  { key: 'medium', label: 'Médio', activeClass: 'bg-yellow-500 text-white' },
+  { key: 'low', label: 'Baixo', activeClass: 'bg-blue-500 text-white' },
+];
+
 // ── página principal ──────────────────────────────────────────────────────────
 
 export default function Alerts() {
   const { companyId } = useCompany();
   const queryClient = useQueryClient();
+
+  const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const { data: alerts = [], isLoading } = useQuery<Alert[]>({
     queryKey: ['all-alerts', companyId],
@@ -203,8 +239,9 @@ export default function Alerts() {
         .from('alerts')
         .select('*, agent:agents(name)')
         .eq('company_id', companyId)
+        .order('severity', { ascending: true }) // critical first (alphabetically c < h < l < m)
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(200);
       if (error) throw error;
       return (data ?? []) as Alert[];
     },
@@ -226,8 +263,62 @@ export default function Alerts() {
     },
   });
 
+  const bulkAcknowledgeMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { error } = await supabase
+        .from('alerts')
+        .update({ status: 'acknowledged' })
+        .in('id', ids);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setSelectedIds(new Set());
+      queryClient.invalidateQueries({ queryKey: ['all-alerts'] });
+      queryClient.invalidateQueries({ queryKey: ['alerts-open'] });
+    },
+  });
+
   const openAlerts = alerts.filter(a => a.status === 'open');
   const pastAlerts = alerts.filter(a => a.status !== 'open');
+
+  const filteredOpenAlerts = severityFilter === 'all'
+    ? openAlerts
+    : openAlerts.filter(a => a.severity === severityFilter);
+
+  // counts per severity for filter pills
+  const severityCounts = openAlerts.reduce<Record<string, number>>((acc, a) => {
+    acc[a.severity] = (acc[a.severity] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  const allFilteredSelected = filteredOpenAlerts.length > 0 && filteredOpenAlerts.every(a => selectedIds.has(a.id));
+
+  const toggleSelectAll = () => {
+    if (allFilteredSelected) {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        filteredOpenAlerts.forEach(a => next.delete(a.id));
+        return next;
+      });
+    } else {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        filteredOpenAlerts.forEach(a => next.add(a.id));
+        return next;
+      });
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectedOpenIds = [...selectedIds].filter(id => openAlerts.some(a => a.id === id));
 
   return (
     <div className="space-y-6">
@@ -270,21 +361,92 @@ export default function Alerts() {
           {/* alertas abertos */}
           {openAlerts.length > 0 && (
             <div className="bg-card rounded-2xl border border-border overflow-hidden">
-              <div className="px-6 py-3 border-b border-border bg-red-50/50 dark:bg-red-950/10">
+              {/* cabeçalho + filtros */}
+              <div className="px-6 py-4 border-b border-border bg-red-50/50 dark:bg-red-950/10 space-y-3">
                 <h3 className="text-sm font-semibold text-red-700 dark:text-red-400 flex items-center gap-2">
                   <XCircle className="h-4 w-4" />
                   Precisam de ação ({openAlerts.length})
                 </h3>
+
+                {/* filtro por severidade */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {SEVERITY_FILTER_OPTIONS.map(opt => {
+                    const count = opt.key === 'all' ? openAlerts.length : (severityCounts[opt.key] ?? 0);
+                    if (opt.key !== 'all' && count === 0) return null;
+                    return (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => {
+                          setSeverityFilter(opt.key);
+                          setSelectedIds(new Set());
+                        }}
+                        className={cn(
+                          'flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors border',
+                          severityFilter === opt.key
+                            ? cn(opt.activeClass, 'border-transparent')
+                            : 'border-border text-muted-foreground hover:text-foreground hover:bg-muted',
+                        )}
+                      >
+                        {opt.label}
+                        <span className={cn(
+                          'rounded-full px-1.5 py-0 text-[10px] font-bold',
+                          severityFilter === opt.key ? 'bg-white/20' : 'bg-muted',
+                        )}>
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* barra de ações em massa */}
+                {filteredOpenAlerts.length > 0 && (
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={toggleSelectAll}
+                      className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {allFilteredSelected
+                        ? <CheckSquare className="h-4 w-4 text-primary" />
+                        : <Square className="h-4 w-4" />
+                      }
+                      {allFilteredSelected ? 'Desselecionar todos' : 'Selecionar todos'}
+                    </button>
+
+                    {selectedOpenIds.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => bulkAcknowledgeMutation.mutate(selectedOpenIds)}
+                        disabled={bulkAcknowledgeMutation.isPending}
+                        className="flex items-center gap-1.5 text-xs font-semibold text-primary bg-accent px-3 py-1.5 rounded-lg hover:bg-primary hover:text-primary-foreground transition-colors disabled:opacity-50"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                        Marcar {selectedOpenIds.length} como visto{selectedOpenIds.length !== 1 ? 's' : ''}
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
+
               <div className="divide-y divide-border">
-                {openAlerts.map(alert => (
-                  <AlertCard
-                    key={alert.id}
-                    alert={alert}
-                    onAcknowledge={id => acknowledgeMutation.mutate(id)}
-                    isPending={acknowledgeMutation.isPending}
-                  />
-                ))}
+                {filteredOpenAlerts.length === 0 ? (
+                  <div className="px-6 py-10 text-center text-sm text-muted-foreground">
+                    Nenhum alerta com severidade "{SEVERITY_CONFIG[severityFilter]?.label}" no momento.
+                  </div>
+                ) : (
+                  filteredOpenAlerts.map(alert => (
+                    <AlertCard
+                      key={alert.id}
+                      alert={alert}
+                      onAcknowledge={id => acknowledgeMutation.mutate(id)}
+                      isPending={acknowledgeMutation.isPending || bulkAcknowledgeMutation.isPending}
+                      selected={selectedIds.has(alert.id)}
+                      onToggleSelect={toggleSelect}
+                    />
+                  ))
+                )}
               </div>
             </div>
           )}

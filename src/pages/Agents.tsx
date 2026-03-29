@@ -10,8 +10,8 @@ import { CACHE } from '../config/constants';
 import { cn } from '../lib/utils';
 
 const AVATAR_COLORS = ['#7C3AED', '#2563EB', '#059669', '#D97706', '#DC2626', '#0891B2', '#DB2777', '#EA580C'];
-type AgentForm = { name: string; email: string; phone: string; storeId: string; external_id: string };
-const emptyForm: AgentForm = { name: '', email: '', phone: '', storeId: '', external_id: '' };
+type AgentForm = { name: string; email: string; phone: string; storeId: string; external_id: string; password?: string };
+const emptyForm: AgentForm = { name: '', email: '', phone: '', storeId: '', external_id: '', password: '' };
 type AgentLiveStats = {
   agent_id: string;
   total_conversations: number;
@@ -216,7 +216,7 @@ export default function Agents() {
   const openCreateModal = useCallback(() => { setEditingAgentId(null); setForm(emptyForm); setFormError(null); setShowModal(true); }, []);
   const openEditModal = useCallback((agent: Agent) => {
     setEditingAgentId(agent.id);
-    setForm({ name: agent.name ?? '', email: agent.email ?? '', phone: agent.phone ?? '', storeId: agent.store_id ?? '', external_id: agent.external_id ?? '' });
+    setForm({ name: agent.name ?? '', email: agent.email ?? '', phone: agent.phone ?? '', storeId: agent.store_id ?? '', external_id: agent.external_id ?? '', password: '' });
     setFormError(null);
     setShowModal(true);
   }, []);
@@ -225,10 +225,28 @@ export default function Agents() {
     mutationFn: async (values: AgentForm) => {
       if (!companyId) throw new Error('Empresa não encontrada');
       if (!values.storeId) throw new Error('Selecione a loja do atendente');
-      const externalId = values.external_id.trim() || crypto.randomUUID();
-      const { data, error } = await supabase.from('agents').insert({ company_id: companyId, name: values.name.trim(), email: values.email.trim() || null, phone: values.phone.trim() || null, store_id: values.storeId, external_id: externalId, is_active: true }).select('id').single();
-      if (error) throw error;
-      return data.id as string;
+      
+      const payload = {
+        company_id: companyId,
+        name: values.name.trim(),
+        email: values.email.trim() || undefined,
+        password: values.password?.trim() || undefined,
+        phone: values.phone.trim() || undefined,
+        store_id: values.storeId,
+        external_id: values.external_id.trim() || undefined,
+      };
+
+      const { data, error } = await supabase.functions.invoke('create-agent-user', {
+        body: payload
+      });
+      
+      if (error) {
+        console.error("Functions error:", error);
+        throw new Error("Sessão expirada ou erro. Atualize a página e tente se o erro prosseguir.");
+      }
+      if (data?.error) throw new Error(data.error);
+      
+      return data.agent.id as string;
     },
     onSuccess: (id) => { queryClient.invalidateQueries({ queryKey: ['agents', companyId] }); closeModal(); navigate(`/agents/${id}`); },
     onError: (error: Error) => setFormError(error.message),
@@ -239,8 +257,27 @@ export default function Agents() {
       if (!companyId) throw new Error('Empresa não encontrada');
       if (!editingAgentId) throw new Error('Atendente não encontrado');
       if (!values.storeId) throw new Error('Selecione a loja do atendente');
-      const { error } = await supabase.from('agents').update({ name: values.name.trim(), email: values.email.trim() || null, phone: values.phone.trim() || null, store_id: values.storeId }).eq('id', editingAgentId).eq('company_id', companyId);
-      if (error) throw error;
+      
+      const payload = {
+        company_id: companyId,
+        agent_id: editingAgentId,
+        name: values.name.trim(),
+        email: values.email.trim() || undefined,
+        password: values.password?.trim() || undefined,
+        phone: values.phone.trim() || undefined,
+        store_id: values.storeId,
+      };
+
+      const { data, error } = await supabase.functions.invoke('update-agent-user', {
+        body: payload
+      });
+      
+      if (error) {
+        console.error("Functions error:", error);
+        throw new Error("Falha no servidor. Se a sessão tiver expirado, por favor Dê F5 para recarregar a página e tentar de novo.");
+      }
+      if (data?.error) throw new Error(data.error);
+
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['agents', companyId] }); queryClient.invalidateQueries({ queryKey: ['agent', editingAgentId] }); closeModal(); },
     onError: (error: Error) => setFormError(error.message),
@@ -342,7 +379,7 @@ export default function Agents() {
 
       {showStoreModal && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"><div className="w-full max-w-md rounded-2xl bg-card shadow-xl"><div className="flex items-center justify-between border-b border-border px-6 py-4"><h3 className="text-lg font-semibold text-foreground">Cadastrar loja</h3><button type="button" onClick={closeStoreModal} aria-label="Fechar" className="rounded-lg p-1 transition-colors hover:bg-muted"><X className="h-5 w-5 text-muted-foreground" /></button></div><form onSubmit={handleStoreSubmit} className="space-y-4 p-6"><div><label className="mb-1 block text-sm font-medium text-foreground">Nome da loja <span className="text-red-500">*</span></label><input type="text" value={storeName} onChange={(event) => setStoreName(event.target.value)} placeholder="Ex: Loja Centro" className="w-full rounded-xl border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35" /></div>{storeError && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600">{storeError}</p>}<div className="flex gap-3 pt-2"><button type="button" onClick={closeStoreModal} className="flex-1 rounded-xl border border-border py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted">Cancelar</button><button type="submit" disabled={createStore.isPending} className="flex-1 rounded-xl bg-primary py-2 text-sm font-bold text-black transition-colors hover:bg-primary/90 disabled:opacity-60">{createStore.isPending ? 'Salvando...' : 'Salvar loja'}</button></div></form></div></div>}
 
-      {showModal && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"><div className="w-full max-w-md rounded-2xl bg-card shadow-xl"><div className="flex items-center justify-between border-b border-border px-6 py-4"><h3 className="text-lg font-semibold text-foreground">{editingAgentId ? 'Editar Atendente' : 'Novo Atendente'}</h3><button type="button" onClick={closeModal} aria-label="Fechar" className="rounded-lg p-1 transition-colors hover:bg-muted"><X className="h-5 w-5 text-muted-foreground" /></button></div><form onSubmit={handleSubmit} className="space-y-4 p-6"><div><label className="mb-1 block text-sm font-medium text-foreground">Nome <span className="text-red-500">*</span></label><input type="text" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Ex: Ana Lima" className="w-full rounded-xl border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35" /></div><div><label className="mb-1 block text-sm font-medium text-foreground">Email</label><input type="email" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} placeholder="ana@empresa.com" className="w-full rounded-xl border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35" /></div><div><label className="mb-1 block text-sm font-medium text-foreground">Telefone</label><input type="tel" value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} placeholder="5511999999999" className="w-full rounded-xl border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35" /></div><div><div className="mb-1 flex items-center justify-between gap-2"><label className="block text-sm font-medium text-foreground">Loja <span className="text-red-500">*</span></label><button type="button" onClick={() => setShowStoreModal(true)} className="text-xs font-semibold text-primary hover:underline">Cadastrar loja</button></div><select value={form.storeId} onChange={(event) => setForm((current) => ({ ...current, storeId: event.target.value }))} className="w-full rounded-xl border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35"><option value="">Selecione a loja</option>{stores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}</select></div><div><label className="mb-1 block text-sm font-medium text-foreground">ID Externo<span className="ml-1 text-xs font-normal text-muted-foreground">{editingAgentId ? '(não pode ser alterado depois de criado)' : '(deixe em branco para gerar automaticamente)'}</span></label><input type="text" value={form.external_id} onChange={(event) => setForm((current) => ({ ...current, external_id: event.target.value }))} placeholder="ag01, ag02... ou UUID" disabled={!!editingAgentId} className="w-full rounded-xl border border-border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring/35 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground" /><p className="mt-1 text-xs text-muted-foreground">Usado para identificar este atendente nos webhooks do UazAPI.</p></div>{formError && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600">{formError}</p>}<div className="flex gap-3 pt-2"><button type="button" onClick={closeModal} className="flex-1 rounded-xl border border-border py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted">Cancelar</button><button type="submit" disabled={createAgent.isPending || updateAgent.isPending} className="flex-1 rounded-xl bg-primary py-2 text-sm font-bold text-black transition-colors hover:bg-primary/90 disabled:opacity-60">{editingAgentId ? (updateAgent.isPending ? 'Salvando...' : 'Salvar alterações') : (createAgent.isPending ? 'Criando...' : 'Criar Atendente')}</button></div></form></div></div>}
+      {showModal && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"><div className="w-full max-w-md rounded-2xl bg-card shadow-xl"><div className="flex items-center justify-between border-b border-border px-6 py-4"><h3 className="text-lg font-semibold text-foreground">{editingAgentId ? 'Editar Atendente' : 'Novo Atendente'}</h3><button type="button" onClick={closeModal} aria-label="Fechar" className="rounded-lg p-1 transition-colors hover:bg-muted"><X className="h-5 w-5 text-muted-foreground" /></button></div><form onSubmit={handleSubmit} className="space-y-4 p-6"><div><label className="mb-1 block text-sm font-medium text-foreground">Nome <span className="text-red-500">*</span></label><input type="text" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Ex: Ana Lima" className="w-full rounded-xl border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35" /></div><div><label className="mb-1 block text-sm font-medium text-foreground">Email</label><input type="email" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} placeholder="ana@empresa.com" className="w-full rounded-xl border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35" /></div><div><label className="mb-1 block text-sm font-medium text-foreground">Senha de acesso<span className="ml-1 text-xs font-normal text-muted-foreground">{editingAgentId ? '(Deixe em branco para manter a atual)' : '(Obrigatória junto com e-mail)'}</span></label><input type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} placeholder={editingAgentId ? "Nova senha forte" : "Senha do vendedor"} className="w-full rounded-xl border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35" /></div><div><label className="mb-1 block text-sm font-medium text-foreground">Telefone</label><input type="tel" value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} placeholder="5511999999999" className="w-full rounded-xl border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35" /></div><div><div className="mb-1 flex items-center justify-between gap-2"><label className="block text-sm font-medium text-foreground">Loja <span className="text-red-500">*</span></label><button type="button" onClick={() => setShowStoreModal(true)} className="text-xs font-semibold text-primary hover:underline">Cadastrar loja</button></div><select value={form.storeId} onChange={(event) => setForm((current) => ({ ...current, storeId: event.target.value }))} className="w-full rounded-xl border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35"><option value="">Selecione a loja</option>{stores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}</select></div><div><label className="mb-1 block text-sm font-medium text-foreground">ID Externo<span className="ml-1 text-xs font-normal text-muted-foreground">{editingAgentId ? '(não pode ser alterado depois de criado)' : '(deixe em branco para gerar automaticamente)'}</span></label><input type="text" value={form.external_id} onChange={(event) => setForm((current) => ({ ...current, external_id: event.target.value }))} placeholder="ag01, ag02... ou UUID" disabled={!!editingAgentId} className="w-full rounded-xl border border-border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring/35 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground" /><p className="mt-1 text-xs text-muted-foreground">Usado para identificar este atendente nos webhooks do UazAPI.</p></div>{formError && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600">{formError}</p>}<div className="flex gap-3 pt-2"><button type="button" onClick={closeModal} className="flex-1 rounded-xl border border-border py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted">Cancelar</button><button type="submit" disabled={createAgent.isPending || updateAgent.isPending} className="flex-1 rounded-xl bg-primary py-2 text-sm font-bold text-black transition-colors hover:bg-primary/90 disabled:opacity-60">{editingAgentId ? (updateAgent.isPending ? 'Salvando...' : 'Salvar alterações') : (createAgent.isPending ? 'Criando...' : 'Criar Atendente')}</button></div></form></div></div>}
     </div>
   );
 }

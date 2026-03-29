@@ -3,12 +3,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 import { env } from './config/env';
 import { useAuth } from './hooks/useAuth';
-import { CompanyProvider } from './contexts/CompanyContext';
+import { CompanyProvider, useCompany } from './contexts/CompanyContext';
 import { MainLayout } from './components/layout/MainLayout';
 import { PermissionGate } from './components/auth/PermissionGate';
 
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import AgentDashboard from './pages/AgentDashboard';
 import Agents from './pages/Agents';
 import AgentDetail from './pages/AgentDetail';
 import Conversations from './pages/Conversations';
@@ -72,6 +73,19 @@ const queryClient = new QueryClient({
   },
 });
 
+function RootDashboard() {
+  const { role, isLoading } = useCompany();
+  if (isLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+  if (role === 'agent') return <AgentDashboard />;
+  return <Dashboard />;
+}
+
 function ProtectedRoutes() {
   const { user, loading } = useAuth();
   const location = useLocation();
@@ -95,7 +109,7 @@ function ProtectedRoutes() {
     <CompanyProvider>
       <Routes>
         <Route element={<MainLayout />}>
-          <Route index element={<Dashboard />} />
+          <Route index element={<RootDashboard />} />
           <Route
             path="agents"
             element={

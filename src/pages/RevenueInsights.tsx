@@ -29,6 +29,7 @@ import { env } from '../config/env';
 import { MetricCard } from '../components/dashboard/MetricCard';
 import { Button } from '../components/ui/button';
 import { cn, formatCurrency, formatDateTime, formatPercent } from '../lib/utils';
+import { DemoBanner } from '../components/ui/EmptyState';
 
 type Scope = 'single' | 'all';
 type PipelineColumnId = 'hot' | 'risk' | 'best';
@@ -763,7 +764,14 @@ export default function RevenueInsights() {
 
       {showModal && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4"><div className="w-full max-w-2xl rounded-[28px] bg-card shadow-2xl"><div className="flex items-start justify-between border-b border-border px-6 py-5"><div><h3 className="text-xl font-semibold text-foreground">Atualizar analise de receita</h3><p className="text-sm text-muted-foreground">Selecione atendente, periodo e escopo para atualizar os sinais usados nesta tela.</p></div><button type="button" className="rounded-lg p-1 text-muted-foreground hover:bg-muted" onClick={() => setShowModal(false)}><X className="h-5 w-5" /></button></div><div className="space-y-4 p-6"><div className="grid grid-cols-1 gap-3 md:grid-cols-2"><select className="rounded-xl border border-border bg-background px-3 py-2 text-sm" value={agentId} onChange={(e) => setAgentId(e.target.value)}><option value="">Selecione um atendente</option>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select><select className="rounded-xl border border-border bg-background px-3 py-2 text-sm" value={scope} onChange={(e) => setScope(e.target.value as Scope)}><option value="all">Todas as conversas</option><option value="single">Uma conversa</option></select><input type="date" className="rounded-xl border border-border bg-background px-3 py-2 text-sm" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} /><input type="date" className="rounded-xl border border-border bg-background px-3 py-2 text-sm" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} /></div>{scope === 'single' && <div className="space-y-3 rounded-2xl border border-border bg-muted/50 p-4"><div className="flex flex-wrap items-center gap-2"><Button variant="outline" type="button" onClick={runPreview}>Carregar conversas</Button>{previewError && <span className="text-sm text-red-600">{previewError}</span>}</div><select className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm" value={conversationId} onChange={(e) => setConversationId(e.target.value)}><option value="">Selecione uma conversa</option>{previewCandidates.map((candidate) => (<option key={candidate.conversation_id} value={candidate.conversation_id}>{(candidate.customer_name ?? 'Sem nome')} - {formatDateTime(candidate.started_at)}</option>))}</select></div>}{formError && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600">{formError}</p>}{jobId && <div className="rounded-2xl border border-border bg-muted/50 px-4 py-3 text-sm"><div className="flex items-center justify-between gap-3"><p className="font-medium text-foreground">Status: {activeJob?.status ?? 'queued'}</p><span className="text-muted-foreground">{progressPct}%</span></div><p className="mt-1 text-muted-foreground">Processadas: {activeJob?.processed_count ?? 0}/{totalCandidates}</p>{activeJob?.error_message && <p className="mt-2 text-red-600">{activeJob.error_message}</p>}</div>}<div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Button variant="outline" type="button" onClick={() => setShowModal(false)}>Fechar</Button><Button type="button" onClick={() => startMutation.mutate()} disabled={startMutation.isPending} className={cn('bg-[#5945fd] text-white hover:bg-[#4a39d4]', startMutation.isPending && 'opacity-70')}>{startMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Iniciar analise</Button></div></div></div></div>}
 
-      {!isPageLoading && !hasAnyData && !pageError && <div className="rounded-3xl border border-dashed border-border bg-card p-10 text-center text-sm text-muted-foreground">A base ainda nao possui sinais, outcomes, coaching ou relatorios suficientes para montar revenue insights neste periodo.</div>}
+      {!isPageLoading && !hasAnyData && !pageError && (
+        <>
+          <DemoBanner />
+          <div className="rounded-3xl border border-dashed border-border bg-card p-10 text-center text-sm text-muted-foreground">
+            A base ainda nao possui sinais de receita. Execute a analise de IA nas conversas para que os insights de oportunidade apareçam aqui.
+          </div>
+        </>
+      )}
     </div>
   );
 }

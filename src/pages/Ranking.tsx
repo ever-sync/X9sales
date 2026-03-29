@@ -5,6 +5,7 @@ import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../integrations/supabase/client';
 import { cn } from '../lib/utils';
 import type { AgentRanking } from '../types';
+import { DemoBanner } from '../components/ui/EmptyState';
 import {
   Trophy,
   Medal,
@@ -36,6 +37,16 @@ function useRanking() {
     staleTime: 1000 * 60 * 5,
   });
 }
+
+// ── demo data ─────────────────────────────────────────────────────────────────
+
+const DEMO_AGENTS: AgentRanking[] = [
+  { company_id: 'demo', agent_id: 'd1', agent_name: 'Ana Lima', agent_avatar: null, total_conversations: 142, total_closed: 118, avg_first_response_sec: 210, avg_sla_first_response_pct: 91, avg_sla_resolution_pct: 88, total_messages_sent: 890, total_messages_received: 1120, total_deals_won: 34, total_deals_lost: 8, total_revenue: 48200, open_alerts: 0, avg_ai_quality_score: 87, avg_predicted_csat: 4.5, coaching_needed_count: 2 },
+  { company_id: 'demo', agent_id: 'd2', agent_name: 'Carlos Souza', agent_avatar: null, total_conversations: 98, total_closed: 76, avg_first_response_sec: 380, avg_sla_first_response_pct: 74, avg_sla_resolution_pct: 71, total_messages_sent: 620, total_messages_received: 780, total_deals_won: 19, total_deals_lost: 12, total_revenue: 22800, open_alerts: 2, avg_ai_quality_score: 71, avg_predicted_csat: 3.9, coaching_needed_count: 6 },
+  { company_id: 'demo', agent_id: 'd3', agent_name: 'Fernanda Reis', agent_avatar: null, total_conversations: 127, total_closed: 104, avg_first_response_sec: 155, avg_sla_first_response_pct: 95, avg_sla_resolution_pct: 93, total_messages_sent: 810, total_messages_received: 1040, total_deals_won: 41, total_deals_lost: 5, total_revenue: 61500, open_alerts: 0, avg_ai_quality_score: 92, avg_predicted_csat: 4.8, coaching_needed_count: 0 },
+  { company_id: 'demo', agent_id: 'd4', agent_name: 'João Pereira', agent_avatar: null, total_conversations: 63, total_closed: 44, avg_first_response_sec: 720, avg_sla_first_response_pct: 52, avg_sla_resolution_pct: 49, total_messages_sent: 340, total_messages_received: 430, total_deals_won: 9, total_deals_lost: 18, total_revenue: 10200, open_alerts: 5, avg_ai_quality_score: 48, avg_predicted_csat: 3.2, coaching_needed_count: 14 },
+  { company_id: 'demo', agent_id: 'd5', agent_name: 'Mariana Costa', agent_avatar: null, total_conversations: 110, total_closed: 89, avg_first_response_sec: 290, avg_sla_first_response_pct: 83, avg_sla_resolution_pct: 80, total_messages_sent: 710, total_messages_received: 920, total_deals_won: 27, total_deals_lost: 9, total_revenue: 35700, open_alerts: 1, avg_ai_quality_score: 79, avg_predicted_csat: 4.2, coaching_needed_count: 4 },
+];
 
 // ── sort options ──────────────────────────────────────────────────────────────
 
@@ -192,7 +203,10 @@ export default function Ranking() {
     return 0;
   });
 
-  const top3 = sorted.slice(0, 3);
+  const isDemo = !isLoading && !isError && sorted.length === 0;
+  const display = isDemo ? sortRanking(DEMO_AGENTS, sortKey, currentSort.desc) : sorted;
+  const top3 = display.slice(0, 3);
+
   return (
     <div className="space-y-6">
       {/* header */}
@@ -235,13 +249,10 @@ export default function Ranking() {
             {error instanceof Error ? error.message : 'Verifique a conexao com o Supabase e as permissoes da view.'}
           </p>
         </div>
-      ) : sorted.length === 0 ? (
-        <div className="bg-card rounded-2xl border border-border p-16 text-center text-muted-foreground">
-          <Trophy className="h-10 w-10 mx-auto mb-3 opacity-30" />
-          <p>Nenhum dado disponível. A view materializada pode precisar ser atualizada.</p>
-        </div>
       ) : (
         <>
+          {isDemo && <DemoBanner />}
+
           {/* podium top 3 */}
           {top3.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -287,7 +298,7 @@ export default function Ranking() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {sorted.map((agent, i) => (
+                  {display.map((agent, i) => (
                     <tr
                       key={agent.agent_id}
                       className="hover:bg-muted/40 transition-colors"

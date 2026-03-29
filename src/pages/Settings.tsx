@@ -15,6 +15,11 @@ import {
   X,
   Clock3,
   RefreshCcw,
+  Plug,
+  Copy,
+  CheckCircle2,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCompany } from '../contexts/CompanyContext';
@@ -24,8 +29,9 @@ import { Switch } from '../components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Input } from '../components/ui/input';
 import { supabase } from '../integrations/supabase/client';
+import { env } from '../config/env';
 import type { BillingInvoice, BillingSubscription, CompanyInvite, CompanySettings, NotificationJobSummary } from '../types';
-import { formatCurrency, formatDate, formatDateTime, formatSeconds } from '../lib/utils';
+import { cn, formatCurrency, formatDate, formatDateTime, formatSeconds } from '../lib/utils';
 
 function InfoCard({
   title,
@@ -806,6 +812,9 @@ export default function Settings() {
               Usuarios
             </TabsTrigger>
           )}
+          <TabsTrigger value="integrations" className="rounded-xl px-4 py-2.5">
+            Integracoes
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="account" className="mt-0">
@@ -1729,7 +1738,148 @@ export default function Settings() {
             </div>
           </TabsContent>
         )}
+
+        <TabsContent value="integrations" className="mt-0">
+          <IntegrationsTab companyId={company?.id ?? null} />
+        </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+// ── aba de integrações ────────────────────────────────────────────────────────
+
+function CopyField({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+      <div className="flex items-center gap-2 rounded-xl border border-border bg-background px-4 py-3">
+        <code className="flex-1 truncate text-sm font-mono text-foreground">{value}</code>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="flex items-center gap-1.5 text-xs font-semibold text-primary hover:text-primary/80 transition-colors shrink-0"
+        >
+          {copied ? (
+            <><CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> Copiado</>
+          ) : (
+            <><Copy className="h-3.5 w-3.5" /> Copiar</>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function IntegrationsTab({ companyId }: { companyId: string | null }) {
+  const { data: conversationCount = 0 } = useQuery<number>({
+    queryKey: ['integration-status', companyId],
+    queryFn: async () => {
+      if (!companyId) return 0;
+      const { count, error } = await supabase
+        .from('conversations')
+        .select('id', { count: 'exact', head: true })
+        .eq('company_id', companyId);
+      if (error) throw error;
+      return count ?? 0;
+    },
+    enabled: !!companyId,
+    staleTime: 30 * 1000,
+  });
+
+  const isConnected = conversationCount > 0;
+  const webhookUrl = `${env.VITE_SUPABASE_URL}/functions/v1/uazapi-webhook`;
+
+  return (
+    <div className="space-y-6 rounded-3xl border border-border bg-card p-6">
+      {/* cabeçalho */}
+      <div className="flex items-center gap-3 border-b border-border pb-5">
+        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/10">
+          <Plug className="h-5 w-5 text-primary" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-foreground">Integracoes</h3>
+          <p className="text-sm text-muted-foreground">Configure a conexao do seu WhatsApp com a plataforma.</p>
+        </div>
+      </div>
+
+      {/* status da conexão */}
+      <div className={cn(
+        'flex items-center gap-4 rounded-2xl border p-4',
+        isConnected
+          ? 'border-green-500/20 bg-green-500/5'
+          : 'border-amber-500/20 bg-amber-500/5',
+      )}>
+        <div className={cn(
+          'flex h-10 w-10 items-center justify-center rounded-xl',
+          isConnected ? 'bg-green-500/15' : 'bg-amber-500/15',
+        )}>
+          {isConnected
+            ? <Wifi className="h-5 w-5 text-green-500" />
+            : <WifiOff className="h-5 w-5 text-amber-500" />
+          }
+        </div>
+        <div>
+          <p className={cn(
+            'text-sm font-semibold',
+            isConnected ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400',
+          )}>
+            {isConnected ? 'WhatsApp conectado' : 'WhatsApp nao conectado'}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {isConnected
+              ? `${conversationCount} conversa${conversationCount !== 1 ? 's' : ''} recebida${conversationCount !== 1 ? 's' : ''} via webhook`
+              : 'Nenhuma mensagem recebida ainda. Siga os passos abaixo para conectar.'}
+          </p>
+        </div>
+      </div>
+
+      {/* credenciais */}
+      <div className="space-y-4">
+        <h4 className="text-sm font-semibold text-foreground">Credenciais da integracao</h4>
+        <CopyField label="URL do Webhook" value={webhookUrl} />
+        {companyId && <CopyField label="Company ID (use no campo company_id)" value={companyId} />}
+      </div>
+
+      {/* passo a passo */}
+      <div className="space-y-4">
+        <h4 className="text-sm font-semibold text-foreground">Como conectar (UazAPI)</h4>
+        <ol className="space-y-3 text-sm text-muted-foreground">
+          {[
+            { step: 1, text: 'Acesse o painel da UazAPI e abra a instancia do seu WhatsApp.' },
+            { step: 2, text: 'Va em Configuracoes → Webhooks e cole a URL do webhook acima.' },
+            { step: 3, text: 'Ative os eventos: messages.upsert, message.received.' },
+            { step: 4, text: 'No campo de payload customizado, inclua: "company_id": "<seu Company ID acima>".' },
+            { step: 5, text: 'Envie uma mensagem de teste pelo WhatsApp e volte aqui para confirmar a conexao.' },
+          ].map(({ step, text }) => (
+            <li key={step} className="flex gap-3">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[10px] font-bold text-primary">
+                {step}
+              </span>
+              <span className="leading-5">{text}</span>
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      {/* troubleshooting */}
+      <div className="rounded-2xl border border-border bg-muted/30 p-4 space-y-2">
+        <p className="text-sm font-semibold text-foreground">Nao esta funcionando?</p>
+        <ul className="space-y-1.5 text-xs text-muted-foreground list-disc pl-4">
+          <li>Verifique se o Company ID no payload e exatamente igual ao mostrado acima.</li>
+          <li>Confirme que a URL do webhook nao tem espacos ou caracteres extras.</li>
+          <li>Verifique se a instancia UazAPI esta ativa e o WhatsApp conectado (QR lido).</li>
+          <li>Aguarde ate 1 minuto apos enviar a mensagem de teste e recarregue esta pagina.</li>
+        </ul>
+      </div>
     </div>
   );
 }

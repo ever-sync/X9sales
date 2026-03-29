@@ -17,6 +17,7 @@ import {
   PanelLeftOpen,
   Sparkles,
   Contact,
+  ShieldAlert,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -49,6 +50,7 @@ const navGroups: NavGroup[] = [
     items: [
       { to: '/', icon: LayoutDashboard, label: 'Dashboard', permission: 'dashboard.view' },
       { to: '/sales', icon: HandCoins, label: 'Vendas', permission: 'revenue.view' },
+      { to: '/alerts', icon: ShieldAlert, label: 'Alertas', permission: 'alerts.view' },
       { to: '/conversations', icon: MessageSquare, label: 'Conversas', permission: 'conversations.view_own' },
     ],
   },
@@ -91,8 +93,10 @@ export function Sidebar({
   onToggleCollapse: () => void;
 }) {
   const { can } = usePermissions();
-  const { company, companies, setCompanyId } = useCompany();
+  const { company, companies, setCompanyId, role } = useCompany();
   const { user } = useAuth();
+  
+  const isAgent = role === 'agent';
 
   return (
     <>
@@ -201,7 +205,12 @@ export function Sidebar({
                           />
                           {!collapsed && (
                             <>
-                              <span className="flex-1 truncate">{item.label}</span>
+                              <span className="flex-1 truncate">
+                                {isAgent && item.label === 'Dashboard' ? 'Meu Painel' : 
+                                 isAgent && item.label === 'Conversas' ? 'Minhas Conversas' : 
+                                 isAgent && item.label === 'Alertas' ? 'Meus Alertas' : 
+                                 item.label}
+                              </span>
                               {item.badge && (
                                 <span className={cn(
                                   'ml-auto flex items-center justify-center rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider',

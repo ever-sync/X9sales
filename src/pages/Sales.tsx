@@ -21,6 +21,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { formatCurrency, formatDateTime, normalizePhone } from '../lib/utils';
 import type { Agent, Customer, SaleRecord, Store as SalesStore } from '../types';
+import { DemoBanner } from '../components/ui/EmptyState';
 
 type SalesForm = {
   sellerAgentId: string;
@@ -510,8 +511,11 @@ export default function Sales() {
     },
   });
 
+  const isDemo = !isLoading && sales.length === 0;
+
   return (
     <div className="space-y-6">
+      {isDemo && <DemoBanner />}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-start gap-4">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/15">
@@ -606,7 +610,9 @@ export default function Sales() {
           </div>
         ) : filteredSales.length === 0 ? (
           <div className="px-5 py-14 text-center text-muted-foreground">
-            Nenhuma venda encontrada para os filtros atuais.
+            {sales.length === 0
+              ? 'Nenhuma venda registrada ainda. Adicione sua primeira venda clicando no botão acima.'
+              : 'Nenhuma venda encontrada para os filtros atuais.'}
           </div>
         ) : (
           <div className="divide-y divide-border/70">

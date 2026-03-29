@@ -31,6 +31,7 @@ import { MetricCard } from '../components/dashboard/MetricCard';
 import { Button } from '../components/ui/button';
 import { channelLabel, cn, formatDateTime, formatPercent } from '../lib/utils';
 import { toast } from 'sonner';
+import { DemoBanner } from '../components/ui/EmptyState';
 
 interface PreviewCandidate {
   conversation_id: string;
@@ -740,11 +741,14 @@ export default function AIInsights() {
       {isLoading ? (
         <div className="space-y-4">{[...Array(4)].map((_, index) => <div key={index} className="h-28 animate-pulse rounded-2xl bg-muted" />)}</div>
       ) : (summary?.analyses_total ?? 0) === 0 ? (
-        <div className="rounded-2xl border border-border bg-card p-16 text-center">
-          <Brain className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
-          <p className="font-medium text-muted-foreground">Nenhuma analise encontrada para os filtros atuais.</p>
-          <p className="mt-1 text-sm text-muted-foreground">Ajuste o periodo ou execute uma nova analise manual.</p>
-        </div>
+        <>
+          <DemoBanner />
+          <div className="rounded-2xl border border-border bg-card p-16 text-center">
+            <Brain className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
+            <p className="font-medium text-muted-foreground">Nenhuma analise encontrada para os filtros atuais.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Execute uma analise manual acima para ver os insights de qualidade do seu time.</p>
+          </div>
+        </>
       ) : (
         <>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">

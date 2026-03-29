@@ -43,7 +43,9 @@
       "mcp__TestSprite__testsprite_check_account_info",
       "Bash(find C:/Users/rapha -name *.json)",
       "Bash(xargs grep:*)",
-      "Bash(find C:/Users/rapha/AppData -name *.json)"
+      "Bash(find C:/Users/rapha/AppData -name *.json)",
+      "Bash(grep -ri \"webhook\\\\|chatwoot\\\\|integration_token\\\\|api_key\" c:/Users/rapha/OneDrive/Documentos/X9Sales/supabase --include=*.sql -l)",
+      "Bash(grep -ri \"webhook\\\\|chatwoot\\\\|integration\" c:/Users/rapha/OneDrive/Documentos/X9Sales/supabase/functions --include=*.ts -l)"
     ]
   }
 }
