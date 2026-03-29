@@ -19,8 +19,9 @@ import { supabase } from '../integrations/supabase/client';
 import { useAuth } from '../hooks/useAuth';
 import { Button } from '../components/ui/button';
 import { Progress } from '../components/ui/progress';
+import { BadgePill } from '../components/gamification/BadgePill';
 import { cn } from '../lib/utils';
-import type { AIConversationAnalysis, StructuredAnalysis } from '../types';
+import type { AIConversationAnalysis, AgentBadge, StructuredAnalysis } from '../types';
 import gsap from 'gsap';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -319,6 +320,21 @@ export default function AgentDashboard() {
     staleTime: 1000 * 60 * 5,
   });
 
+  const { data: myBadges = [] } = useQuery<AgentBadge[]>({
+    queryKey: ['agent-badges', company?.id, myAgent?.id],
+    queryFn: async () => {
+      if (!company?.id || !myAgent?.id) return [];
+      const { data, error } = await supabase.rpc('get_agent_badges', {
+        p_company_id: company.id,
+        p_agent_id: myAgent.id,
+      });
+      if (error) throw error;
+      return (data ?? []) as AgentBadge[];
+    },
+    enabled: !!company?.id && !!myAgent?.id,
+    staleTime: 1000 * 60 * 10,
+  });
+
   // ── Animations ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -544,6 +560,13 @@ export default function AgentDashboard() {
                 <p className="text-muted-foreground font-bold flex items-center gap-2">
                   {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
                 </p>
+                {myBadges.length > 0 && (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {myBadges.map((badge) => (
+                      <BadgePill key={badge.badge_key} badge={badge} />
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="flex shrink-0">
                 <Link to="/sales" className="group rounded-2xl p-[2px] bg-gradient-to-br from-primary to-emerald-400 hover:scale-105 active:scale-95 transition-all shadow-xl shadow-primary/20">
@@ -598,6 +621,33 @@ export default function AgentDashboard() {
           </div>
         ))}
       </div>
+
+      {myBadges.length > 0 && (
+        <section className="reveal-item px-4 md:px-0">
+          <div className="rounded-[2.5rem] border border-amber-200 bg-linear-to-r from-amber-50 to-white p-6 shadow-sm dark:border-amber-500/20 dark:from-amber-950/20 dark:to-slate-950">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-600">Reconhecimentos da semana</p>
+                <h3 className="mt-2 text-2xl font-black tracking-tight text-slate-900 dark:text-white">Seu quadro de badges</h3>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {myBadges.map((badge) => (
+                  <BadgePill key={`${badge.badge_key}-header`} badge={badge} />
+                ))}
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {myBadges.map((badge) => (
+                <div key={`${badge.badge_key}-detail`} className="rounded-2xl border border-white/60 bg-white/80 p-4 dark:border-white/10 dark:bg-white/5">
+                  <p className="text-sm font-black text-slate-900 dark:text-white">{badge.badge_label}</p>
+                  <p className="mt-1 text-xs font-medium text-muted-foreground">{badge.badge_description}</p>
+                  <p className="mt-2 text-sm text-slate-700 dark:text-slate-300">{badge.award_reason}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* 3. Metas e Progressão */}
       <section className="reveal-item px-4 md:px-0">

@@ -104,7 +104,7 @@ export function Sidebar({
       >
         {/* header: logo + close/collapse */}
         <div className={cn(
-          'flex border-b border-white/5 px-4 py-5',
+          'flex border-b border-white/6 px-4 py-5',
           collapsed ? 'flex-col items-center gap-3' : 'items-center justify-between gap-3',
         )}>
           <img
@@ -120,7 +120,7 @@ export function Sidebar({
           <button
             type="button"
             onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/8 text-white/60 transition-colors hover:bg-white/5 hover:text-white lg:hidden"
+            className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 text-white/60 transition-colors hover:bg-white/5 hover:text-white lg:hidden"
             aria-label="Fechar menu"
           >
             <X className="h-4.5 w-4.5" />
@@ -130,7 +130,7 @@ export function Sidebar({
           <button
             type="button"
             onClick={onToggleCollapse}
-            className="hidden h-9 w-9 items-center justify-center rounded-2xl border border-white/8 text-white/40 transition-colors hover:bg-white/5 hover:text-white lg:flex"
+            className="hidden h-9 w-9 items-center justify-center rounded-2xl border border-white/10 text-white/60 transition-colors hover:bg-white/5 hover:text-white lg:flex"
             aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}
             title={collapsed ? 'Expandir menu' : 'Recolher menu'}
           >
@@ -167,8 +167,8 @@ export function Sidebar({
                           'group relative flex items-center rounded-2xl transition-all duration-200 border',
                           collapsed ? 'justify-center px-0 py-3' : 'gap-3 px-4 py-3 text-[14px] font-medium',
                           isActive
-                            ? 'border-primary/20 bg-primary text-black font-bold shadow-[0_12px_30px_rgba(211,254,24,0.22)]'
-                            : 'border-transparent text-white/60 hover:border-white/8 hover:text-white hover:bg-white/5',
+                            ? 'border-primary/30 bg-primary text-primary-foreground font-bold shadow-[0_12px_30px_rgba(220,254,27,0.18)]'
+                            : 'border-transparent text-white/65 hover:border-white/10 hover:text-white hover:bg-white/5',
                         )
                       }
                     >
@@ -186,7 +186,7 @@ export function Sidebar({
                             className={cn(
                               'shrink-0 transition-colors',
                               collapsed ? 'h-5 w-5' : 'h-5 w-5',
-                              isActive ? 'text-black' : 'text-white/40 group-hover:text-white',
+                              isActive ? 'text-black' : 'text-white/45 group-hover:text-white',
                             )}
                           />
                           {!collapsed && (
@@ -201,7 +201,7 @@ export function Sidebar({
                               {item.badge && (
                                 <span className={cn(
                                   'ml-auto flex items-center justify-center rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider',
-                                  isActive ? 'bg-black/20 text-black' : 'bg-primary/20 text-primary',
+                                  isActive ? 'bg-black/15 text-black' : 'bg-primary/15 text-primary',
                                 )}>
                                   {item.badge}
                                 </span>
@@ -219,14 +219,14 @@ export function Sidebar({
         </nav>
 
         {/* footer: company */}
-        <div className={cn('border-t border-white/5 p-3', collapsed && 'flex justify-center')}>
+        <div className={cn('border-t border-white/6 p-3', collapsed && 'flex justify-center')}>
           {collapsed ? (
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10" title={company?.name ?? ''}>
               <Building2 className="h-5 w-5 text-primary" />
             </div>
           ) : companies.length > 1 ? (
             <DropdownMenu>
-            <DropdownMenuTrigger className="group flex w-full items-center gap-3 rounded-2xl border border-white/6 bg-white/3 p-2.5 transition-colors outline-none hover:bg-white/5">
+            <DropdownMenuTrigger className="group flex w-full items-center gap-3 rounded-2xl border border-white/8 bg-white/4 p-2.5 transition-colors outline-none hover:bg-white/6">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10">
                   <Building2 className="h-5 w-5 text-primary" />
                 </div>
@@ -236,7 +236,7 @@ export function Sidebar({
                   </p>
                   <p className="text-xs text-white/40">Alternar empresa</p>
                 </div>
-                <ChevronsUpDown className="h-4 w-4 shrink-0 text-white/20 group-hover:text-white transition-colors mr-1" />
+                <ChevronsUpDown className="mr-1 h-4 w-4 shrink-0 text-white/30 group-hover:text-white transition-colors" />
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 side="top"
@@ -267,7 +267,7 @@ export function Sidebar({
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <div className="group relative flex items-center gap-3 overflow-hidden rounded-2xl border border-white/6 bg-white/3 p-2.5">
+            <div className="group relative flex items-center gap-3 overflow-hidden rounded-2xl border border-white/8 bg-white/4 p-2.5">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10">
                 <Building2 className="h-5 w-5 text-primary" />
               </div>

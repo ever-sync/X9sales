@@ -50,11 +50,11 @@ export function MainLayout() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background dark:bg-background">
+    <div className="flex h-screen overflow-hidden bg-background">
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} collapsed={collapsed} onToggleCollapse={toggleCollapse} />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Header onOpenSidebar={() => setSidebarOpen(true)} />
-        <main className="flex-1 overflow-y-auto px-4 py-4 text-foreground sm:px-5 lg:px-8 lg:py-6 dark:text-foreground pb-32 md:pb-6">
+        <main className="flex-1 overflow-y-auto px-4 py-4 text-foreground sm:px-5 lg:px-8 lg:py-6 pb-32 md:pb-6">
           <div className="mx-auto w-full max-w-[1600px]">
             <Outlet />
           </div>

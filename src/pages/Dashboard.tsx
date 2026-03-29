@@ -36,6 +36,7 @@ import { formatCurrency, formatPercent } from '../lib/utils';
 import { downloadCsv } from '../lib/export';
 import type { AIConversationAnalysis } from '../types';
 import { SetupChecklist } from '../components/onboarding/SetupChecklist';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 
 type AuditPreview = Partial<AIConversationAnalysis> & {
   id: string;
@@ -77,15 +78,15 @@ type SalesDashboardRow = {
 };
 
 const COLORS = {
-  bg: '#F5F5F4',
+  bg: '#FFFFFF',
   card: '#FFFFFF',
-  lime: '#D3FE18', // Maps to new primary lime
-  purple: '#5945FD', // Maps to new secondary purple
-  text: '#0F172A',
-  soft: '#64748B',
-  line: '#E2E8F0',
-  mint: '#A7F3D0',
-  coral: '#F87171',
+  lime: '#DCFE1B',
+  purple: '#5953FB',
+  text: '#191919',
+  soft: '#6B7280',
+  line: '#E9E9E7',
+  mint: '#E8FFD1',
+  coral: '#FFE8E8',
 };
 
 function initials(name: string) {
@@ -149,15 +150,44 @@ function DashboardCard({
 }) {
   return (
     <section
-      className={`rounded-3xl border p-6 shadow-sm ${className}`}
+      className={`rounded-[30px] border p-6 shadow-[0_12px_40px_rgba(15,23,42,0.04)] transition-all hover:-translate-y-0.5 hover:shadow-[0_18px_50px_rgba(15,23,42,0.07)] ${className}`}
       style={{ background: COLORS.card, borderColor: COLORS.line }}
     >
       <div className="mb-6 flex items-center justify-between gap-4">
-        <h3 className="text-lg font-bold text-foreground">{title}</h3>
+        <h3 className="text-lg font-bold tracking-[-0.02em] text-foreground">{title}</h3>
         {action}
       </div>
       {children}
     </section>
+  );
+}
+
+function HeroBadge({
+  label,
+  value,
+  tone = 'neutral',
+}: {
+  label: string;
+  value: string;
+  tone?: 'neutral' | 'purple' | 'lime';
+}) {
+  const toneClass =
+    tone === 'purple'
+      ? 'bg-accent text-secondary'
+      : tone === 'lime'
+        ? 'bg-primary text-primary-foreground'
+        : 'bg-muted text-foreground';
+
+  return (
+    <div className="rounded-2xl border border-border bg-white/88 px-4 py-3 shadow-sm backdrop-blur">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
+      <div className="mt-2 flex items-center gap-2">
+        <span className="text-2xl font-bold tracking-[-0.04em] text-foreground">{value}</span>
+        <span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.16em] ${toneClass}`}>
+          ao vivo
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -407,7 +437,6 @@ export default function Dashboard() {
       .sort((a, b) => b.avg_ai_quality_score - a.avg_ai_quality_score);
   }, [scoreMetrics]);
 
-  const bestQualityAgents = scoreByAgent.slice(0, 5);
   const scoreBoard = scoreByAgent;
 
   const tagFrequency = useMemo(() => {
@@ -547,9 +576,85 @@ export default function Dashboard() {
     );
   }
 
+  const overview = overviewQuery.data;
+
   return (
     <div className="space-y-6" style={{ color: COLORS.text }}>
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+      <section className="relative overflow-hidden rounded-[34px] border border-border bg-white p-6 shadow-[0_18px_60px_rgba(15,23,42,0.05)] md:p-8">
+        <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-[radial-gradient(circle_at_center,rgba(89,83,251,0.12),transparent_68%)]" />
+        <div className="absolute bottom-0 left-0 h-32 w-32 rounded-full bg-[radial-gradient(circle_at_center,rgba(220,254,27,0.16),transparent_68%)]" />
+        <div className="relative flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+          <div className="max-w-3xl">
+            <span className="inline-flex items-center rounded-full border border-secondary/10 bg-accent px-3 py-1 text-[11px] font-bold uppercase tracking-[0.22em] text-secondary">
+              Painel executivo
+            </span>
+            <h1 className="mt-4 text-[36px] font-bold leading-none tracking-[-0.05em] text-foreground md:text-[44px]">
+              {company?.name ? `${company.name} em foco` : 'Sua operacao em foco'}
+            </h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground md:text-base">
+              Uma leitura limpa do comercial e do atendimento para acompanhar ritmo, qualidade e oportunidades sem ruido visual.
+            </p>
+            {dashboardLoading && <p className="mt-3 text-xs text-muted-foreground">Atualizando metricas...</p>}
+            {dashboardError && <p className="mt-3 text-xs text-red-600">Falha ao carregar parte dos dados. Tente atualizar.</p>}
+            {dashboardError && dashboardErrorMessage && <p className="mt-1 text-xs text-red-600">{dashboardErrorMessage}</p>}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 xl:justify-end">
+            <div className="flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold text-muted-foreground shadow-sm">
+              Periodo: 30 dias
+              <ChevronDown size={14} className="ml-2" />
+            </div>
+            <div className="flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold text-muted-foreground shadow-sm">
+              Atualizacao: 24h
+              <ChevronDown size={14} className="ml-2" />
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (!overview) return;
+                downloadCsv('dashboard-resumo.csv', [
+                  {
+                    empresa: company?.name ?? 'Empresa',
+                    conversas_7d: overview.conversations_7d,
+                    conversas_30d: overview.conversations_30d,
+                    sla_30d: overview.sla_pct_30d,
+                    frt_30d: overview.avg_frt_30d,
+                    alertas_abertos: overview.open_alerts,
+                    alertas_criticos: overview.critical_alerts,
+                    csat_previsto_30d: overview.avg_predicted_csat_30d,
+                    atualizado_em: overview.refreshed_at,
+                  },
+                ]);
+              }}
+              className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-transform hover:scale-[1.01] hover:bg-primary/90"
+            >
+              Exportar CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void Promise.all([
+                  queryClient.invalidateQueries({ queryKey: ['dashboard-overview', company?.id] }),
+                  queryClient.invalidateQueries({ queryKey: ['dashboard-lead-messages', company?.id] }),
+                  queryClient.invalidateQueries({ queryKey: ['dashboard-sla-metrics', company?.id] }),
+                  queryClient.invalidateQueries({ queryKey: ['dashboard-score-metrics', company?.id] }),
+                  queryClient.invalidateQueries({ queryKey: ['dashboard-audit-preview', company?.id] }),
+                ]);
+              }}
+              aria-label="Atualizar dashboard"
+              className="flex items-center justify-center rounded-full border border-border bg-card p-2.5 text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-secondary"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            </button>
+          </div>
+        </div>
+        <div className="relative mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
+          <HeroBadge label="Conversas na semana" value={String(overview?.conversations_7d ?? 0)} tone="lime" />
+          <HeroBadge label="SLA medio 30d" value={formatPercent(overview?.sla_pct_30d ?? 0)} tone="purple" />
+          <HeroBadge label="Alertas criticos" value={String(overview?.critical_alerts ?? 0)} />
+        </div>
+      </section>
+      <div className="hidden flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h1 className="text-[34px] font-bold tracking-[-0.03em]">
             Bem-vindo(a) de volta{company?.name ? `, ${company.name}` : ''}!
@@ -611,6 +716,26 @@ export default function Dashboard() {
       </div>
 
       <SetupChecklist />
+
+      <Tabs defaultValue="sales" className="space-y-6">
+        <div className="flex justify-center">
+          <TabsList className="h-14 rounded-full border border-border/70 bg-card p-1 shadow-sm">
+            <TabsTrigger
+              value="sales"
+              className="rounded-full px-8 py-2.5 text-sm font-bold text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+            >
+              Painel de vendas
+            </TabsTrigger>
+            <TabsTrigger
+              value="service"
+              className="rounded-full px-8 py-2.5 text-sm font-bold text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+            >
+              Painel de atendimento
+            </TabsTrigger>
+          </TabsList>
+        </div>
+
+        <TabsContent value="sales" className="space-y-6">
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
         <DashboardCard
@@ -711,6 +836,10 @@ export default function Dashboard() {
           </DashboardCard>
         </div>
       </div>
+
+        </TabsContent>
+
+        <TabsContent value="service" className="space-y-6">
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         {/* Left Column Section */}
@@ -977,38 +1106,10 @@ export default function Dashboard() {
             </DashboardCard>
           </div>
 
-          <DashboardCard title="Resumo Geral" action={<div className="p-1 rounded-full bg-muted/50"><ListTodo size={14} className="text-muted-foreground"/></div>}>
-            
-            <div className="space-y-6">
-              <div>
-                <h4 className="text-[13px] font-bold text-muted-foreground uppercase tracking-wider mb-4">Melhores Scores da Equipe</h4>
-                <div className="space-y-4">
-                  {bestQualityAgents.map((agent) => (
-                    <div key={agent.agent_id} className="flex items-center justify-between gap-4 group">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full overflow-hidden bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground">
-                           {agent.agent_avatar ? (
-                             <img src={agent.agent_avatar} alt={agent.agent_name} className="h-full w-full object-cover" />
-                           ) : (
-                             initials(agent.agent_name)
-                           )}
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-foreground group-hover:text-primary transition-colors">{agent.agent_name}</p>
-                          <p className="text-xs font-medium text-muted-foreground">ID: #{agent.agent_id.substring(0,4).toUpperCase()}</p>
-                        </div>
-                      </div>
-                      <span className="text-sm font-bold text-primary">+{Math.round(agent.avg_ai_quality_score ?? 0)}</span>
-                    </div>
-                  ))}
-                  {bestQualityAgents.length === 0 && <p className="text-sm text-muted-foreground">Sem dados.</p>}
-                </div>
-              </div>
-            </div>
-          </DashboardCard>
-
         </div>
       </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

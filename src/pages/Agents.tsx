@@ -5,7 +5,7 @@ import { AlertTriangle, ArrowRight, Brain, MapPin, MessageSquare, Pencil, Plus, 
 import { supabase } from '../integrations/supabase/client';
 import { useCompany } from '../contexts/CompanyContext';
 import { usePermissions } from '../hooks/usePermissions';
-import type { Agent, AgentRanking, Store as AgentStore } from '../types';
+import type { Agent, AgentRanking, AIConversationAnalysis, Store as AgentStore } from '../types';
 import { CACHE } from '../config/constants';
 import { cn } from '../lib/utils';
 
@@ -20,6 +20,19 @@ type AgentLiveStats = {
   avg_first_response_sec: number | null;
 };
 
+type AgentManagerSnapshot = Pick<
+  AIConversationAnalysis,
+  | 'agent_id'
+  | 'quality_score'
+  | 'needs_coaching'
+  | 'score_investigation'
+  | 'score_commercial_steering'
+  | 'score_objection_handling'
+  | 'score_value_proposition'
+  | 'score_urgency'
+  | 'structured_analysis'
+>;
+
 function agentColor(name: string) {
   let hash = 0;
   for (let i = 0; i < name.length; i += 1) hash = name.charCodeAt(i) + ((hash << 5) - hash);
@@ -32,6 +45,23 @@ function qualityColor(score: number) {
   if (score >= 80) return 'text-green-600';
   if (score >= 60) return 'text-amber-600';
   return 'text-red-600';
+}
+
+function avgNullable(values: Array<number | null | undefined>) {
+  const valid = values.filter((value): value is number => value != null);
+  if (valid.length === 0) return null;
+  return valid.reduce((sum, value) => sum + value, 0) / valid.length;
+}
+
+function clampScore(value: number) {
+  return Math.max(0, Math.min(10, +value.toFixed(1)));
+}
+
+function alertMeta(score: number) {
+  if (score >= 8) return { label: 'Verde', className: 'bg-emerald-50 text-emerald-700', short: 'Saudavel' };
+  if (score >= 6.5) return { label: 'Amarelo', className: 'bg-amber-50 text-amber-700', short: 'Corrigir' };
+  if (score >= 4.5) return { label: 'Laranja', className: 'bg-orange-50 text-orange-700', short: 'Compromete' };
+  return { label: 'Vermelho', className: 'bg-red-50 text-red-700', short: 'Gargalo' };
 }
 
 function AgentAvatar({ agent, className }: { agent: Agent; className: string }) {
@@ -210,6 +240,91 @@ export default function Agents() {
     staleTime: CACHE.STALE_TIME,
   });
 
+  const { data: managerSnapshots = {} } = useQuery<Record<string, {
+    finalScore: number;
+    alert: ReturnType<typeof alertMeta>;
+    verdict: string;
+    passiveRate: number;
+    opportunityLosses: number;
+  }>>({
+    queryKey: ['agents-manager-snapshots', companyId],
+    queryFn: async () => {
+      if (!companyId) return {};
+
+      const since = new Date();
+      since.setDate(since.getDate() - 30);
+
+      const { data, error } = await supabase
+        .from('ai_conversation_analysis')
+        .select('agent_id, quality_score, needs_coaching, score_investigation, score_commercial_steering, score_objection_handling, score_value_proposition, score_urgency, structured_analysis')
+        .eq('company_id', companyId)
+        .gte('analyzed_at', since.toISOString())
+        .not('agent_id', 'is', null)
+        .limit(800);
+
+      if (error) throw error;
+
+      const grouped = new Map<string, AgentManagerSnapshot[]>();
+      for (const row of (data ?? []) as AgentManagerSnapshot[]) {
+        if (!row.agent_id) continue;
+        grouped.set(row.agent_id, [...(grouped.get(row.agent_id) ?? []), row]);
+      }
+
+      const output: Record<string, {
+        finalScore: number;
+        alert: ReturnType<typeof alertMeta>;
+        verdict: string;
+        passiveRate: number;
+        opportunityLosses: number;
+      }> = {};
+
+      for (const [agentId, analyses] of grouped.entries()) {
+        const total = analyses.length;
+        const avgQuality = avgNullable(analyses.map((item) => item.quality_score != null ? item.quality_score / 10 : null)) ?? 0;
+        const avgInvestigation = avgNullable(analyses.map((item) => item.score_investigation)) ?? 0;
+        const avgSteering = avgNullable(analyses.map((item) => item.score_commercial_steering)) ?? 0;
+        const avgValue = avgNullable(analyses.map((item) => item.score_value_proposition)) ?? 0;
+        const avgObjection = avgNullable(analyses.map((item) => item.score_objection_handling)) ?? 0;
+        const avgUrgency = avgNullable(analyses.map((item) => item.score_urgency)) ?? 0;
+        const coachingRate = total > 0 ? (analyses.filter((item) => item.needs_coaching).length / total) * 100 : 0;
+        const passiveRate = total > 0 ? (analyses.filter((item) => (item.score_commercial_steering ?? 0) < 6).length / total) * 100 : 0;
+        const opportunityLosses = analyses.reduce((sum, item) => sum + (item.structured_analysis?.missed_opportunities?.length ?? 0), 0);
+
+        const finalScore = clampScore((
+          avgQuality +
+          avgInvestigation +
+          avgSteering +
+          avgValue +
+          avgObjection +
+          avgUrgency +
+          clampScore(10 - coachingRate / 12)
+        ) / 7);
+
+        const alert = alertMeta(finalScore);
+        let verdict = 'Operacao saudavel e performance consistente.';
+        if (finalScore < 4.5) {
+          verdict = 'Hoje atende mais do que vende e ja virou risco operacional.';
+        } else if (finalScore < 6.5) {
+          verdict = 'Nao extrai bem as oportunidades e precisa de intervencao firme.';
+        } else if (avgSteering < 6.5) {
+          verdict = 'Tem base, mas ainda falta conduzir com mais peso comercial.';
+        }
+
+        output[agentId] = {
+          finalScore,
+          alert,
+          verdict,
+          passiveRate: Math.round(passiveRate),
+          opportunityLosses,
+        };
+      }
+
+      return output;
+    },
+    enabled: !!companyId,
+    staleTime: CACHE.STALE_TIME,
+  });
+
   const rankingMap = useMemo(() => new Map(rankingData.map((item) => [item.agent_id, item])), [rankingData]);
   const liveStatsMap = useMemo(() => new Map(liveStats.map((item) => [item.agent_id, item])), [liveStats]);
   const filteredAgents = useMemo(() => {
@@ -234,8 +349,9 @@ export default function Agents() {
     const totalAlerts = statsRows.reduce((sum, item) => sum + (item.open_alerts ?? 0), 0);
     const scored = statsRows.filter((item) => item.avg_ai_quality_score != null);
     const avgQuality = scored.length ? Math.round(scored.reduce((sum, item) => sum + (item.avg_ai_quality_score ?? 0), 0) / scored.length) : null;
-    return { totalAgents, activeStores, totalAlerts, avgQuality };
-  }, [agents, liveStatsMap, rankingMap]);
+    const criticalAgents = Object.values(managerSnapshots).filter((item) => item.alert.label === 'Vermelho' || item.alert.label === 'Laranja').length;
+    return { totalAgents, activeStores, totalAlerts, avgQuality, criticalAgents };
+  }, [agents, liveStatsMap, managerSnapshots, rankingMap]);
 
   const closeModal = useCallback(() => { setShowModal(false); setEditingAgentId(null); setForm(emptyForm); setFormError(null); }, []);
   const closeStoreModal = useCallback(() => { setShowStoreModal(false); setStoreName(''); setStoreError(null); }, []);
@@ -349,11 +465,12 @@ export default function Agents() {
             </div>
             {canManageAgents && <div className="flex flex-wrap items-center gap-2"><button type="button" onClick={() => setShowStoreModal(true)} className="inline-flex h-11 items-center gap-2 rounded-full border border-border bg-white px-4 text-sm font-semibold text-foreground shadow-sm hover:bg-muted"><Store className="h-4 w-4" />Cadastrar loja</button><button type="button" onClick={openCreateModal} className="inline-flex h-11 items-center gap-2 rounded-full bg-primary px-5 text-sm font-bold text-black shadow-sm hover:bg-primary/90"><Plus className="h-4 w-4" />Novo Atendente</button></div>}
           </div>
-          <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             <SummaryCard icon={<User className="h-5 w-5" />} tone="primary" label="Equipe ativa" value={String(summary.totalAgents)} />
             <SummaryCard icon={<MapPin className="h-5 w-5" />} tone="sky" label="Lojas ativas" value={String(summary.activeStores)} />
             <SummaryCard icon={<Brain className="h-5 w-5" />} tone="amber" label="Qualidade média IA" value={summary.avgQuality != null ? String(summary.avgQuality) : '—'} />
             <SummaryCard icon={<AlertTriangle className="h-5 w-5" />} tone="rose" label="Alertas abertos" value={String(summary.totalAlerts)} />
+            <SummaryCard icon={<AlertTriangle className="h-5 w-5" />} tone="violet" label="Gestão crítica" value={String(summary.criticalAgents)} />
           </div>
         </div>
       </section>
@@ -374,6 +491,7 @@ export default function Agents() {
       ) : <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">{filteredAgents.map((agent) => {
         const ranking = rankingMap.get(agent.id);
         const live = liveStatsMap.get(agent.id);
+        const managerSnapshot = managerSnapshots[agent.id];
         const totalConversations = ranking?.total_conversations ?? live?.total_conversations ?? 0;
         const avgQuality = ranking?.avg_ai_quality_score ?? live?.avg_ai_quality_score ?? null;
         const openAlerts = ranking?.open_alerts ?? live?.open_alerts ?? 0;
@@ -385,7 +503,7 @@ export default function Agents() {
             <div className="flex items-start gap-4 pr-20">
               <div className="relative shrink-0"><AgentAvatar agent={agent} className="h-16 w-16 rounded-[22px] border border-border object-cover" /><span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-background bg-green-500" /></div>
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2"><p className="truncate text-[22px] font-semibold leading-tight text-foreground transition-colors group-hover:text-primary">{agent.name}</p><span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700">Ativo</span></div>
+                <div className="flex flex-wrap items-center gap-2"><p className="truncate text-[22px] font-semibold leading-tight text-foreground transition-colors group-hover:text-primary">{agent.name}</p><span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700">Ativo</span>{managerSnapshot && <span className={cn('inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em]', managerSnapshot.alert.className)}>{managerSnapshot.alert.label}</span>}</div>
                 {agent.store?.name && <p className="mt-2 inline-flex rounded-full bg-slate-100 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">{agent.store.name}</p>}
                 <div className="mt-3 space-y-1.5">{agent.email ? <p className="truncate text-sm text-muted-foreground">{agent.email}</p> : agent.phone ? <p className="text-sm text-muted-foreground">{agent.phone}</p> : agent.external_id && !isUUID(agent.external_id) ? <p className="text-sm font-mono text-muted-foreground/80">{agent.external_id}</p> : <p className="text-sm text-muted-foreground">Sem contato principal informado</p>}<p className="text-xs text-muted-foreground">ID: <span className="font-mono">{agent.external_id && !isUUID(agent.external_id) ? agent.external_id : agent.id.slice(0, 8)}</span></p></div>
               </div>
@@ -396,7 +514,49 @@ export default function Agents() {
               <MetricMini icon={<Brain className="h-3.5 w-3.5" />} label="Qualidade" value={avgQuality != null ? String(Math.round(avgQuality)) : '—'} valueClass={avgQuality != null ? qualityColor(avgQuality) : 'text-muted-foreground'} />
               <MetricMini icon={<AlertTriangle className="h-3.5 w-3.5" />} label="Alertas" value={String(openAlerts)} valueClass={openAlerts > 0 ? 'text-red-600' : 'text-emerald-600'} />
             </div>
-            <div className="mt-3 flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3"><div><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Primeira resposta média</p><p className="mt-1 text-sm font-semibold text-foreground">{formatSecondsCompact(avgFirstResponse)}</p></div><div className="text-right"><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Status operacional</p><p className={cn('mt-1 text-sm font-semibold', openAlerts > 0 ? 'text-amber-600' : 'text-emerald-600')}>{openAlerts > 0 ? 'Exige atenção' : 'Operação saudável'}</p></div></div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Primeira resposta média</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{formatSecondsCompact(avgFirstResponse)}</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 px-4 py-3 text-right">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{managerSnapshot ? 'Status de gestão' : 'Status operacional'}</p>
+                {managerSnapshot ? (
+                  <div className="mt-1 space-y-1">
+                    <p
+                      className={cn(
+                        'text-sm font-semibold',
+                        managerSnapshot.alert.label === 'Vermelho'
+                          ? 'text-red-600'
+                          : managerSnapshot.alert.label === 'Laranja'
+                            ? 'text-orange-600'
+                            : managerSnapshot.alert.label === 'Amarelo'
+                              ? 'text-amber-600'
+                              : 'text-emerald-600',
+                      )}
+                    >
+                      {managerSnapshot.alert.short}
+                    </p>
+                    <p className="text-xs font-medium text-muted-foreground">Nota {managerSnapshot.finalScore.toFixed(1)}/10</p>
+                  </div>
+                ) : (
+                  <p className={cn('mt-1 text-sm font-semibold', openAlerts > 0 ? 'text-amber-600' : 'text-emerald-600')}>{openAlerts > 0 ? 'Exige atenção' : 'Operação saudável'}</p>
+                )}
+              </div>
+            </div>
+            {managerSnapshot && (
+              <div className="mt-3 rounded-[22px] border border-secondary/10 bg-secondary/5 px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-secondary">Leitura do gestor</p>
+                  <span className="text-xs font-semibold text-muted-foreground">{managerSnapshot.passiveRate}% passivo</span>
+                </div>
+                <p className="mt-2 text-sm font-semibold leading-6 text-foreground">{managerSnapshot.verdict}</p>
+                <div className="mt-3 flex items-center justify-between gap-3 text-xs">
+                  <span className="text-muted-foreground">{managerSnapshot.opportunityLosses} oportunidades perdidas</span>
+                  <span className="font-semibold text-secondary">Abrir diagnóstico</span>
+                </div>
+              </div>
+            )}
           </Link>
         );
       })}</div>}
@@ -408,12 +568,13 @@ export default function Agents() {
   );
 }
 
-function SummaryCard({ icon, tone, label, value }: { icon: React.ReactNode; tone: 'primary' | 'sky' | 'amber' | 'rose'; label: string; value: string }) {
+function SummaryCard({ icon, tone, label, value }: { icon: React.ReactNode; tone: 'primary' | 'sky' | 'amber' | 'rose' | 'violet'; label: string; value: string }) {
   const toneMap = {
     primary: 'bg-primary/15 text-foreground',
     sky: 'bg-sky-100 text-sky-700',
     amber: 'bg-amber-100 text-amber-700',
     rose: 'bg-rose-100 text-rose-700',
+    violet: 'bg-secondary/10 text-secondary',
   } as const;
   return <div className="rounded-[24px] border border-white/80 bg-white/85 p-4 shadow-sm backdrop-blur"><div className="flex items-center gap-3"><div className={cn('flex h-11 w-11 items-center justify-center rounded-2xl', toneMap[tone])}>{icon}</div><div><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{label}</p><p className="mt-1 text-2xl font-bold text-foreground">{value}</p></div></div></div>;
 }

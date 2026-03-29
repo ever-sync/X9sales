@@ -1,17 +1,16 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
+  Brain,
+  BookCheck,
   CheckCircle2,
   Circle,
-  ChevronDown,
-  ChevronUp,
-  Rocket,
-  MessageSquare,
-  Users,
-  BookCheck,
-  Brain,
   HandCoins,
+  MessageSquare,
+  Rocket,
+  Users,
+  X,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { supabase } from '../../integrations/supabase/client';
@@ -26,14 +25,17 @@ interface ChecklistStep {
   linkLabel: string;
 }
 
+const STORAGE_OPEN_KEY = 'setup-checklist-open';
+const STORAGE_DISMISSED_KEY = 'setup-checklist-dismissed';
+
 const STEPS: ChecklistStep[] = [
   {
     id: 'whatsapp',
     icon: MessageSquare,
     title: 'Conectar WhatsApp',
-    description: 'Configure o webhook do seu WhatsApp para começar a receber conversas.',
+    description: 'Configure o webhook do seu WhatsApp para comecar a receber conversas.',
     linkTo: '/settings',
-    linkLabel: 'Ir para Integrações',
+    linkLabel: 'Ir para Integracoes',
   },
   {
     id: 'agent',
@@ -54,16 +56,16 @@ const STEPS: ChecklistStep[] = [
   {
     id: 'ai_analysis',
     icon: Brain,
-    title: 'Executar análise IA',
-    description: 'Rode a análise de qualidade nas conversas para ver os scores do time.',
+    title: 'Executar analise IA',
+    description: 'Rode a analise de qualidade nas conversas para ver os scores do time.',
     linkTo: '/ai-insights',
-    linkLabel: 'Ir para Análise IA',
+    linkLabel: 'Ir para Analise IA',
   },
   {
     id: 'sale',
     icon: HandCoins,
     title: 'Registrar primeira venda',
-    description: 'Comece a acompanhar a receita da operação.',
+    description: 'Comece a acompanhar a receita da operacao.',
     linkTo: '/sales',
     linkLabel: 'Registrar Venda',
   },
@@ -98,126 +100,158 @@ function useSetupStatus(companyId: string | null) {
 
 export function SetupChecklist() {
   const { companyId } = useCompany();
-  const [collapsed, setCollapsed] = useState(false);
-  const [dismissed, setDismissed] = useState(() => {
-    return localStorage.getItem('setup-checklist-dismissed') === '1';
-  });
-
+  const [open, setOpen] = useState(() => localStorage.getItem(STORAGE_OPEN_KEY) !== '0');
+  const [dismissed, setDismissed] = useState(() => localStorage.getItem(STORAGE_DISMISSED_KEY) === '1');
   const { data: status, isLoading } = useSetupStatus(companyId);
 
-  if (dismissed) return null;
-
-  const completedCount = status
-    ? Object.values(status).filter(Boolean).length
-    : 0;
+  const completedCount = status ? Object.values(status).filter(Boolean).length : 0;
   const totalCount = STEPS.length;
   const allDone = completedCount === totalCount;
+  const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
+  const nextStep = useMemo(() => {
+    if (!status) return STEPS[0];
+    return STEPS.find((step) => !status[step.id as keyof typeof status]) ?? null;
+  }, [status]);
+
+  const toggleOpen = () => {
+    setOpen((current) => {
+      const next = !current;
+      localStorage.setItem(STORAGE_OPEN_KEY, next ? '1' : '0');
+      return next;
+    });
+  };
 
   const handleDismiss = () => {
-    localStorage.setItem('setup-checklist-dismissed', '1');
+    localStorage.setItem(STORAGE_DISMISSED_KEY, '1');
     setDismissed(true);
   };
 
-  if (allDone) return null;
+  if (dismissed || allDone) return null;
 
   return (
-    <div className="rounded-2xl border border-primary/20 bg-primary/5 overflow-hidden">
-      {/* header */}
-      <div className="flex items-center gap-3 px-5 py-4">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/15">
-          <Rocket className="h-4.5 w-4.5 text-primary" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-foreground">Primeiros passos</p>
-          <p className="text-xs text-muted-foreground">
-            {isLoading ? 'Verificando...' : `${completedCount} de ${totalCount} concluídos`}
-          </p>
-        </div>
-
-        {/* progress bar */}
-        <div className="hidden sm:flex items-center gap-2 mr-2">
-          <div className="w-24 h-1.5 bg-white/20 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-primary rounded-full transition-all duration-500"
-              style={{ width: `${(completedCount / totalCount) * 100}%` }}
-            />
+    <div className="pointer-events-none fixed bottom-24 right-6 z-40 flex flex-col items-end gap-4 md:bottom-28">
+      {open && (
+        <div className="pointer-events-auto w-[min(92vw,380px)] overflow-hidden rounded-[2rem] border border-slate-200/80 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.18)] backdrop-blur">
+          <div className="flex items-start gap-3 px-5 pb-4 pt-5">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent text-secondary">
+              <Rocket className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-base font-bold text-slate-900">Primeiros passos</p>
+              <p className="text-sm text-slate-500">
+                {isLoading ? 'Verificando progresso...' : `${completedCount}/${totalCount} concluidos`}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleDismiss}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              aria-label="Fechar checklist"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
-          <span className="text-xs font-semibold text-primary">{Math.round((completedCount / totalCount) * 100)}%</span>
-        </div>
 
-        <button
-          type="button"
-          onClick={() => setCollapsed(c => !c)}
-          className="text-muted-foreground hover:text-foreground transition-colors"
-          aria-label={collapsed ? 'Expandir checklist' : 'Recolher checklist'}
-        >
-          {collapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-        </button>
-
-        <button
-          type="button"
-          onClick={handleDismiss}
-          className="text-xs text-muted-foreground hover:text-foreground transition-colors ml-1"
-        >
-          Fechar
-        </button>
-      </div>
-
-      {/* steps */}
-      {!collapsed && (
-        <div className="border-t border-primary/10 divide-y divide-primary/10">
-          {STEPS.map(step => {
-            const done = status?.[step.id as keyof typeof status] ?? false;
-            const Icon = step.icon;
-            return (
+          <div className="px-5 pb-4">
+            <div className="h-2 overflow-hidden rounded-full bg-slate-100">
               <div
-                key={step.id}
-                className={cn(
-                  'flex items-center gap-4 px-5 py-3.5 transition-colors',
-                  done ? 'opacity-60' : 'hover:bg-primary/5',
-                )}
-              >
-                {/* status icon */}
-                {done
-                  ? <CheckCircle2 className="h-5 w-5 text-primary shrink-0" />
-                  : <Circle className="h-5 w-5 text-white/20 shrink-0" />
-                }
+                className="h-full rounded-full bg-primary transition-all duration-500"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+          </div>
 
-                {/* step icon */}
-                <div className={cn(
-                  'flex h-8 w-8 items-center justify-center rounded-lg shrink-0',
-                  done ? 'bg-primary/10' : 'bg-white/5',
-                )}>
-                  <Icon className={cn('h-4 w-4', done ? 'text-primary' : 'text-white/50')} />
-                </div>
+          <div className="max-h-[60vh] space-y-1 overflow-y-auto px-4 pb-5">
+            {STEPS.map((step) => {
+              const done = status?.[step.id as keyof typeof status] ?? false;
+              const isNext = !done && nextStep?.id === step.id;
+              const Icon = step.icon;
 
-                {/* text */}
-                <div className="flex-1 min-w-0">
-                  <p className={cn(
-                    'text-sm font-medium',
-                    done ? 'line-through text-muted-foreground' : 'text-foreground',
-                  )}>
-                    {step.title}
-                  </p>
-                  {!done && (
-                    <p className="text-xs text-muted-foreground truncate">{step.description}</p>
-                  )}
-                </div>
+              return (
+                <div key={step.id} className="relative pl-10">
+                  <div className="absolute left-[15px] top-8 h-full w-px bg-border last:hidden" />
+                  <div className="absolute left-0 top-4">
+                    {done ? (
+                      <CheckCircle2 className="h-7 w-7 rounded-full bg-white text-primary" />
+                    ) : (
+                      <Circle className={cn('h-7 w-7 rounded-full bg-white', isNext ? 'text-secondary' : 'text-slate-300')} />
+                    )}
+                  </div>
 
-                {/* link */}
-                {!done && (
-                  <Link
-                    to={step.linkTo}
-                    className="text-xs font-semibold text-primary hover:underline shrink-0"
+                  <div
+                    className={cn(
+                      'rounded-2xl px-4 py-3 transition-all',
+                      done && 'opacity-70',
+                      isNext && 'border border-secondary/15 bg-accent shadow-sm',
+                    )}
                   >
-                    {step.linkLabel} →
-                  </Link>
-                )}
-              </div>
-            );
-          })}
+                    <div className="flex items-start gap-3">
+                      <div
+                        className={cn(
+                          'mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl',
+                          done ? 'bg-primary/15 text-foreground' : isNext ? 'border border-secondary/12 bg-white text-secondary' : 'bg-slate-100 text-slate-500',
+                        )}
+                      >
+                        <Icon className="h-4 w-4" />
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <p
+                          className={cn(
+                            'text-sm font-semibold',
+                            done ? 'text-foreground line-through' : 'text-slate-900',
+                          )}
+                        >
+                          {step.title}
+                        </p>
+
+                        {!done && (
+                          <p className="mt-1 text-sm leading-snug text-slate-500">
+                            {step.description}
+                          </p>
+                        )}
+
+                        {!done && isNext && (
+                          <div className="mt-3">
+                            <Link
+                              to={step.linkTo}
+                              className="inline-flex items-center justify-center rounded-full bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition-transform hover:scale-[1.02] hover:bg-primary/90"
+                            >
+                              Comecar
+                            </Link>
+                          </div>
+                        )}
+
+                        {!done && !isNext && (
+                          <Link
+                            to={step.linkTo}
+                            className="mt-2 inline-flex text-xs font-semibold text-secondary transition-colors hover:text-secondary/85"
+                          >
+                            {step.linkLabel} →
+                          </Link>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
+
+      <button
+        type="button"
+        onClick={toggleOpen}
+        className="pointer-events-auto relative inline-flex h-16 w-16 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-[0_18px_40px_rgba(220,254,27,0.32)] transition-transform hover:scale-105 hover:bg-primary/90"
+        aria-label={open ? 'Recolher primeiros passos' : 'Abrir primeiros passos'}
+      >
+        <Rocket className="h-6 w-6" />
+        <span className="absolute -right-0.5 -top-0.5 inline-flex h-6 min-w-6 items-center justify-center rounded-full border-2 border-white bg-secondary px-1 text-[11px] font-bold text-white">
+          {Math.max(totalCount - completedCount, 0)}
+        </span>
+      </button>
     </div>
   );
 }

@@ -20,6 +20,12 @@ export interface Company {
   created_at: string;
 }
 
+export interface BlockedAnalysisCustomer {
+  id: string;
+  name: string | null;
+  phone: string;
+}
+
 export interface CompanySettings {
   sla_first_response_sec: number;
   sla_resolution_sec: number;
@@ -39,6 +45,8 @@ export interface CompanySettings {
   agent_morning_improvement_ideas?: boolean;
   agent_follow_up_alerts?: boolean;
   blocked_report_numbers?: string[];
+  block_team_analysis?: boolean;
+  blocked_analysis_customers?: BlockedAnalysisCustomer[];
 }
 
 export interface BillingSubscription {
@@ -313,6 +321,17 @@ export interface AgentRanking {
   coaching_needed_count: number;
 }
 
+export interface AgentBadge {
+  company_id: string;
+  agent_id: string;
+  badge_key: string;
+  badge_label: string;
+  badge_description: string;
+  badge_tone: 'gold' | 'indigo' | 'emerald' | 'amber' | string;
+  award_reason: string;
+  awarded_at: string;
+}
+
 export interface DailyTrend {
   company_id: string;
   conversation_date: string;
@@ -504,6 +523,7 @@ export interface AIInsightsReviewItem {
   customer_phone: string | null;
   channel: string | null;
   conversation_started_at: string | null;
+  total_count: number;
 }
 
 export interface AIInsightsFailureHeatmapCell {

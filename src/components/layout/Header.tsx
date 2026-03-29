@@ -43,7 +43,7 @@ export function Header({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   };
 
   return (
-    <header className="shrink-0 z-30 flex h-[64px] items-center justify-between border-b border-border bg-background/80 backdrop-blur-md px-4 sm:px-5 lg:px-8">
+    <header className="z-30 flex h-[64px] shrink-0 items-center justify-between border-b border-border bg-white/95 px-4 backdrop-blur-md sm:px-5 lg:px-8">
       <div className="flex min-w-0 items-center gap-2">
         <button
           type="button"
@@ -66,7 +66,7 @@ export function Header({ onOpenSidebar }: { onOpenSidebar: () => void }) {
           <input
             type="text"
             placeholder="Buscar conversas, clientes ou atendentes"
-            className="w-full rounded-full border border-border/70 bg-card/90 py-3 pl-11 pr-20 text-sm text-foreground shadow-sm transition-all placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+          className="w-full rounded-full border border-border/70 bg-card py-3 pl-11 pr-20 text-sm text-foreground shadow-sm transition-all placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-secondary/20"
           />
           <span className="pointer-events-none absolute right-3 flex items-center gap-0.5 rounded-full border border-border bg-background px-2 py-1 text-[10px] font-semibold text-muted-foreground shadow-sm">
             CTRL F
@@ -75,13 +75,13 @@ export function Header({ onOpenSidebar }: { onOpenSidebar: () => void }) {
       </div>
 
       <div className="flex items-center gap-1.5 sm:gap-2">
-        <button className="hidden h-10 w-10 items-center justify-center rounded-2xl border border-transparent text-muted-foreground transition-colors hover:bg-muted md:flex">
+        <button className="hidden h-10 w-10 items-center justify-center rounded-2xl border border-transparent text-muted-foreground transition-colors hover:bg-accent hover:text-secondary md:flex">
           <LayoutGrid className="h-4.5 w-4.5" />
         </button>
 
         <Link
           to="/alerts"
-          className="relative flex h-10 w-10 items-center justify-center rounded-2xl border border-transparent text-muted-foreground transition-colors hover:bg-muted"
+          className="relative flex h-10 w-10 items-center justify-center rounded-2xl border border-transparent text-muted-foreground transition-colors hover:bg-accent hover:text-secondary"
           title={openAlertsCount > 0 ? `${openAlertsCount} alerta${openAlertsCount !== 1 ? 's' : ''} aberto${openAlertsCount !== 1 ? 's' : ''}` : 'Alertas'}
         >
           <Bell className="h-4.5 w-4.5" />
@@ -92,12 +92,12 @@ export function Header({ onOpenSidebar }: { onOpenSidebar: () => void }) {
           )}
         </Link>
 
-        <div className="mx-1 hidden h-5 w-px bg-secondary/30 sm:block" />
+        <div className="mx-1 hidden h-5 w-px bg-secondary/20 sm:block" />
 
         <DropdownMenu>
-          <DropdownMenuTrigger className="group flex items-center gap-2 rounded-full border border-border/70 bg-card/85 px-1.5 py-1.5 shadow-sm outline-none transition-colors hover:bg-muted/50 sm:gap-3 sm:px-2">
+          <DropdownMenuTrigger className="group flex items-center gap-2 rounded-full border border-border/70 bg-card px-1.5 py-1.5 shadow-sm outline-none transition-colors hover:bg-accent sm:gap-3 sm:px-2">
             <Avatar className="h-9 w-9 border border-border shadow-sm">
-              <AvatarFallback className="bg-primary/10 text-primary font-bold text-sm">
+              <AvatarFallback className="bg-accent text-secondary font-bold text-sm">
                 {user?.email?.charAt(0).toUpperCase() ?? '?'}
               </AvatarFallback>
             </Avatar>
@@ -111,7 +111,7 @@ export function Header({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                 </p>
               )}
             </div>
-            <ChevronDown className="h-4 w-4 text-muted-foreground group-aria-expanded:rotate-180 transition-transform hidden sm:block" />
+            <ChevronDown className="hidden h-4 w-4 text-muted-foreground transition-transform group-aria-expanded:rotate-180 sm:block" />
           </DropdownMenuTrigger>
 
           <DropdownMenuContent align="end" className="w-60 rounded-xl border border-border bg-card p-1.5 shadow-xl">
@@ -120,7 +120,7 @@ export function Header({ onOpenSidebar }: { onOpenSidebar: () => void }) {
               <p className="mt-1 truncate text-xs text-muted-foreground">{user?.email}</p>
             </DropdownMenuLabel>
             <DropdownMenuSeparator className="bg-border" />
-            <DropdownMenuItem className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-[13px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground">
+            <DropdownMenuItem className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-[13px] font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground">
               <SettingsIcon className="h-4 w-4" />
               Configuracoes de Perfil
             </DropdownMenuItem>

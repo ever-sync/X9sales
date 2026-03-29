@@ -83,7 +83,7 @@ interface ManualAnalysisForm {
 }
 
 const ALL_AGENTS = '__all__';
-const REVIEW_LIMIT = 80;
+const REVIEW_PAGE_SIZE = 20;
 
 function toDateInput(value: Date): string {
   const tzOffset = value.getTimezoneOffset() * 60000;
@@ -214,6 +214,7 @@ export default function AIInsights() {
   const [selectedAgentId, setSelectedAgentId] = useState(ALL_AGENTS);
   const [selectedTag, setSelectedTag] = useState('');
   const [coachingFilter, setCoachingFilter] = useState<CoachingFilter>('all');
+  const [reviewPage, setReviewPage] = useState(1);
 
   const [showModal, setShowModal] = useState(false);
   const [modalStep, setModalStep] = useState<ModalStep>('form');
@@ -306,13 +307,18 @@ export default function AIInsights() {
     staleTime: CACHE.STALE_TIME,
   });
 
+  useEffect(() => {
+    setReviewPage(1);
+  }, [companyId, selectedAgentId, periodStart, periodEnd, timezone, selectedTag, coachingFilter]);
+
   const reviewFeedQuery = useQuery<AIInsightsReviewItem[]>({
-    queryKey: ['ai-insights', 'review-feed', companyId, selectedAgentId, periodStart, periodEnd, timezone, selectedTag, coachingFilter],
+    queryKey: ['ai-insights', 'review-feed', companyId, selectedAgentId, periodStart, periodEnd, timezone, selectedTag, coachingFilter, reviewPage],
     queryFn: async () => {
       if (!rpcBaseParams) return [];
       const { data, error } = await supabase.rpc('get_ai_insights_review_feed', {
         ...rpcBaseParams,
-        p_limit: REVIEW_LIMIT,
+        p_limit: REVIEW_PAGE_SIZE,
+        p_offset: (reviewPage - 1) * REVIEW_PAGE_SIZE,
       });
       if (error) throw error;
       return (data ?? []) as AIInsightsReviewItem[];
@@ -616,6 +622,8 @@ export default function AIInsights() {
   const isLoading = summaryQuery.isLoading || agentSummaryQuery.isLoading || tagSummaryQuery.isLoading || reviewFeedQuery.isLoading || heatmapQuery.isLoading;
   const summary = summaryQuery.data;
   const reviewItems = reviewFeedQuery.data ?? [];
+  const totalReviewItems = reviewItems[0]?.total_count ?? 0;
+  const totalReviewPages = Math.max(1, Math.ceil(totalReviewItems / REVIEW_PAGE_SIZE));
   const activeTotalCandidates = activeJob?.total_candidates ?? submittedTotalCandidates;
   const activeProcessed = activeJob?.processed_count ?? 0;
   const progressPercent = activeTotalCandidates > 0 ? Math.min(100, Math.round((activeProcessed / activeTotalCandidates) * 100)) : 0;
@@ -627,9 +635,11 @@ export default function AIInsights() {
     setSelectedAgentId(ALL_AGENTS);
     setSelectedTag('');
     setCoachingFilter('all');
+    setReviewPage(1);
   };
 
   const drillToReviews = (agentId?: string | null, tag?: string, coaching: CoachingFilter = 'yes') => {
+    setReviewPage(1);
     if (agentId) setSelectedAgentId(agentId);
     if (typeof tag === 'string') setSelectedTag(tag);
     setCoachingFilter(coaching);
@@ -814,7 +824,9 @@ export default function AIInsights() {
                   <h3 className="text-lg font-semibold text-foreground">Conversas para revisar</h3>
                   <p className="text-sm text-muted-foreground">Lista priorizada por necessidade de coaching, score mais baixo e recencia.</p>
                 </div>
-                <span className="text-xs text-muted-foreground">{reviewItems.length} item(ns) carregados</span>
+                <span className="text-xs text-muted-foreground">
+                  {totalReviewItems} conversa(s) no recorte • pagina {reviewPage} de {totalReviewPages}
+                </span>
               </div>
 
               <div className="divide-y divide-border">
@@ -861,6 +873,38 @@ export default function AIInsights() {
                   );
                 })}
               </div>
+
+              {totalReviewItems > REVIEW_PAGE_SIZE && (
+                <div className="flex flex-col gap-3 border-t border-border px-6 py-4 md:flex-row md:items-center md:justify-between">
+                  <p className="text-xs text-muted-foreground">
+                    Mostrando {(reviewPage - 1) * REVIEW_PAGE_SIZE + 1}-
+                    {Math.min(reviewPage * REVIEW_PAGE_SIZE, totalReviewItems)} de {totalReviewItems}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={reviewPage <= 1}
+                      onClick={() => setReviewPage((page) => Math.max(1, page - 1))}
+                    >
+                      Anterior
+                    </Button>
+                    <span className="min-w-[88px] text-center text-xs font-medium text-muted-foreground">
+                      Pagina {reviewPage}/{totalReviewPages}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={reviewPage >= totalReviewPages}
+                      onClick={() => setReviewPage((page) => Math.min(totalReviewPages, page + 1))}
+                    >
+                      Proxima
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="space-y-6">

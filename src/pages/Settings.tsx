@@ -18,6 +18,7 @@ import {
   Plug,
   Copy,
   CheckCircle2,
+  Search,
   Wifi,
   WifiOff,
 } from 'lucide-react';
@@ -30,7 +31,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Input } from '../components/ui/input';
 import { supabase } from '../integrations/supabase/client';
 import { env } from '../config/env';
-import type { BillingInvoice, BillingSubscription, CompanyInvite, CompanySettings, NotificationJobSummary } from '../types';
+import type { BillingInvoice, BillingSubscription, BlockedAnalysisCustomer, CompanyInvite, CompanySettings, NotificationJobSummary } from '../types';
 import { cn, formatCurrency, formatDate, formatDateTime, formatSeconds } from '../lib/utils';
 import { areBrowserAlertsEnabled, requestBrowserAlertPermission, setBrowserAlertsEnabled } from '../lib/browserNotifications';
 
@@ -98,6 +99,18 @@ type WorkspaceUser = {
   created_at: string;
   display_name: string;
   email: string | null;
+};
+
+type TeamPhoneRow = {
+  id: string;
+  name: string;
+  phone: string | null;
+};
+
+type CustomerSearchRow = {
+  id: string;
+  name: string | null;
+  phone: string | null;
 };
 
 type WorkspaceAccessRow =
@@ -178,6 +191,28 @@ function isValidPhoneForBlocklist(value: string) {
   return digits.length >= 8 && digits.length <= 15;
 }
 
+function dedupeBlockedCustomers(customers: BlockedAnalysisCustomer[]) {
+  const seen = new Set<string>();
+  const next: BlockedAnalysisCustomer[] = [];
+
+  for (const customer of customers) {
+    const normalized = sanitizeDigits(customer.phone);
+    if (!isValidPhoneForBlocklist(normalized) || seen.has(normalized)) continue;
+    seen.add(normalized);
+    next.push({
+      id: customer.id,
+      name: customer.name?.trim() || null,
+      phone: normalized,
+    });
+  }
+
+  return next.sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '', 'pt-BR'));
+}
+
+function escapeIlike(value: string) {
+  return value.replace(/[,%()]/g, ' ').trim();
+}
+
 function formatBlockedPhone(value: string) {
   const digits = sanitizeDigits(value);
   if (digits.length === 11) {
@@ -227,8 +262,9 @@ export default function Settings() {
     email: '',
     role: 'agent',
   });
-  const [blockedNumberInput, setBlockedNumberInput] = useState('');
-  const [blockedNumbers, setBlockedNumbers] = useState<string[]>([]);
+  const [blockTeamAnalysis, setBlockTeamAnalysis] = useState(false);
+  const [blockedClientSearch, setBlockedClientSearch] = useState('');
+  const [blockedCustomers, setBlockedCustomers] = useState<BlockedAnalysisCustomer[]>([]);
   const [browserNotificationPermission, setBrowserNotificationPermission] = useState<'default' | 'denied' | 'granted' | 'unsupported'>('default');
   const [browserAlertsEnabled, setBrowserAlertsEnabledState] = useState(false);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
@@ -260,10 +296,19 @@ export default function Settings() {
       agentFollowUpAlerts: !!company.settings.agent_follow_up_alerts,
     });
 
-    setBlockedNumbers(
-      Array.isArray(company.settings.blocked_report_numbers)
-        ? company.settings.blocked_report_numbers.map((number) => sanitizeDigits(String(number))).filter(Boolean)
-        : [],
+    setBlockTeamAnalysis(!!company.settings.block_team_analysis);
+    setBlockedCustomers(
+      Array.isArray(company.settings.blocked_analysis_customers)
+        ? dedupeBlockedCustomers(company.settings.blocked_analysis_customers)
+        : Array.isArray(company.settings.blocked_report_numbers)
+          ? dedupeBlockedCustomers(
+              company.settings.blocked_report_numbers.map((number, index) => ({
+                id: `legacy-${index}`,
+                name: null,
+                phone: sanitizeDigits(String(number)),
+              })),
+            )
+          : [],
     );
   }, [company]);
 
@@ -412,6 +457,63 @@ export default function Settings() {
     },
     enabled: !!company,
     staleTime: 60 * 1000,
+  });
+
+  const { data: teamPhones = [] } = useQuery<TeamPhoneRow[]>({
+    queryKey: ['settings-team-phones', company?.id],
+    queryFn: async () => {
+      if (!company) return [];
+
+      const { data, error } = await supabase
+        .from('agents')
+        .select('id, name, phone')
+        .eq('company_id', company.id)
+        .eq('is_active', true)
+        .not('phone', 'is', null)
+        .order('name');
+
+      if (error) throw error;
+      return (data ?? []) as TeamPhoneRow[];
+    },
+    enabled: !!company,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const blockedClientSearchTerm = blockedClientSearch.trim();
+  const { data: blockedCustomerSearchResults = [], isFetching: isSearchingBlockedCustomers } = useQuery<BlockedAnalysisCustomer[]>({
+    queryKey: ['settings-blocked-customer-search', company?.id, blockedClientSearchTerm],
+    queryFn: async () => {
+      if (!company || blockedClientSearchTerm.length < 2) return [];
+
+      const searchTerm = escapeIlike(blockedClientSearchTerm);
+      const digits = sanitizeDigits(blockedClientSearchTerm);
+      const filters = [
+        searchTerm ? `name.ilike.%${searchTerm}%` : null,
+        digits ? `phone.ilike.%${digits}%` : null,
+      ].filter(Boolean).join(',');
+
+      if (!filters) return [];
+
+      const { data, error } = await supabase
+        .from('customers')
+        .select('id, name, phone')
+        .eq('company_id', company.id)
+        .not('phone', 'is', null)
+        .or(filters)
+        .limit(8);
+
+      if (error) throw error;
+
+      return dedupeBlockedCustomers(
+        ((data ?? []) as CustomerSearchRow[]).map((customer) => ({
+          id: customer.id,
+          name: customer.name,
+          phone: customer.phone ?? '',
+        })),
+      );
+    },
+    enabled: !!company && blockedClientSearchTerm.length >= 2,
+    staleTime: 30 * 1000,
   });
 
   const updateCompanyMutation = useMutation({
@@ -793,26 +895,36 @@ export default function Settings() {
   const saveBlockedNumbers = () => {
     updateSettingsMutation.mutate({
       ...company.settings,
-      blocked_report_numbers: blockedNumbers,
+      block_team_analysis: blockTeamAnalysis,
+      blocked_analysis_customers: blockedCustomers,
+      blocked_report_numbers: blockedCustomers.map((customer) => sanitizeDigits(customer.phone)),
     });
   };
 
-  const addBlockedNumber = () => {
-    const normalized = sanitizeDigits(blockedNumberInput);
+  const addBlockedCustomer = (customer: BlockedAnalysisCustomer) => {
+    const normalized = sanitizeDigits(customer.phone);
     if (!isValidPhoneForBlocklist(normalized)) {
-      toast.error('Informe um numero valido com DDD ou codigo do pais.');
+      toast.error('Esse cliente nao possui numero valido para bloqueio.');
       return;
     }
-    if (blockedNumbers.includes(normalized)) {
-      toast.info('Esse numero ja esta bloqueado.');
+    if (blockedCustomers.some((item) => sanitizeDigits(item.phone) === normalized)) {
+      toast.info('Esse cliente ja esta bloqueado.');
       return;
     }
-    setBlockedNumbers((current) => [...current, normalized].sort());
-    setBlockedNumberInput('');
+    setBlockedCustomers((current) => dedupeBlockedCustomers([
+      ...current,
+      {
+        id: customer.id,
+        name: customer.name,
+        phone: normalized,
+      },
+    ]));
+    setBlockedClientSearch('');
   };
 
-  const removeBlockedNumber = (value: string) => {
-    setBlockedNumbers((current) => current.filter((item) => item !== value));
+  const removeBlockedCustomer = (phone: string) => {
+    const normalized = sanitizeDigits(phone);
+    setBlockedCustomers((current) => current.filter((item) => sanitizeDigits(item.phone) !== normalized));
   };
 
   const handleEnableBrowserAlerts = async () => {
@@ -850,6 +962,16 @@ export default function Settings() {
   const handleAccountProfileChange = (field: keyof AccountProfileForm, value: string) => {
     setAccountProfileForm((current) => ({ ...current, [field]: value }));
   };
+
+  const blockedCustomerPhones = useMemo(
+    () => new Set(blockedCustomers.map((customer) => sanitizeDigits(customer.phone))),
+    [blockedCustomers],
+  );
+
+  const teamPhoneCount = useMemo(
+    () => new Set(teamPhones.map((member) => sanitizeDigits(member.phone ?? '')).filter((phone) => isValidPhoneForBlocklist(phone))).size,
+    [teamPhones],
+  );
 
   return (
     <div className="space-y-6">
@@ -1597,48 +1719,94 @@ export default function Settings() {
               <div>
                 <h3 className="text-lg font-semibold text-foreground">Bloqueio</h3>
                 <p className="text-sm text-muted-foreground">
-                  Nao incluir numeros pessoais ou internos do time em relatorios e analises.
+                  Defina quais conversas devem ficar fora das analises e relatórios automáticos.
                 </p>
               </div>
             </div>
 
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_0.8fr]">
               <div className="rounded-2xl border border-border bg-background p-5">
-                <h4 className="font-semibold text-foreground">Numeros bloqueados</h4>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Esses numeros ficam fora das analises manuais e do fluxo de relatorios conectado a essa configuracao.
-                </p>
+                <div className="rounded-2xl border border-border bg-muted/20 p-4">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <h4 className="font-semibold text-foreground">Bloquear time</h4>
+                      <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+                        Quando ativado, o sistema ignora qualquer conversa em que o numero do cliente coincida com numeros cadastrados nos atendentes.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Numeros do time</p>
+                        <p className="mt-1 text-sm font-semibold text-foreground">{teamPhoneCount}</p>
+                      </div>
+                      <Switch checked={blockTeamAnalysis} onChange={(event) => setBlockTeamAnalysis(event.target.checked)} />
+                    </div>
+                  </div>
+                </div>
 
-                <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
-                  <Input
-                    value={blockedNumberInput}
-                    onChange={(e) => setBlockedNumberInput(formatBlockedPhone(e.target.value))}
-                    placeholder="Ex: (11) 99999-9999"
-                  />
-                  <button
-                    type="button"
-                    onClick={addBlockedNumber}
-                    className="inline-flex items-center justify-center rounded-xl border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
-                  >
-                    Adicionar numero
-                  </button>
+                <div className="mt-5">
+                  <h4 className="font-semibold text-foreground">Bloquear clientes específicos</h4>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Busque por nome ou numero, selecione o cliente e ele sai das analises futuras.
+                  </p>
+
+                  <div className="relative mt-4">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={blockedClientSearch}
+                      onChange={(e) => setBlockedClientSearch(e.target.value)}
+                      placeholder="Buscar cliente por nome ou numero"
+                      className="pl-10"
+                    />
+                  </div>
+
+                  {blockedClientSearchTerm.length >= 2 && (
+                    <div className="mt-3 rounded-2xl border border-border bg-card p-2 shadow-sm">
+                      {isSearchingBlockedCustomers ? (
+                        <div className="px-3 py-4 text-sm text-muted-foreground">Buscando clientes...</div>
+                      ) : blockedCustomerSearchResults.length === 0 ? (
+                        <div className="px-3 py-4 text-sm text-muted-foreground">Nenhum cliente com telefone encontrado para essa busca.</div>
+                      ) : (
+                        blockedCustomerSearchResults.map((customer) => {
+                          const alreadySelected = blockedCustomerPhones.has(sanitizeDigits(customer.phone));
+                          return (
+                            <button
+                              key={customer.id}
+                              type="button"
+                              onClick={() => addBlockedCustomer(customer)}
+                              disabled={alreadySelected}
+                              className="flex w-full items-center justify-between rounded-xl px-3 py-3 text-left transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <div>
+                                <p className="font-medium text-foreground">{customer.name || 'Cliente sem nome'}</p>
+                                <p className="text-xs text-muted-foreground">{formatBlockedPhone(customer.phone)}</p>
+                              </div>
+                              <span className="text-xs font-semibold text-secondary">
+                                {alreadySelected ? 'Ja bloqueado' : 'Selecionar'}
+                              </span>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-5 space-y-3">
-                  {blockedNumbers.length === 0 ? (
+                  {blockedCustomers.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-border p-5 text-sm text-muted-foreground">
-                      Nenhum numero bloqueado ainda.
+                      Nenhum cliente bloqueado ainda.
                     </div>
                   ) : (
-                    blockedNumbers.map((number) => (
-                      <div key={number} className="flex items-center justify-between gap-3 rounded-2xl border border-border px-4 py-3">
+                    blockedCustomers.map((customer) => (
+                      <div key={customer.phone} className="flex items-center justify-between gap-3 rounded-2xl border border-border px-4 py-3">
                         <div>
-                          <p className="font-medium text-foreground">{formatBlockedPhone(number)}</p>
-                          <p className="text-xs text-muted-foreground">{number}</p>
+                          <p className="font-medium text-foreground">{customer.name || 'Cliente sem nome'}</p>
+                          <p className="text-xs text-muted-foreground">{formatBlockedPhone(customer.phone)}</p>
                         </div>
                         <button
                           type="button"
-                          onClick={() => removeBlockedNumber(number)}
+                          onClick={() => removeBlockedCustomer(customer.phone)}
                           className="inline-flex rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
                         >
                           Remover
@@ -1654,17 +1822,21 @@ export default function Settings() {
                   <h4 className="font-semibold text-foreground">Resumo</h4>
                   <div className="mt-4 grid grid-cols-1 gap-4">
                     <div className="rounded-2xl bg-muted/40 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Total bloqueado</p>
-                      <p className="mt-2 text-2xl font-semibold text-foreground">{blockedNumbers.length}</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Clientes bloqueados</p>
+                      <p className="mt-2 text-2xl font-semibold text-foreground">{blockedCustomers.length}</p>
+                    </div>
+                    <div className="rounded-2xl bg-muted/40 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Bloqueio do time</p>
+                      <p className="mt-2 text-sm font-semibold text-foreground">{blockTeamAnalysis ? `Ativo em ${teamPhoneCount} numeros` : 'Desativado'}</p>
                     </div>
                     <div className="rounded-2xl bg-muted/40 p-4 text-sm text-muted-foreground">
-                      Use esta lista para excluir celulares pessoais, numeros internos e linhas de teste que distorcem indicadores.
+                      Use esta area para tirar da leitura da IA conversas internas, linhas de teste e clientes que nao devem contaminar indicadores.
                     </div>
                   </div>
                 </div>
 
                 <div className="rounded-2xl border border-dashed border-border bg-background p-5 text-sm text-muted-foreground">
-                  O bloqueio considera o numero normalizado apenas com digitos. Se um contato aparecer com formatos diferentes, ele ainda sera tratado como o mesmo numero.
+                  O bloqueio sempre compara apenas os digitos do telefone. Mesmo que o numero entre com formatos diferentes, ele sera tratado como o mesmo contato.
                 </div>
 
                 <button

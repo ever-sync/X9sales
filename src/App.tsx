@@ -14,11 +14,6 @@ import Agents from './pages/Agents';
 import AgentDetail from './pages/AgentDetail';
 import Conversations from './pages/Conversations';
 import ConversationDetail from './pages/ConversationDetail';
-import Alerts from './pages/Alerts';
-import Audit from './pages/Audit';
-import AIInsights from './pages/AIInsights';
-import RevenueInsights from './pages/RevenueInsights';
-import Performance from './pages/Performance';
 import Sales from './pages/Sales';
 import Playbooks from './pages/Playbooks';
 import Settings from './pages/Settings';
@@ -26,8 +21,6 @@ import KnowledgeBase from './pages/KnowledgeBase';
 import RegisterBusiness from './pages/RegisterBusiness';
 import MarketingLanding from './pages/MarketingLanding';
 import Ranking from './pages/Ranking';
-import CustomerIntelligence from './pages/CustomerIntelligence';
-import ProductIntelligence from './pages/ProductIntelligence';
 import Relatorio from './pages/Relatorio';
 
 function SetupScreen() {

@@ -40,6 +40,7 @@ interface CandidateRow {
 interface CompanySettingsPayload {
   timezone: string;
   blockedReportNumbers: string[];
+  blockTeamAnalysis: boolean;
 }
 
 function json(status: number, body: Record<string, unknown>) {
@@ -185,6 +186,7 @@ async function getCompanySettings(
 
   let timezone = "UTC";
   let blockedReportNumbers: string[] = [];
+  let blockTeamAnalysis = false;
 
   if (isRecord(data) && isRecord(data.settings) && typeof data.settings.timezone === "string") {
     const tz = data.settings.timezone.trim();
@@ -197,7 +199,34 @@ async function getCompanySettings(
       .filter((item) => item.length > 0);
   }
 
-  return { timezone, blockedReportNumbers };
+  if (isRecord(data) && isRecord(data.settings) && data.settings.block_team_analysis === true) {
+    blockTeamAnalysis = true;
+  }
+
+  if (blockTeamAnalysis) {
+    const { data: agents, error: agentsError } = await supabase
+      .schema("app")
+      .from("agents")
+      .select("phone")
+      .eq("company_id", companyId)
+      .eq("is_active", true)
+      .not("phone", "is", null);
+
+    if (agentsError) {
+      throw new Error(`Falha ao carregar numeros do time: ${agentsError.message}`);
+    }
+
+    blockedReportNumbers = [
+      ...blockedReportNumbers,
+      ...(agents ?? []).map((agent) => normalizePhone(typeof agent.phone === "string" ? agent.phone : "")).filter((item) => item.length > 0),
+    ];
+  }
+
+  return {
+    timezone,
+    blockedReportNumbers: Array.from(new Set(blockedReportNumbers)),
+    blockTeamAnalysis,
+  };
 }
 
 async function fetchCandidates(
