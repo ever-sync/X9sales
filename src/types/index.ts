@@ -612,6 +612,15 @@ export interface CoachingAction {
   created_at: string;
 }
 
+export interface ConversationComment {
+  id: string;
+  company_id: string;
+  conversation_id: string;
+  author_id: string;
+  body: string;
+  created_at: string;
+}
+
 export type RevenueOutcomeStatus = 'won' | 'lost' | 'open';
 
 export interface RevenueOutcome {

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   Contact, TrendingUp, TrendingDown, Minus, Zap, ShieldCheck, DollarSign,
@@ -323,6 +324,20 @@ export default function CustomerIntelligence() {
         />
       ) : (
         <>
+          <div className="grid gap-3 md:grid-cols-3">
+            <Link to="/playbooks" className="rounded-2xl border border-primary/20 bg-primary/5 p-4 transition-colors hover:border-primary/40 hover:bg-primary/10">
+              <p className="text-sm font-semibold text-foreground">Criar playbook para objecoes</p>
+              <p className="mt-1 text-xs text-muted-foreground">Transforme as objeções mais frequentes em abordagem padronizada para o time.</p>
+            </Link>
+            <Link to="/conversations" className="rounded-2xl border border-border bg-card p-4 transition-colors hover:border-primary/30 hover:bg-primary/5">
+              <p className="text-sm font-semibold text-foreground">Ver conversas com maior friccao</p>
+              <p className="mt-1 text-xs text-muted-foreground">Abra as conversas e valide onde as dúvidas e travas estão aparecendo.</p>
+            </Link>
+            <Link to="/ai-insights" className="rounded-2xl border border-border bg-card p-4 transition-colors hover:border-primary/30 hover:bg-primary/5">
+              <p className="text-sm font-semibold text-foreground">Abrir analises da IA</p>
+              <p className="mt-1 text-xs text-muted-foreground">Cruze falhas, coaching e tags de qualidade para fechar o plano de ação.</p>
+            </Link>
+          </div>
           {/* ── Tab: Como o cliente decide ──────────────────────────────── */}
           {tab === 'cliente' && (
             <div className="space-y-6">

@@ -323,7 +323,7 @@ serve(async (req) => {
       return json(400, { error: "Campo 'scope' obrigatorio: single|all." });
     }
 
-    const allCandidates = await fetchCandidates(supabase, {
+    const allCandidatesRaw = await fetchCandidates(supabase, {
       companyId,
       agentId,
       periodStart,

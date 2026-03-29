@@ -4,6 +4,7 @@ import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { BottomNav } from './BottomNav';
 import { ManagerCopilotWidget } from '../copilot/ManagerCopilotWidget';
+import { CriticalAlertNotifier } from './CriticalAlertNotifier';
 import { useCompany } from '../../contexts/CompanyContext';
 
 export function MainLayout() {
@@ -61,6 +62,7 @@ export function MainLayout() {
       </div>
       <BottomNav />
       <ManagerCopilotWidget />
+      <CriticalAlertNotifier />
     </div>
   );
 }

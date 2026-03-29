@@ -30,6 +30,7 @@ import { env } from '../config/env';
 import { MetricCard } from '../components/dashboard/MetricCard';
 import { Button } from '../components/ui/button';
 import { channelLabel, cn, formatDateTime, formatPercent } from '../lib/utils';
+import { downloadCsv } from '../lib/export';
 import { toast } from 'sonner';
 import { DemoBanner } from '../components/ui/EmptyState';
 
@@ -504,12 +505,31 @@ export default function AIInsights() {
       if (error) throw error;
       return data as AIAnalysisJob;
     },
-    refetchInterval: (query) => {
-      const status = (query.state.data as AIAnalysisJob | undefined)?.status;
-      if (status === 'completed' || status === 'failed') return false;
-      return 2000;
-    },
   });
+
+  useEffect(() => {
+    if (!companyId || !jobId || !showModal || (modalStep !== 'processing' && modalStep !== 'result')) return;
+
+    const channel = supabase
+      .channel(`ai-analysis-job:${jobId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'ai_analysis_jobs',
+          filter: `id=eq.${jobId}`,
+        },
+        (payload) => {
+          queryClient.setQueryData(['ai-insights', 'job', companyId, jobId], payload.new as AIAnalysisJob);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [companyId, jobId, modalStep, queryClient, showModal]);
 
   const activeJob = jobQuery.data;
   const resolvedModalStep: ModalStep =
@@ -665,13 +685,42 @@ export default function AIInsights() {
             <p className="mt-2 max-w-3xl text-sm text-muted-foreground md:text-base">
               Leia a operacao por periodo, atendente, tag e necessidade de coaching. Os agregados abaixo nao dependem mais da lista limitada da tela.
             </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link to="/playbooks" className="rounded-full border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:border-primary/40 hover:bg-primary/10">
+                Ajustar playbooks
+              </Link>
+              <Link to="/conversations" className="rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:border-primary/30 hover:bg-primary/5">
+                Revisar conversas
+              </Link>
+              <Link to="/alerts" className="rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:border-primary/30 hover:bg-primary/5">
+                Ver alertas abertos
+              </Link>
+            </div>
           </div>
 
           {canRunManualAnalysis && (
-            <Button variant="outline" className="shrink-0" onClick={openModal}>
-              <PlayCircle className="mr-2 h-4 w-4" />
-              Atualizar analise manual
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                className="shrink-0"
+                onClick={() => {
+                  downloadCsv('ai-insights.csv', reviewItems.map((item) => ({
+                    cliente: item.customer_name ?? item.customer_phone ?? 'Sem nome',
+                    atendente: item.agent_name,
+                    score: item.quality_score,
+                    coaching: item.needs_coaching,
+                    canal: item.channel ? channelLabel(item.channel) : '--',
+                    analisada_em: item.analyzed_at,
+                  })));
+                }}
+              >
+                Exportar CSV
+              </Button>
+              <Button variant="outline" className="shrink-0" onClick={openModal}>
+                <PlayCircle className="mr-2 h-4 w-4" />
+                Atualizar analise manual
+              </Button>
+            </div>
           )}
         </div>
 
@@ -1004,6 +1053,10 @@ export default function AIInsights() {
                 <div>
                   <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground"><span>Progresso</span><span>{progressPercent}%</span></div>
                   <div className="h-2 rounded-full bg-muted"><div className="h-2 rounded-full bg-primary/90 transition-all" style={{ width: `${progressPercent}%` }} /></div>
+                  <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span>Realtime ativo</span>
+                    <span>{activeProcessed}/{activeTotalCandidates || 0} itens</span>
+                  </div>
                 </div>
 
                 <div className="rounded-xl border border-border bg-muted px-4 py-3 text-sm text-muted-foreground">

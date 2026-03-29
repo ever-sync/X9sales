@@ -28,6 +28,7 @@ import MarketingLanding from './pages/MarketingLanding';
 import Ranking from './pages/Ranking';
 import CustomerIntelligence from './pages/CustomerIntelligence';
 import ProductIntelligence from './pages/ProductIntelligence';
+import Relatorio from './pages/Relatorio';
 
 function SetupScreen() {
   return (
@@ -144,14 +145,6 @@ function ProtectedRoutes() {
             }
           />
           <Route
-            path="performance"
-            element={
-              <PermissionGate permission="performance.view" fallback={<Navigate to="/" replace />}>
-                <Performance />
-              </PermissionGate>
-            }
-          />
-          <Route
             path="conversations/:id"
             element={
               <PermissionGate permission="conversations.view_own" fallback={<Navigate to="/" replace />}>
@@ -159,27 +152,14 @@ function ProtectedRoutes() {
               </PermissionGate>
             }
           />
+          <Route path="alerts" element={<Navigate to="/relatorio?tab=ai" replace />} />
+          <Route path="audit" element={<Navigate to="/relatorio?tab=auditoria" replace />} />
+          <Route path="ai-insights" element={<Navigate to="/relatorio?tab=ai" replace />} />
           <Route
-            path="alerts"
-            element={
-              <PermissionGate permission="alerts.view" fallback={<Navigate to="/" replace />}>
-                <Alerts />
-              </PermissionGate>
-            }
-          />
-          <Route
-            path="audit"
+            path="relatorio"
             element={
               <PermissionGate permission="audit.view" fallback={<Navigate to="/" replace />}>
-                <Audit />
-              </PermissionGate>
-            }
-          />
-          <Route
-            path="ai-insights"
-            element={
-              <PermissionGate permission="audit.review" fallback={<Navigate to="/" replace />}>
-                <AIInsights />
+                <Relatorio />
               </PermissionGate>
             }
           />
@@ -191,14 +171,8 @@ function ProtectedRoutes() {
               </PermissionGate>
             }
           />
-          <Route
-            path="revenue-insights"
-            element={
-              <PermissionGate permission="revenue.view" fallback={<Navigate to="/" replace />}>
-                <RevenueInsights />
-              </PermissionGate>
-            }
-          />
+          <Route path="revenue-insights" element={<Navigate to="/relatorio?tab=revenue" replace />} />
+          <Route path="performance" element={<Navigate to="/relatorio?tab=performance" replace />} />
           <Route
             path="playbooks"
             element={
@@ -223,22 +197,8 @@ function ProtectedRoutes() {
               </PermissionGate>
             }
           />
-          <Route
-            path="customer-intelligence"
-            element={
-              <PermissionGate permission="revenue.view" fallback={<Navigate to="/" replace />}>
-                <CustomerIntelligence />
-              </PermissionGate>
-            }
-          />
-          <Route
-            path="product-intelligence"
-            element={
-              <PermissionGate permission="revenue.view" fallback={<Navigate to="/" replace />}>
-                <ProductIntelligence />
-              </PermissionGate>
-            }
-          />
+          <Route path="customer-intelligence" element={<Navigate to="/relatorio?tab=cliente" replace />} />
+          <Route path="product-intelligence" element={<Navigate to="/relatorio?tab=produto" replace />} />
           <Route path="register-business" element={<RegisterBusiness />} />
         </Route>
       </Routes>

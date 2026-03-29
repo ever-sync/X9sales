@@ -7,6 +7,7 @@ import { usePermissions } from '../hooks/usePermissions';
 import type { AIConversationAnalysis, Conversation, ConversationMetrics, SpamRiskEvent } from '../types';
 import { CACHE } from '../config/constants';
 import { channelLabel, cn, formatDateTime, formatSeconds, severityColor, stripAgentPrefix } from '../lib/utils';
+import { downloadCsv } from '../lib/export';
 
 type AuditWorstSlaRow = ConversationMetrics & {
   conversation?: Conversation;
@@ -111,8 +112,39 @@ export default function Audit() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">Auditoria & QA</h2>
-        <p className="text-muted-foreground mt-1">Revise a qualidade do atendimento e identifique pontos de melhoria</p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-bold text-foreground">Auditoria & QA</h2>
+            <p className="text-muted-foreground mt-1">Revise a qualidade do atendimento e identifique pontos de melhoria</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              downloadCsv('auditoria-qa.csv', [
+                ...((worstSla ?? []).map((metric) => ({
+                  tipo: 'sla',
+                  cliente: stripAgentPrefix(metric.conversation?.customer?.name, metric.conversation?.agent?.name, metric.conversation?.customer?.phone),
+                  canal: metric.conversation?.channel ? channelLabel(metric.conversation.channel) : '--',
+                  atendente: metric.conversation?.agent?.name ?? '--',
+                  tempo_resposta: formatSeconds(metric.first_response_time_sec),
+                  sla: metric.sla_first_response_met,
+                  data: metric.conversation?.started_at ?? '',
+                }))),
+                ...((lowQuality ?? []).map((analysis) => ({
+                  tipo: 'qualidade_ia',
+                  conversa: analysis.conversation_id,
+                  atendente: analysis.agent?.name ?? '--',
+                  score_ia: analysis.quality_score,
+                  coaching: analysis.needs_coaching,
+                  data: analysis.analyzed_at,
+                }))),
+              ]);
+            }}
+            className="rounded-xl border border-border px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
+          >
+            Exportar CSV
+          </button>
+        </div>
       </div>
 
       <div className="bg-card rounded-2xl border border-border overflow-hidden">

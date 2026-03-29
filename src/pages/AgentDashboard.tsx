@@ -20,6 +20,7 @@ import { useAuth } from '../hooks/useAuth';
 import { Button } from '../components/ui/button';
 import { Progress } from '../components/ui/progress';
 import { cn } from '../lib/utils';
+import type { AIConversationAnalysis, StructuredAnalysis } from '../types';
 import gsap from 'gsap';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -52,6 +53,120 @@ type DealSignal = {
 };
 
 type SaleRecord = { quantity: number; margin_amount: string; };
+
+type CoachingAnalysis = Pick<
+  AIConversationAnalysis,
+  | 'conversation_id'
+  | 'quality_score'
+  | 'needs_coaching'
+  | 'coaching_tips'
+  | 'training_tags'
+  | 'analyzed_at'
+  | 'score_investigation'
+  | 'score_commercial_steering'
+  | 'score_objection_handling'
+  | 'score_empathy'
+  | 'score_clarity'
+> & {
+  structured_analysis: StructuredAnalysis | null;
+};
+
+type CoachingPillarKey =
+  | 'score_investigation'
+  | 'score_commercial_steering'
+  | 'score_objection_handling'
+  | 'score_empathy'
+  | 'score_clarity';
+
+type CoachingExample = {
+  conversation_id: string;
+  quality_score: number | null;
+  agent_id: string | null;
+  conversations: { customer_name: string | null } | null;
+} & Partial<Record<CoachingPillarKey, number | null>>;
+
+type CoachingActionMeta = {
+  headline?: string;
+  playbook_label?: string;
+  exercise?: string;
+  quick_tip?: string;
+  primary_pillar_label?: string;
+  primary_score?: number | null;
+  strengths?: string[];
+  improvements?: string[];
+  failure_tags?: string[];
+  example?: {
+    conversation_id?: string;
+    customer_name?: string;
+    agent_name?: string;
+    pillar_score?: number | null;
+    quality_score?: number | null;
+  } | null;
+} | null;
+
+type CoachingActionRow = {
+  id: string;
+  conversation_id: string;
+  created_at: string;
+  meta: CoachingActionMeta;
+};
+
+const COACHING_PILLARS: Array<{
+  key: CoachingPillarKey;
+  label: string;
+  playbookLabel: string;
+  exercise: string;
+  quickTip: string;
+}> = [
+  {
+    key: 'score_investigation',
+    label: 'Investigacao',
+    playbookLabel: 'Playbook de investigacao',
+    exercise: 'Antes de ofertar, valide dor, urgencia e criterio de decisao com 3 perguntas abertas.',
+    quickTip: 'Use a sequencia: contexto, impacto e urgencia antes de apresentar proposta.',
+  },
+  {
+    key: 'score_commercial_steering',
+    label: 'Conducao comercial',
+    playbookLabel: 'Playbook de conducao comercial',
+    exercise: 'Feche cada conversa com um proximo passo combinado e horario definido com o cliente.',
+    quickTip: 'Troque mensagens abertas por convites concretos: call, proposta ou fechamento.',
+  },
+  {
+    key: 'score_objection_handling',
+    label: 'Tratamento de objecoes',
+    playbookLabel: 'Playbook de objecoes',
+    exercise: 'Responda a objecao em 3 etapas: reconheca, aprofunde e reposicione valor.',
+    quickTip: 'Nao rebata preco de imediato. Descubra o que esta por tras da resistencia.',
+  },
+  {
+    key: 'score_empathy',
+    label: 'Empatia',
+    playbookLabel: 'Playbook de empatia',
+    exercise: 'Espelhe o contexto do cliente antes de sugerir qualquer acao comercial.',
+    quickTip: 'Mostre que entendeu a situacao com uma frase de validacao antes de conduzir.',
+  },
+  {
+    key: 'score_clarity',
+    label: 'Clareza',
+    playbookLabel: 'Playbook de clareza',
+    exercise: 'Envie mensagens curtas com um unico objetivo e CTA explicito por vez.',
+    quickTip: 'Troque blocos longos por passos simples e linguagem direta.',
+  },
+];
+
+function average(values: Array<number | null | undefined>): number | null {
+  const validValues = values.filter((value): value is number => value != null);
+  if (validValues.length === 0) return null;
+  return +(validValues.reduce((sum, value) => sum + value, 0) / validValues.length).toFixed(1);
+}
+
+function topEntries(counts: Map<string, number>, limit: number) {
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([label, count]) => ({ label, count }));
+}
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -161,20 +276,46 @@ export default function AgentDashboard() {
     staleTime: 1000 * 60 * 5,
   });
 
-  const { data: lastAnalysis } = useQuery({
-    queryKey: ['last-ai-analysis', myAgent?.id],
+  const coachingWindowStart = useMemo(() => {
+    const start = new Date();
+    start.setDate(start.getDate() - 6);
+    start.setHours(0, 0, 0, 0);
+    return start.toISOString();
+  }, []);
+
+  const { data: recentAnalyses = [] } = useQuery<CoachingAnalysis[]>({
+    queryKey: ['agent-weekly-coaching', myAgent?.id, coachingWindowStart],
     queryFn: async () => {
-      if (!myAgent?.id) return null;
+      if (!myAgent?.id) return [];
       const { data } = await supabase
         .from('ai_conversation_analysis')
-        .select('quality_score, coaching_tips, needs_coaching, analyzed_at')
+        .select('conversation_id, quality_score, needs_coaching, coaching_tips, training_tags, analyzed_at, score_investigation, score_commercial_steering, score_objection_handling, score_empathy, score_clarity, structured_analysis')
         .eq('agent_id', myAgent.id)
+        .gte('analyzed_at', coachingWindowStart)
         .order('analyzed_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      return data;
+        .limit(12);
+      return (data ?? []) as CoachingAnalysis[];
     },
     enabled: !!myAgent?.id,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const { data: latestCoachingAction } = useQuery<CoachingActionRow | null>({
+    queryKey: ['agent-latest-coaching-action', company?.id, myAgent?.id],
+    queryFn: async () => {
+      if (!company?.id || !myAgent?.id) return null;
+      const { data } = await supabase
+        .from('coaching_actions')
+        .select('id, conversation_id, created_at, meta')
+        .eq('company_id', company.id)
+        .eq('agent_id', myAgent.id)
+        .eq('action_type', 'auto_post_analysis')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return (data ?? null) as CoachingActionRow | null;
+    },
+    enabled: !!company?.id && !!myAgent?.id,
     staleTime: 1000 * 60 * 5,
   });
 
@@ -197,13 +338,106 @@ export default function AgentDashboard() {
 
   // ── Computed ───────────────────────────────────────────────────────────────
 
+  const weeklyCoaching = useMemo(() => {
+    const scoredAnalyses = recentAnalyses.filter((analysis) => analysis.quality_score != null);
+    const pillarAverages = COACHING_PILLARS
+      .map((pillar) => ({
+        ...pillar,
+        average: average(scoredAnalyses.map((analysis) => analysis[pillar.key])),
+      }))
+      .filter((pillar) => pillar.average != null)
+      .sort((a, b) => (a.average ?? 0) - (b.average ?? 0));
+
+    const weakestPillar = pillarAverages[0] ?? null;
+    const strengthCounts = new Map<string, number>();
+    const improvementCounts = new Map<string, number>();
+    const tagCounts = new Map<string, number>();
+    const tipCounts = new Map<string, number>();
+
+    for (const analysis of recentAnalyses) {
+      for (const tip of analysis.coaching_tips ?? []) {
+        tipCounts.set(tip, (tipCounts.get(tip) ?? 0) + 1);
+      }
+      for (const tag of analysis.training_tags ?? []) {
+        tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
+      }
+      for (const item of analysis.structured_analysis?.strengths ?? []) {
+        strengthCounts.set(item, (strengthCounts.get(item) ?? 0) + 1);
+      }
+      for (const item of analysis.structured_analysis?.improvements ?? []) {
+        improvementCounts.set(item, (improvementCounts.get(item) ?? 0) + 1);
+      }
+      for (const item of analysis.structured_analysis?.failure_tags ?? []) {
+        tagCounts.set(item, (tagCounts.get(item) ?? 0) + 1);
+      }
+    }
+
+    const coachingCount = recentAnalyses.filter((analysis) => analysis.needs_coaching).length;
+
+    return {
+      totalAnalyses: recentAnalyses.length,
+      coachingCount,
+      coachingRate: recentAnalyses.length > 0 ? Math.round((coachingCount / recentAnalyses.length) * 100) : 0,
+      latestAnalysisAt: recentAnalyses[0]?.analyzed_at ?? null,
+      weakestPillar,
+      primaryTip: topEntries(tipCounts, 1)[0]?.label ?? null,
+      topStrengths: topEntries(strengthCounts, 2),
+      topImprovements: topEntries(improvementCounts, 3),
+      topTags: topEntries(tagCounts, 3),
+    };
+  }, [recentAnalyses]);
+
+  const { data: coachingExample } = useQuery<CoachingExample | null>({
+    queryKey: ['agent-coaching-example', company?.id, myAgent?.id, weeklyCoaching.weakestPillar?.key],
+    queryFn: async () => {
+      if (!company?.id || !weeklyCoaching.weakestPillar?.key) return null;
+      const pillarKey = weeklyCoaching.weakestPillar.key;
+      let query = supabase
+        .from('ai_conversation_analysis')
+        .select(`conversation_id, quality_score, agent_id, ${pillarKey}, conversations(customer_name)`)
+        .eq('company_id', company.id)
+        .not('conversation_id', 'is', null)
+        .gte(pillarKey, 90)
+        .order(pillarKey, { ascending: false })
+        .order('quality_score', { ascending: false })
+        .limit(1);
+
+      if (myAgent?.id) {
+        query = query.neq('agent_id', myAgent.id);
+      }
+
+      const { data } = await query.maybeSingle();
+      return (data ?? null) as unknown as CoachingExample | null;
+    },
+    enabled: !!company?.id && !!weeklyCoaching.weakestPillar?.key,
+    staleTime: 1000 * 60 * 10,
+  });
+
+  const backendCoaching = useMemo(() => {
+    const meta = latestCoachingAction?.meta;
+    if (!meta) return null;
+
+    return {
+      headline: meta.headline ?? null,
+      playbookLabel: meta.playbook_label ?? null,
+      exercise: meta.exercise ?? null,
+      quickTip: meta.quick_tip ?? null,
+      primaryPillarLabel: meta.primary_pillar_label ?? null,
+      primaryScore: meta.primary_score ?? null,
+      strengths: meta.strengths ?? [],
+      improvements: meta.improvements ?? [],
+      failureTags: meta.failure_tags ?? [],
+      example: meta.example?.conversation_id ? meta.example : null,
+      conversationId: latestCoachingAction.conversation_id,
+      createdAt: latestCoachingAction.created_at,
+    };
+  }, [latestCoachingAction]);
+
   const {
     metrics,
     goals,
-    highRiskDeals,
     nextActions,
     myRank,
-    totalRevenue,
   } = useMemo(() => {
     const totalSalesQty = monthlySales.reduce((s, r) => s + (r.quantity ?? 0), 0);
     const totalRevenue = monthlySales.reduce((s, r) => s + Number(r.margin_amount ?? 0), 0);
@@ -250,12 +484,40 @@ export default function AgentDashboard() {
     const myRankIndex = allRankings.findIndex(r => r.agent_id === myAgent?.id);
     const myRank = myRankIndex >= 0 ? myRankIndex + 1 : null;
 
-    return { metrics, goals, highRiskDeals, nextActions, myRank, totalRevenue };
+    return { metrics, goals, nextActions, myRank };
   }, [dailyMetrics, dealSignals, monthlySales, allRankings, myAgent?.id]);
 
   const aiScore = myRanking?.avg_ai_quality_score ?? 0;
   const fmtCurrency = (v: number) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+  const coachingHeadline = backendCoaching?.headline
+    ?? weeklyCoaching.primaryTip
+    ?? (weeklyCoaching.weakestPillar
+      ? `Seu foco desta semana esta em ${weeklyCoaching.weakestPillar.label.toLowerCase()}.`
+      : 'Nenhuma analise recente ainda. Assim que novas conversas forem avaliadas, seu coaching aparece aqui.');
+  const missionExercise = backendCoaching?.exercise
+    ?? weeklyCoaching.weakestPillar?.exercise
+    ?? 'Analise uma conversa desta semana e identifique onde faltou proximo passo claro para o cliente.';
+  const missionQuickTip = backendCoaching?.quickTip
+    ?? weeklyCoaching.weakestPillar?.quickTip
+    ?? 'Quanto mais conversas analisadas, mais preciso fica o seu plano de melhoria.';
+  const priorityLabel = backendCoaching?.primaryPillarLabel
+    ?? weeklyCoaching.weakestPillar?.label
+    ?? null;
+  const priorityScore = backendCoaching?.primaryScore
+    ?? weeklyCoaching.weakestPillar?.average
+    ?? null;
+  const focusItems = backendCoaching?.improvements?.slice(0, 2) ?? weeklyCoaching.topImprovements.slice(0, 2).map((item) => item.label);
+  const strengthItems = backendCoaching?.strengths?.slice(0, 2) ?? weeklyCoaching.topStrengths.slice(0, 2).map((item) => item.label);
+  const fallbackTags = backendCoaching?.failureTags?.length ? backendCoaching.failureTags : weeklyCoaching.topTags.map((item) => item.label);
+  const exampleConversationId = backendCoaching?.example?.conversation_id ?? coachingExample?.conversation_id ?? null;
+  const exampleCustomerName = backendCoaching?.example?.customer_name
+    ?? coachingExample?.conversations?.customer_name
+    ?? 'Conversa de referencia';
+  const exampleScore = backendCoaching?.example?.pillar_score
+    ?? coachingExample?.[weeklyCoaching.weakestPillar?.key ?? 'score_investigation']
+    ?? 90;
+  const coachingSourceDate = backendCoaching?.createdAt ?? weeklyCoaching.latestAnalysisAt;
 
   return (
     <div ref={containerRef} className="space-y-8 pb-32 overflow-hidden">
@@ -396,20 +658,24 @@ export default function AgentDashboard() {
                 <BrainCircuit size={24} className="text-white" />
               </div>
               <div>
-                <h3 className="text-lg font-black uppercase tracking-tight">Cérebro MonitoraIA</h3>
-                <span className="text-[10px] font-black text-indigo-200 uppercase tracking-widest">Análise de conversas</span>
+                <h3 className="text-lg font-black uppercase tracking-tight">Seu Coaching da Semana</h3>
+                <span className="text-[10px] font-black text-indigo-200 uppercase tracking-widest">Analise automatica dos ultimos 7 dias</span>
               </div>
             </div>
 
             <div className="flex-1">
               <p className="text-lg font-medium leading-tight mb-6 italic text-indigo-50">
-                "{lastAnalysis?.coaching_tips?.[0] ?? 'Nenhuma análise disponível ainda. Execute a análise em uma conversa para receber coaching personalizado.'}"
+                "{coachingHeadline}"
               </p>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="bg-white/10 p-4 rounded-2xl border border-white/10">
-                  <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-1">SCORE IA (30d)</p>
-                  <p className="text-base font-black">{aiScore > 0 ? `${aiScore}/100` : '— sem dados'}</p>
+                  <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-1">PILAR PRIORITARIO</p>
+                  <p className="text-base font-black">
+                    {priorityLabel
+                      ? `${priorityLabel}${priorityScore != null ? ` (${priorityScore}/100)` : ''}`
+                      : 'Aguardando analises'}
+                  </p>
                 </div>
                 <div className="bg-white/10 p-4 rounded-2xl border border-white/10">
                   <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-1">COACHING PENDENTE</p>
@@ -418,6 +684,55 @@ export default function AgentDashboard() {
                   </p>
                 </div>
               </div>
+              {(focusItems.length > 0 || strengthItems.length > 0) && (
+                <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                  <div className="bg-slate-950/20 p-4 rounded-2xl border border-white/10">
+                    <p className="text-[10px] font-black text-indigo-200 uppercase tracking-widest mb-2">Onde atacar agora</p>
+                    <div className="space-y-2">
+                      {focusItems.map((item) => (
+                        <p key={item} className="text-sm font-semibold text-indigo-50">
+                          {item}
+                        </p>
+                      ))}
+                      {focusItems.length === 0 && (
+                        <p className="text-sm text-indigo-100/80">Sem repeticao suficiente para sugerir foco adicional.</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="bg-slate-950/20 p-4 rounded-2xl border border-white/10">
+                    <p className="text-[10px] font-black text-indigo-200 uppercase tracking-widest mb-2">Forcas para manter</p>
+                    <div className="space-y-2">
+                      {strengthItems.map((item) => (
+                        <p key={item} className="text-sm font-semibold text-indigo-50">
+                          {item}
+                        </p>
+                      ))}
+                      {strengthItems.length === 0 && (
+                        <p className="text-sm text-indigo-100/80">As proximas analises vao mostrar seus padroes fortes.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div className="mt-5 flex flex-wrap items-center gap-3 text-xs font-black uppercase tracking-[0.18em] text-indigo-100/85">
+                <span>{weeklyCoaching.totalAnalyses} analise{weeklyCoaching.totalAnalyses !== 1 ? 's' : ''} na semana</span>
+                <span>{weeklyCoaching.coachingRate}% com coaching</span>
+                {coachingSourceDate && (
+                  <span>ultima leitura {new Date(coachingSourceDate).toLocaleDateString('pt-BR')}</span>
+                )}
+              </div>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Link to="/ai-insights">
+                  <Button variant="secondary" className="rounded-2xl border-0 bg-white text-indigo-700 hover:bg-indigo-50">
+                    Ver minhas analises
+                  </Button>
+                </Link>
+                <Link to="/playbooks">
+                  <Button variant="ghost" className="rounded-2xl border border-white/20 text-white hover:bg-white/10 hover:text-white">
+                    {backendCoaching?.playbookLabel ?? weeklyCoaching.weakestPillar?.playbookLabel ?? 'Abrir playbooks'}
+                  </Button>
+                </Link>
+              </div>
             </div>
           </div>
         </div>
@@ -425,26 +740,58 @@ export default function AgentDashboard() {
         <div className="bg-emerald-50 dark:bg-emerald-950/20 border-2 border-emerald-500/20 p-8 rounded-[2.5rem] relative group border-dashed">
           <h3 className="text-lg font-black text-emerald-900 dark:text-emerald-400 uppercase tracking-tight mb-6 flex items-center gap-2">
             <Award className="text-emerald-500" />
-            MISSÃO DO DIA
+            Missao de Coaching
           </h3>
           <div className="space-y-6">
             <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-emerald-500/10 shadow-sm">
-              <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Desafio Prático</p>
+              <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Exercicio pratico</p>
               <p className="text-lg font-bold text-slate-800 dark:text-slate-200 leading-tight">
-                Obter 3 "Sim" do cliente antes de enviar o link de pagamento.
+                {missionExercise}
               </p>
             </div>
             <div className="flex gap-4">
-              <div className="flex-1 bg-white/50 dark:bg-white/5 p-4 rounded-2xl">
-                <p className="text-[10px] font-black text-emerald-600/70 uppercase tracking-widest mb-1 italic">Dica Rápida</p>
-                <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
-                  Pergunte: "Faz sentido para você?" ou "Isso resolve seu problema?"
-                </p>
+              <div className="flex-1 bg-white/50 dark:bg-white/5 p-4 rounded-2xl space-y-3">
+                <div>
+                  <p className="text-[10px] font-black text-emerald-600/70 uppercase tracking-widest mb-1 italic">Dica rapida</p>
+                  <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                    {missionQuickTip}
+                  </p>
+                </div>
+                {exampleConversationId && priorityLabel && (
+                  <div className="rounded-2xl border border-emerald-500/15 bg-white dark:bg-slate-900 p-3">
+                    <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Exemplo forte do time</p>
+                    <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      {exampleCustomerName} atingiu {exampleScore}/100 em {priorityLabel.toLowerCase()}.
+                    </p>
+                    <Link
+                      to={`/conversations/${exampleConversationId}`}
+                      className="mt-2 inline-flex text-xs font-black uppercase tracking-widest text-emerald-600 hover:text-emerald-500"
+                    >
+                      Abrir conversa-modelo
+                    </Link>
+                  </div>
+                )}
+                {!exampleConversationId && fallbackTags.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-black text-emerald-600/70 uppercase tracking-widest mb-1 italic">Padroes recorrentes</p>
+                    <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                      {fallbackTags.join(' • ')}
+                    </p>
+                  </div>
+                )}
               </div>
               <div className="h-16 w-16 bg-emerald-500 text-white flex items-center justify-center rounded-2xl shadow-lg shadow-emerald-500/20">
                 <Zap size={32} fill="currentColor" />
               </div>
             </div>
+            {weeklyCoaching.totalAnalyses > 0 && (
+              <div className="rounded-2xl border border-emerald-500/15 bg-white/70 dark:bg-slate-900/40 p-4">
+                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Regra automatica ativa</p>
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  Quando seu pilar principal cai, o painel prioriza o proximo treino com base nas ultimas conversas analisadas e nas referencias mais fortes do time.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </div>

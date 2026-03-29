@@ -2,13 +2,17 @@ import React from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../integrations/supabase/client';
+import { useAuth } from '../hooks/useAuth';
 import type {
   Conversation,
   AppEvent,
   DealSignal,
+  DealStage,
   Message as ConversationMessage,
   PlaybookRule,
+  PlaybookRuleType,
   AIConversationAnalysis,
+  ConversationComment,
 } from '../types';
 import { CACHE } from '../config/constants';
 import { MetricCard } from '../components/dashboard/MetricCard';
@@ -38,6 +42,7 @@ import {
   ThumbsUp,
   ThumbsDown,
   Eye,
+  Send,
 } from 'lucide-react';
 
 function eventIcon(eventType: string) {
@@ -77,9 +82,28 @@ function eventMeta(event: AppEvent): string | null {
   return null;
 }
 
+const STAGE_RULE_PRIORITY: Record<DealStage, PlaybookRuleType[]> = {
+  descoberta: ['abertura', 'qualificacao', 'valor'],
+  proposta: ['valor', 'cta', 'followup'],
+  objecao: ['contorno_objecao', 'valor', 'cta'],
+  fechamento: ['cta', 'followup', 'valor'],
+  pos_venda: ['followup', 'custom', 'cta'],
+};
+
+const RULE_TYPE_LABEL: Record<PlaybookRuleType, string> = {
+  abertura: 'Abertura',
+  qualificacao: 'Qualificacao',
+  valor: 'Construcao de valor',
+  cta: 'Proximo passo',
+  contorno_objecao: 'Contorno de objecao',
+  followup: 'Follow-up',
+  custom: 'Regra complementar',
+};
+
 export default function ConversationDetail() {
   const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   const { data: conv, isLoading } = useQuery<Conversation | null>({
     queryKey: ['conversation', id],
@@ -179,8 +203,26 @@ export default function ConversationDetail() {
     staleTime: CACHE.STALE_TIME,
   });
 
+  const { data: comments = [] } = useQuery<ConversationComment[]>({
+    queryKey: ['conversation-comments', id],
+    queryFn: async () => {
+      if (!id || !conv?.company_id) return [];
+      const { data, error } = await supabase
+        .from('conversation_comments')
+        .select('*')
+        .eq('conversation_id', id)
+        .eq('company_id', conv.company_id)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as ConversationComment[];
+    },
+    enabled: !!id && !!conv?.company_id,
+    staleTime: CACHE.STALE_TIME,
+  });
+
   const [expandedPillar, setExpandedPillar] = React.useState<string | null>(null);
   const [agentAvatarError, setAgentAvatarError] = React.useState(false);
+  const [commentBody, setCommentBody] = React.useState('');
 
   const coachingActionMutation = useMutation({
     mutationFn: async ({
@@ -209,6 +251,30 @@ export default function ConversationDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['coaching-actions-page', conv?.company_id] });
+    },
+  });
+
+  const createCommentMutation = useMutation({
+    mutationFn: async (body: string) => {
+      if (!conv || !user?.id) throw new Error('Conversa ou usuario nao carregado.');
+      const trimmed = body.trim();
+      if (!trimmed) throw new Error('Escreva um comentario antes de enviar.');
+
+      const { error } = await supabase.from('conversation_comments').insert({
+        company_id: conv.company_id,
+        conversation_id: conv.id,
+        author_id: user.id,
+        body: trimmed,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setCommentBody('');
+      queryClient.invalidateQueries({ queryKey: ['conversation-comments', id] });
+      toast.success('Comentario interno enviado.');
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Falha ao enviar comentario.');
     },
   });
 
@@ -294,6 +360,17 @@ export default function ConversationDetail() {
       toast.error(error instanceof Error ? error.message : 'Falha ao registrar checklist.');
     }
   };
+
+  const prioritizedRuleTypes = dealSignal ? STAGE_RULE_PRIORITY[dealSignal.stage] : [];
+  const contextualPlaybookRules = (activePlaybookRules ?? [])
+    .map((rule) => {
+      const priorityIndex = prioritizedRuleTypes.indexOf(rule.rule_type);
+      const stageMatchBoost = priorityIndex >= 0 ? Math.max(0, 30 - (priorityIndex * 8)) : 0;
+      const score = (rule.is_required ? 40 : 0) + stageMatchBoost + (rule.weight ?? 0);
+      return { rule, score, isStageMatch: priorityIndex >= 0 };
+    })
+    .sort((a, b) => b.score - a.score || a.rule.position - b.rule.position)
+    .slice(0, 6);
 
   return (
     <div className="space-y-6">
@@ -723,21 +800,34 @@ export default function ConversationDetail() {
           <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-muted-foreground">
             Checklist de Playbook
           </h3>
-          {!activePlaybookRules || activePlaybookRules.length === 0 ? (
+          {contextualPlaybookRules.length === 0 ? (
             <p className="text-sm text-muted-foreground">Nenhuma regra de playbook ativa disponivel.</p>
           ) : (
             <div className="space-y-2">
-              {activePlaybookRules.slice(0, 8).map((rule) => (
+              {dealSignal && (
+                <p className="text-xs text-muted-foreground">
+                  Prioridade da etapa atual: <span className="font-semibold text-foreground">{dealSignal.stage.replace('_', ' ')}</span>.
+                  As regras abaixo foram ordenadas pelo momento da conversa e pelo peso do playbook.
+                </p>
+              )}
+              {contextualPlaybookRules.map(({ rule, isStageMatch }) => (
                 <div key={rule.id} className="rounded-xl border border-border p-3">
                   <div className="mb-2 flex items-center justify-between">
-                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground">
-                      {rule.rule_type}
-                    </span>
-                    {rule.is_required && (
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-primary">
-                        obrigatoria
+                    <div className="flex flex-wrap gap-2">
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground">
+                        {RULE_TYPE_LABEL[rule.rule_type]}
                       </span>
-                    )}
+                      {rule.is_required && (
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-primary">
+                          obrigatoria
+                        </span>
+                      )}
+                      {isStageMatch && (
+                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
+                          recomendado agora
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <p className="mb-2 text-sm text-foreground">{rule.rule_text}</p>
                   <button
@@ -750,6 +840,64 @@ export default function ConversationDetail() {
                   </button>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-border bg-card p-6">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Comentarios Internos</h3>
+            <p className="mt-1 text-xs text-muted-foreground">Use este espaco para orientar o time sem aparecer para o cliente.</p>
+          </div>
+          <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">
+            {comments.length} comentario{comments.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+
+        <div className="space-y-3">
+          <div className="rounded-2xl border border-border bg-muted/30 p-3">
+            <textarea
+              value={commentBody}
+              onChange={(event) => setCommentBody(event.target.value)}
+              rows={3}
+              placeholder="Ex.: cliente reagiu bem ao argumento de prazo. Reforcar proposta na proxima interacao."
+              className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
+            />
+            <div className="mt-3 flex justify-end">
+              <button
+                type="button"
+                onClick={() => createCommentMutation.mutate(commentBody)}
+                disabled={createCommentMutation.isPending || !commentBody.trim()}
+                className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+              >
+                <Send className="h-4 w-4" />
+                Publicar comentario
+              </button>
+            </div>
+          </div>
+
+          {comments.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+              Nenhum comentario interno nesta conversa ainda.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {comments.map((comment) => {
+                const isOwnComment = comment.author_id === user?.id;
+                return (
+                  <div key={comment.id} className="rounded-2xl border border-border bg-background px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {isOwnComment ? 'Voce' : 'Gestao'}
+                      </span>
+                      <span className="text-xs text-muted-foreground">{formatDateTime(comment.created_at)}</span>
+                    </div>
+                    <p className="mt-2 text-sm whitespace-pre-wrap text-foreground">{comment.body}</p>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

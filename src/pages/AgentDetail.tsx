@@ -5,6 +5,7 @@ import { supabase } from '../integrations/supabase/client';
 import { useCompany } from '../contexts/CompanyContext';
 import type { Agent, AgentDailyMetrics, AIConversationAnalysis } from '../types';
 import { useConversations } from '../hooks/useConversations';
+import { getPercentDelta, usePeriodComparison } from '../hooks/usePeriodComparison';
 import { CACHE } from '../config/constants';
 import { MetricCard } from '../components/dashboard/MetricCard';
 import { formatSeconds, formatPercent, formatCurrency, formatDateTime, channelLabel, cn, stripAgentPrefix } from '../lib/utils';
@@ -65,6 +66,12 @@ function WebhookCard({ webhookUrl }: { webhookUrl: string }) {
 export default function AgentDetail() {
   const { id } = useParams<{ id: string }>();
   const { companyId } = useCompany();
+  const periodEnd = new Date().toISOString().split('T')[0];
+  const periodStart = (() => {
+    const date = new Date();
+    date.setDate(date.getDate() - 29);
+    return date.toISOString().split('T')[0];
+  })();
 
   const { data: agent } = useQuery<Agent | null>({
     queryKey: ['agent', id],
@@ -102,6 +109,26 @@ export default function AgentDetail() {
     staleTime: CACHE.STALE_TIME,
   });
 
+  const periodComparison = usePeriodComparison<AgentDailyMetrics[]>({
+    enabled: !!id && !!companyId,
+    queryKey: ['agent-daily-metrics-period-comparison', id, companyId],
+    start: periodStart,
+    end: periodEnd,
+    load: async ({ start, end }) => {
+      if (!id || !companyId) return [];
+      const { data, error } = await supabase
+        .from('metrics_agent_daily')
+        .select('*')
+        .eq('agent_id', id)
+        .eq('company_id', companyId)
+        .gte('metric_date', start)
+        .lte('metric_date', end)
+        .order('metric_date', { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as AgentDailyMetrics[];
+    },
+  });
+
   const { data: aiAnalyses } = useQuery<AIConversationAnalysis[]>({
     queryKey: ['agent-ai-analyses', id],
     queryFn: async () => {
@@ -134,6 +161,19 @@ export default function AgentDetail() {
         Math.max(metrics.filter(m => m.sla_first_response_pct != null).length, 1)
     : null;
   const totalRevenue = metrics?.reduce((s, m) => s + m.revenue, 0) ?? 0;
+  const previousMetrics = periodComparison.previous ?? [];
+  const previousTotalConv = previousMetrics.reduce((s, m) => s + m.conversations_total, 0);
+  const previousAvgFrt = previousMetrics.length > 0
+    ? Math.floor(previousMetrics.filter(m => m.avg_first_response_sec != null)
+        .reduce((s, m) => s + (m.avg_first_response_sec ?? 0), 0) /
+        Math.max(previousMetrics.filter(m => m.avg_first_response_sec != null).length, 1))
+    : null;
+  const previousAvgSla = previousMetrics.length > 0
+    ? previousMetrics.filter(m => m.sla_first_response_pct != null)
+        .reduce((s, m) => s + (m.sla_first_response_pct ?? 0), 0) /
+        Math.max(previousMetrics.filter(m => m.sla_first_response_pct != null).length, 1)
+    : null;
+  const previousTotalRevenue = previousMetrics.reduce((s, m) => s + m.revenue, 0);
 
   // AI aggregates
   const scoredAnalyses = aiAnalyses?.filter(a => a.quality_score != null) ?? [];
@@ -235,21 +275,32 @@ export default function AgentDetail() {
           title="Conversas (30d)"
           value={String(totalConv)}
           icon={<MessageSquare className="h-5 w-5 text-primary" />}
+          trend={getPercentDelta(totalConv, previousTotalConv)}
+          trendLabel="vs. 30 dias anteriores"
         />
         <MetricCard
           title="Tempo Primeira Resp."
           value={formatSeconds(avgFrt)}
           icon={<Clock className="h-5 w-5 text-primary" />}
+          trend={(() => {
+            const delta = getPercentDelta(avgFrt, previousAvgFrt);
+            return delta == null ? null : delta * -1;
+          })()}
+          trendLabel="mais rapido que o periodo anterior"
         />
         <MetricCard
           title="SLA %"
           value={formatPercent(avgSla)}
           icon={<CheckCircle className="h-5 w-5 text-primary" />}
+          trend={getPercentDelta(avgSla, previousAvgSla)}
+          trendLabel="vs. 30 dias anteriores"
         />
         <MetricCard
           title="Receita (30d)"
           value={formatCurrency(totalRevenue)}
           icon={<TrendingUp className="h-5 w-5 text-primary" />}
+          trend={getPercentDelta(totalRevenue, previousTotalRevenue)}
+          trendLabel="vs. 30 dias anteriores"
         />
       </div>
 

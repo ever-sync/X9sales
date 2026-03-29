@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   Sparkles, Brain, TrendingUp, TrendingDown, Minus, Package, MessageSquare,
@@ -298,6 +299,20 @@ export default function ProductIntelligence() {
         />
       ) : (
         <>
+          <div className="grid gap-3 md:grid-cols-3">
+            <Link to="/playbooks" className="rounded-2xl border border-primary/20 bg-primary/5 p-4 transition-colors hover:border-primary/40 hover:bg-primary/10">
+              <p className="text-sm font-semibold text-foreground">Ajustar playbook por produto</p>
+              <p className="mt-1 text-xs text-muted-foreground">Converta barreiras recorrentes em argumentos e respostas prontas para o time.</p>
+            </Link>
+            <Link to="/conversations" className="rounded-2xl border border-border bg-card p-4 transition-colors hover:border-primary/30 hover:bg-primary/5">
+              <p className="text-sm font-semibold text-foreground">Revisar conversas criticas</p>
+              <p className="mt-1 text-xs text-muted-foreground">Abra as conversas onde o produto gera mais dúvida ou mais oportunidade perdida.</p>
+            </Link>
+            <Link to="/revenue-insights" className="rounded-2xl border border-border bg-card p-4 transition-colors hover:border-primary/30 hover:bg-primary/5">
+              <p className="text-sm font-semibold text-foreground">Cruzar com receita</p>
+              <p className="mt-1 text-xs text-muted-foreground">Valide quais produtos perdem tração e onde a margem está mais pressionada.</p>
+            </Link>
+          </div>
           {/* ── Tab: Produto ─────────────────────────────────────────────── */}
           {tab === 'produto' && (
             <div className="space-y-6">

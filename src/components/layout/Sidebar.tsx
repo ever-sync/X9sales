@@ -3,9 +3,7 @@ import {
   LayoutDashboard,
   Users,
   MessageSquare,
-  ClipboardCheck,
   Settings,
-  Brain,
   BookOpen,
   HandCoins,
   BookCheck,
@@ -15,10 +13,7 @@ import {
   X,
   PanelLeftClose,
   PanelLeftOpen,
-  Sparkles,
-  Contact,
-  ShieldAlert,
-  TrendingUp,
+  FileBarChart2,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -52,25 +47,14 @@ const navGroups: NavGroup[] = [
       { to: '/', icon: LayoutDashboard, label: 'Dashboard', permission: 'dashboard.view' },
       { to: '/sales', icon: HandCoins, label: 'Vendas', permission: 'revenue.view_own' },
       { to: '/ranking', icon: Trophy, label: 'Ranking', permission: 'performance.view' },
-      { to: '/alerts', icon: ShieldAlert, label: 'Alertas', permission: 'alerts.view' },
       { to: '/conversations', icon: MessageSquare, label: 'Conversas', permission: 'conversations.view_own' },
-      { to: '/performance', icon: TrendingUp, label: 'Performance', permission: 'performance.view' },
     ],
   },
   {
     label: 'GESTAO',
     items: [
       { to: '/agents', icon: Users, label: 'Atendentes', permission: 'agents.view_team' },
-      { to: '/audit', icon: ClipboardCheck, label: 'Auditoria', permission: 'audit.view' },
-      { to: '/ai-insights', icon: Brain, label: 'Analise IA', permission: 'audit.review', badge: 'IA' },
-      { to: '/revenue-insights', icon: HandCoins, label: 'Revenue Insights', permission: 'revenue.view', badge: 'ROI' },
-    ],
-  },
-  {
-    label: 'INTELIGENCIA',
-    items: [
-      { to: '/product-intelligence', icon: Sparkles, label: 'Inteligencia de Produto', permission: 'revenue.view', badge: 'IA' },
-      { to: '/customer-intelligence', icon: Contact, label: 'Inteligencia de Cliente', permission: 'revenue.view', badge: 'IA' },
+      { to: '/relatorio', icon: FileBarChart2, label: 'Relatório', permission: 'audit.view' },
     ],
   },
   {
@@ -113,7 +97,7 @@ export function Sidebar({
 
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex h-screen flex-col border-r border-white/6 bg-slate-950/80 backdrop-blur-xl text-white shadow-[0_24px_80px_rgba(0,0,0,0.35)] transition-all duration-300 lg:static lg:z-auto lg:shadow-none lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 flex h-screen flex-col border-r border-white/6 bg-black text-white shadow-[0_24px_80px_rgba(0,0,0,0.35)] transition-all duration-300 lg:static lg:z-auto lg:shadow-none lg:translate-x-0',
           isOpen ? 'translate-x-0' : '-translate-x-full',
           collapsed ? 'w-[68px]' : 'w-[272px]',
         )}
@@ -128,7 +112,7 @@ export function Sidebar({
             alt="Logo"
             className={cn(
               'w-auto object-contain',
-              collapsed ? 'h-9' : 'h-8',
+              collapsed ? 'h-10' : 'h-12',
             )}
           />
 

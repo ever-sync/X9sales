@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../integrations/supabase/client';
 import { useCompany } from '../contexts/CompanyContext';
@@ -39,6 +40,12 @@ const ALERT_TYPE_INFO: Record<string, { label: string; explanation: string; acti
     explanation: 'A análise de IA detectou situações em que o atendente não soube conduzir bem a conversa — pode ter perdido uma oportunidade de venda ou deixado o cliente sem resposta satisfatória.',
     action: 'Abra o perfil do atendente, veja os pontos de melhoria identificados pela IA e marque uma conversa de alinhamento.',
     icon: BookOpen,
+  },
+  PREDICTIVE_LOSS_RISK: {
+    label: 'Risco preditivo de perda',
+    explanation: 'A plataforma encontrou sinais de abandono antes do fechamento, combinando risco alto, estágio travado, tempo sem atualização e ausência de próxima ação clara.',
+    action: 'Abra a conversa, execute o próximo passo recomendado e recupere o deal antes que ele esfrie de vez.',
+    icon: TrendingDown,
   },
   SLA_BREACH: {
     label: 'Tempo de resposta ultrapassado',
@@ -106,6 +113,19 @@ function getStatusConfig(status: string) {
   return STATUS_CONFIG[status] ?? STATUS_CONFIG.open;
 }
 
+function getAlertActionLink(alert: Alert) {
+  if (alert.reference_type === 'conversation' && alert.reference_id) {
+    return { to: `/conversations/${alert.reference_id}`, label: 'Abrir conversa' };
+  }
+  if ((alert.alert_type === 'LOW_QUALITY_AGENT' || alert.alert_type === 'COACHING_NEEDED') && alert.agent_id) {
+    return { to: `/agents/${alert.agent_id}`, label: 'Abrir atendente' };
+  }
+  if (alert.alert_type === 'META_BAN_RISK' || alert.alert_type === 'SLA_BREACH' || alert.alert_type === 'PREDICTIVE_LOSS_RISK') {
+    return { to: '/conversations', label: 'Ver conversas' };
+  }
+  return { to: '/ai-insights', label: 'Abrir insights IA' };
+}
+
 // ── componente do card de alerta ──────────────────────────────────────────────
 
 interface AlertCardProps {
@@ -122,6 +142,7 @@ function AlertCard({ alert, onAcknowledge, isPending, selected, onToggleSelect }
   const statuCfg = getStatusConfig(alert.status);
   const Icon = typeInfo.icon;
   const StatusIcon = statuCfg.icon;
+  const actionLink = getAlertActionLink(alert);
 
   return (
     <div className={cn(
@@ -184,12 +205,20 @@ function AlertCard({ alert, onAcknowledge, isPending, selected, onToggleSelect }
 
         {/* o que fazer */}
         {alert.status === 'open' && (
-          <div className="flex items-start gap-2 bg-muted/60 rounded-lg px-3 py-2 mt-1">
-            <Bell className="h-3.5 w-3.5 text-primary mt-0.5 shrink-0" />
-            <p className="text-xs text-foreground">
-              <span className="font-semibold">O que fazer: </span>
-              {typeInfo.action}
-            </p>
+          <div className="space-y-2">
+            <div className="flex items-start gap-2 bg-muted/60 rounded-lg px-3 py-2 mt-1">
+              <Bell className="h-3.5 w-3.5 text-primary mt-0.5 shrink-0" />
+              <p className="text-xs text-foreground">
+                <span className="font-semibold">O que fazer: </span>
+                {typeInfo.action}
+              </p>
+            </div>
+            <Link
+              to={actionLink.to}
+              className="inline-flex items-center rounded-lg border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:border-primary/40 hover:bg-primary/10"
+            >
+              {actionLink.label}
+            </Link>
           </div>
         )}
       </div>

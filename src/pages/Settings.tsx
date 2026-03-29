@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   BellRing,
@@ -32,6 +32,7 @@ import { supabase } from '../integrations/supabase/client';
 import { env } from '../config/env';
 import type { BillingInvoice, BillingSubscription, CompanyInvite, CompanySettings, NotificationJobSummary } from '../types';
 import { cn, formatCurrency, formatDate, formatDateTime, formatSeconds } from '../lib/utils';
+import { areBrowserAlertsEnabled, requestBrowserAlertPermission, setBrowserAlertsEnabled } from '../lib/browserNotifications';
 
 function InfoCard({
   title,
@@ -228,6 +229,9 @@ export default function Settings() {
   });
   const [blockedNumberInput, setBlockedNumberInput] = useState('');
   const [blockedNumbers, setBlockedNumbers] = useState<string[]>([]);
+  const [browserNotificationPermission, setBrowserNotificationPermission] = useState<'default' | 'denied' | 'granted' | 'unsupported'>('default');
+  const [browserAlertsEnabled, setBrowserAlertsEnabledState] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
   const [accountProfileForm, setAccountProfileForm] = useState<AccountProfileForm>({
     name: '',
     email: '',
@@ -262,6 +266,17 @@ export default function Settings() {
         : [],
     );
   }, [company]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      setBrowserNotificationPermission('unsupported');
+      setBrowserAlertsEnabledState(false);
+      return;
+    }
+
+    setBrowserNotificationPermission(Notification.permission);
+    setBrowserAlertsEnabledState(areBrowserAlertsEnabled());
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -457,6 +472,31 @@ export default function Settings() {
     },
     onError: (err: Error) => {
       toast.error(`Erro ao atualizar: ${err.message}`);
+    },
+  });
+
+  const uploadLogoMutation = useMutation({
+    mutationFn: async (file: File) => {
+      if (!company) throw new Error('Empresa nao carregada.');
+
+      const extension = file.name.includes('.') ? file.name.split('.').pop() : 'png';
+      const path = `${company.id}/logo-${Date.now()}.${extension}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('company-assets')
+        .upload(path, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from('company-assets').getPublicUrl(path);
+      return data.publicUrl;
+    },
+    onSuccess: (publicUrl) => {
+      setProfileForm((current) => ({ ...current, logoUrl: publicUrl }));
+      toast.success('Logo enviada. Salve o perfil da empresa para aplicar.');
+    },
+    onError: (error: Error) => {
+      toast.error(`Erro ao enviar logo: ${error.message}`);
     },
   });
 
@@ -775,6 +815,34 @@ export default function Settings() {
     setBlockedNumbers((current) => current.filter((item) => item !== value));
   };
 
+  const handleEnableBrowserAlerts = async () => {
+    const permission = await requestBrowserAlertPermission();
+    if (permission === 'unsupported') {
+      toast.error('Este navegador nao suporta notificacoes.');
+      return;
+    }
+
+    setBrowserNotificationPermission(permission);
+    const enabled = permission === 'granted';
+    setBrowserAlertsEnabledState(enabled);
+
+    if (enabled) toast.success('Alertas do navegador ativados para eventos criticos.');
+    else toast.error('Permissao de notificacao nao concedida.');
+  };
+
+  const handleDisableBrowserAlerts = () => {
+    setBrowserAlertsEnabled(false);
+    setBrowserAlertsEnabledState(false);
+    toast.success('Alertas do navegador desativados neste dispositivo.');
+  };
+
+  const handleLogoFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    uploadLogoMutation.mutate(file);
+    event.target.value = '';
+  };
+
   const handleCreateAccess = () => {
     inviteUserMutation.mutate(accessForm);
   };
@@ -977,6 +1045,27 @@ export default function Settings() {
                     placeholder="https://empresa.com/logo.png"
                     disabled={!isEditingProfile}
                   />
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <input
+                      ref={logoInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleLogoFileChange}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => logoInputRef.current?.click()}
+                      disabled={!isEditingProfile || uploadLogoMutation.isPending}
+                      className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <ImagePlus className="h-4 w-4" />
+                      {uploadLogoMutation.isPending ? 'Enviando logo...' : 'Enviar arquivo'}
+                    </button>
+                    <span className="text-xs text-muted-foreground">
+                      PNG, JPG ou WebP. O envio atualiza a URL automaticamente.
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -1403,6 +1492,48 @@ export default function Settings() {
                       onChange={(e) => handleNotificationChange('agentFollowUpAlerts', e.target.checked)}
                     />
                   </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-border bg-background p-5">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h4 className="font-semibold text-foreground">Alertas criticos no navegador</h4>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Quando houver um alerta critico novo, o app pode avisar este dispositivo em tempo real.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                    <span className="rounded-full bg-muted px-2.5 py-1 font-semibold text-foreground">
+                      Permissao: {browserNotificationPermission === 'unsupported' ? 'nao suportado' : browserNotificationPermission}
+                    </span>
+                    <span className={cn(
+                      'rounded-full px-2.5 py-1 font-semibold',
+                      browserAlertsEnabled ? 'bg-emerald-50 text-emerald-700' : 'bg-muted text-muted-foreground',
+                    )}>
+                      {browserAlertsEnabled ? 'Ativo neste dispositivo' : 'Desativado neste dispositivo'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={handleEnableBrowserAlerts}
+                    disabled={browserNotificationPermission === 'unsupported'}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary/5 px-4 py-2 text-sm font-semibold text-primary transition-colors hover:border-primary/40 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <BellRing className="h-4 w-4" />
+                    Ativar no navegador
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDisableBrowserAlerts}
+                    disabled={!browserAlertsEnabled}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Desativar neste dispositivo
+                  </button>
                 </div>
               </div>
             </div>

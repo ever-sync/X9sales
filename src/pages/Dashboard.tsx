@@ -33,6 +33,7 @@ import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../integrations/supabase/client';
 import { CACHE } from '../config/constants';
 import { formatCurrency, formatPercent } from '../lib/utils';
+import { downloadCsv } from '../lib/export';
 import type { AIConversationAnalysis } from '../types';
 import { SetupChecklist } from '../components/onboarding/SetupChecklist';
 
@@ -568,6 +569,28 @@ export default function Dashboard() {
             Atualização: 24h
             <ChevronDown size={14} className="ml-2" />
           </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (!overviewQuery.data) return;
+              downloadCsv('dashboard-resumo.csv', [
+                {
+                  empresa: company?.name ?? 'Empresa',
+                  conversas_7d: overviewQuery.data.conversations_7d,
+                  conversas_30d: overviewQuery.data.conversations_30d,
+                  sla_30d: overviewQuery.data.sla_pct_30d,
+                  frt_30d: overviewQuery.data.avg_frt_30d,
+                  alertas_abertos: overviewQuery.data.open_alerts,
+                  alertas_criticos: overviewQuery.data.critical_alerts,
+                  csat_previsto_30d: overviewQuery.data.avg_predicted_csat_30d,
+                  atualizado_em: overviewQuery.data.refreshed_at,
+                },
+              ]);
+            }}
+            className="flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold bg-card text-muted-foreground shadow-sm hover:bg-muted/50 transition-colors"
+          >
+            Exportar CSV
+          </button>
           <button
             type="button"
             onClick={() => {

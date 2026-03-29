@@ -26,6 +26,8 @@ import { usePermissions } from '../hooks/usePermissions';
 import { supabase } from '../integrations/supabase/client';
 import { CACHE } from '../config/constants';
 import { formatCurrency } from '../lib/utils';
+import { cn } from '../lib/utils';
+import { getPercentDelta, usePeriodComparison } from '../hooks/usePeriodComparison';
 import type { AgentRanking, DailyTrend } from '../types';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -101,9 +103,10 @@ export default function Performance() {
   // ── daily trend ────────────────────────────────────────────────────────────
   const since = useMemo(() => {
     const d = new Date();
-    d.setDate(d.getDate() - days);
+    d.setDate(d.getDate() - (days - 1));
     return d.toISOString().split('T')[0];
   }, [days]);
+  const until = useMemo(() => new Date().toISOString().split('T')[0], []);
 
   const { data: companyTrend = [], isLoading: trendLoading } = useQuery<DailyTrend[]>({
     queryKey: ['perf-trend', companyId, days],
@@ -138,6 +141,110 @@ export default function Performance() {
     },
     enabled: !!companyId && !!myAgentId && !isAdmin,
     staleTime: CACHE.STALE_TIME,
+  });
+
+  const periodComparison = usePeriodComparison({
+    enabled: !!companyId && (isAdmin || !!myAgentId),
+    queryKey: ['performance-period-comparison', companyId, isAdmin ? 'admin' : myAgentId, days],
+    start: since,
+    end: until,
+    load: async ({ start, end }) => {
+      if (!companyId) {
+        return {
+          totalConversas: 0,
+          qualidadeMedia: null as number | null,
+          slaMedia: null as number | null,
+          receitaTotal: 0,
+        };
+      }
+
+      if (isAdmin) {
+        const [trendRes, qualityRes, revenueRes] = await Promise.all([
+          supabase
+            .from('mv_daily_trend')
+            .select('conversation_count, sla_pct')
+            .eq('company_id', companyId)
+            .gte('conversation_date', start)
+            .lte('conversation_date', end),
+          supabase
+            .from('ai_conversation_analysis')
+            .select('quality_score')
+            .eq('company_id', companyId)
+            .gte('analyzed_at', `${start}T00:00:00`)
+            .lte('analyzed_at', `${end}T23:59:59`),
+          supabase
+            .from('sales_records')
+            .select('margin_amount, quantity')
+            .eq('company_id', companyId)
+            .gte('sold_at', `${start}T00:00:00`)
+            .lte('sold_at', `${end}T23:59:59`),
+        ]);
+
+        if (trendRes.error) throw trendRes.error;
+        if (qualityRes.error) throw qualityRes.error;
+        if (revenueRes.error) throw revenueRes.error;
+
+        const qualityRows = qualityRes.data ?? [];
+        const trendRows = trendRes.data ?? [];
+        const revenueRows = revenueRes.data ?? [];
+
+        return {
+          totalConversas: trendRows.reduce((sum, row) => sum + (row.conversation_count ?? 0), 0),
+          qualidadeMedia: qualityRows.length > 0
+            ? qualityRows.reduce((sum, row) => sum + (row.quality_score ?? 0), 0) / qualityRows.length
+            : null,
+          slaMedia: (() => {
+            const rows = trendRows.filter(row => row.sla_pct != null);
+            return rows.length > 0 ? rows.reduce((sum, row) => sum + (row.sla_pct ?? 0), 0) / rows.length : null;
+          })(),
+          receitaTotal: revenueRows.reduce((sum, row) => sum + ((row.margin_amount ?? 0) * (row.quantity ?? 0)), 0),
+        };
+      }
+
+      if (!myAgentId) {
+        return {
+          totalConversas: 0,
+          qualidadeMedia: null as number | null,
+          slaMedia: null as number | null,
+          receitaTotal: 0,
+        };
+      }
+
+      const [agentMetricsRes, qualityRes] = await Promise.all([
+        supabase
+          .from('metrics_agent_daily')
+          .select('conversations_total, sla_first_response_pct, revenue')
+          .eq('company_id', companyId)
+          .eq('agent_id', myAgentId)
+          .gte('metric_date', start)
+          .lte('metric_date', end),
+        supabase
+          .from('ai_conversation_analysis')
+          .select('quality_score')
+          .eq('company_id', companyId)
+          .eq('agent_id', myAgentId)
+          .gte('analyzed_at', `${start}T00:00:00`)
+          .lte('analyzed_at', `${end}T23:59:59`),
+      ]);
+
+      if (agentMetricsRes.error) throw agentMetricsRes.error;
+      if (qualityRes.error) throw qualityRes.error;
+
+      const qualityRows = qualityRes.data ?? [];
+      const metricRows = agentMetricsRes.data ?? [];
+
+      return {
+        totalConversas: metricRows.reduce((sum, row) => sum + (row.conversations_total ?? 0), 0),
+        qualidadeMedia: qualityRows.length > 0
+          ? qualityRows.reduce((sum, row) => sum + (row.quality_score ?? 0), 0) / qualityRows.length
+          : null,
+        slaMedia: (() => {
+          const rows = metricRows.filter(row => row.sla_first_response_pct != null);
+          return rows.length > 0 ? rows.reduce((sum, row) => sum + (row.sla_first_response_pct ?? 0), 0) / rows.length : null;
+        })(),
+        receitaTotal: metricRows.reduce((sum, row) => sum + (row.revenue ?? 0), 0),
+      };
+    },
   });
 
   // ── chart data ─────────────────────────────────────────────────────────────
@@ -240,24 +347,32 @@ export default function Performance() {
           value={isLoading ? '…' : String(kpis.totalConversas)}
           icon={MessageSquare}
           color="text-blue-500"
+          trend={getPercentDelta(kpis.totalConversas, periodComparison.previous?.totalConversas)}
+          trendLabel={`vs. ${days} dias anteriores`}
         />
         <KpiCard
           label="Qualidade IA"
           value={isLoading ? '…' : kpis.qualidadeMedia != null ? `${Math.round(kpis.qualidadeMedia)}%` : '—'}
           icon={Star}
           color="text-amber-500"
+          trend={getPercentDelta(kpis.qualidadeMedia, periodComparison.previous?.qualidadeMedia)}
+          trendLabel={`vs. ${days} dias anteriores`}
         />
         <KpiCard
           label="SLA Resposta"
           value={isLoading ? '…' : kpis.slaMedia != null ? `${Math.round(kpis.slaMedia)}%` : '—'}
           icon={ShieldCheck}
           color="text-emerald-500"
+          trend={getPercentDelta(kpis.slaMedia, periodComparison.previous?.slaMedia)}
+          trendLabel={`vs. ${days} dias anteriores`}
         />
         <KpiCard
           label={isAdmin ? 'Receita Total' : 'Receita (30d)'}
           value={isLoading ? '…' : formatCurrency(kpis.receitaTotal)}
           icon={DollarSign}
           color="text-indigo-500"
+          trend={getPercentDelta(kpis.receitaTotal, periodComparison.previous?.receitaTotal)}
+          trendLabel={`vs. ${days} dias anteriores`}
         />
       </div>
 
@@ -554,12 +669,18 @@ function KpiCard({
   value,
   icon: Icon,
   color,
+  trend,
+  trendLabel,
 }: {
   label: string;
   value: string;
   icon: React.ElementType;
   color: string;
+  trend?: number | null;
+  trendLabel?: string;
 }) {
+  const isPositive = trend != null && trend >= 0;
+
   return (
     <div className="group relative overflow-hidden rounded-3xl border bg-card p-5 sm:p-6 shadow-sm transition-all hover:shadow-xl hover:shadow-primary/5 hover:-translate-y-0.5">
       <div className="absolute top-0 right-0 p-4 opacity-[0.06] group-hover:scale-110 transition-transform">
@@ -567,6 +688,19 @@ function KpiCard({
       </div>
       <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{label}</p>
       <h3 className={`mt-2 text-2xl sm:text-3xl font-black ${color}`}>{value}</h3>
+      {(trend != null || trendLabel) && (
+        <div className="mt-3 flex items-center gap-2 flex-wrap">
+          {trend != null && (
+            <span className={cn(
+              'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold',
+              isPositive ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600',
+            )}>
+              {isPositive ? '+' : ''}{trend.toFixed(1)}%
+            </span>
+          )}
+          {trendLabel && <span className="text-[11px] text-muted-foreground">{trendLabel}</span>}
+        </div>
+      )}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../integrations/supabase/client';
 import { cn } from '../lib/utils';
+import { downloadCsv } from '../lib/export';
 import type { AgentRanking } from '../types';
 import {
   Trophy,
@@ -107,7 +108,7 @@ export default function Ranking() {
   return (
     <div className="flex-1 space-y-8 p-4 md:p-8 pt-6 pb-32">
       {/* Header */}
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <h2 className="text-4xl font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-3">
            <Trophy className="text-yellow-400 h-10 w-10 shrink-0" />
            Copa de Performance
@@ -115,6 +116,23 @@ export default function Ranking() {
         <p className="text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest text-xs">
           Onde os melhores se destacam • Dados atualizados em tempo real
         </p>
+        <button
+          type="button"
+          onClick={() => {
+            downloadCsv('ranking-agentes.csv', agents.map((agent) => ({
+              agente: agent.agent_name,
+              conversas: agent.total_conversations,
+              qualidade_ia: agent.avg_ai_quality_score,
+              sla_primeira_resposta: agent.avg_sla_first_response_pct,
+              deals_ganhos: agent.total_deals_won,
+              receita_total: agent.total_revenue,
+              csat_previsto: agent.avg_predicted_csat,
+            })));
+          }}
+          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+        >
+          Exportar CSV
+        </button>
       </div>
 
       <Tabs defaultValue="sales" className="w-full">

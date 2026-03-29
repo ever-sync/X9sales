@@ -19,7 +19,7 @@ import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../integrations/supabase/client';
 import { channelLabel, cn, normalizePhone, stripAgentPrefix } from '../lib/utils';
 import { CACHE, PAGINATION } from '../config/constants';
-import type { Agent, Conversation } from '../types';
+import type { Agent } from '../types';
 
 interface ConvAIAnalysis {
   quality_score: number | null;
@@ -27,9 +27,27 @@ interface ConvAIAnalysis {
   structured_analysis: { diagnosis?: { interest_level?: string } } | null;
 }
 
-interface ConvWithAnalysis extends Conversation {
-  ai_analysis?: ConvAIAnalysis[];
-  updated_at?: string;
+interface DedupedConversationRow {
+  id: string;
+  company_id: string;
+  agent_id: string | null;
+  agent_name: string | null;
+  agent_avatar_url: string | null;
+  customer_id: string | null;
+  customer_name: string | null;
+  customer_phone: string | null;
+  channel: string;
+  status: string;
+  started_at: string | null;
+  updated_at: string;
+  message_count_in: number;
+  message_count_out: number;
+  avg_response_gap_sec: number | null;
+  first_response_time_sec: number | null;
+  quality_score: number | null;
+  training_tags: string[] | null;
+  structured_analysis: ConvAIAnalysis['structured_analysis'];
+  total_count: number;
 }
 
 function useAgents() {
@@ -59,61 +77,30 @@ interface AgentConvOptions {
   status?: string;
   channel?: string;
   limit?: number;
+  offset?: number;
 }
 
 function agentConvQueryKey(opts: AgentConvOptions) {
   return ['agent-conversations-preview', opts.companyId, opts.agentId, opts.status, opts.channel, opts.limit];
 }
 
-function getConversationDedupKey(conv: ConvWithAnalysis): string {
-  const phone = normalizePhone(conv.customer?.phone);
-  if (phone) return `phone:${phone}`;
-  if (conv.customer_id) return `customer:${conv.customer_id}`;
-  const name = conv.customer?.name?.trim().toLowerCase();
-  if (name) return `name:${name}`;
-  return `conversation:${conv.id}`;
-}
-
 async function fetchAgentConversations(
   opts: AgentConvOptions,
-): Promise<{ convs: ConvWithAnalysis[]; total: number }> {
+): Promise<{ convs: DedupedConversationRow[]; total: number }> {
   if (!opts.companyId) return { convs: [], total: 0 };
 
-  const desiredLimit = opts.limit ?? 4;
-
-  let q = supabase
-    .from('conversations')
-    .select(
-      `*,
-       agent:agents(id,name,avatar_url),
-       customer:customers(name,phone),
-       metrics:metrics_conversation(avg_response_gap_sec, first_response_time_sec),
-       ai_analysis:ai_conversation_analysis(quality_score, training_tags, structured_analysis)`,
-      { count: 'exact' },
-    )
-    .eq('company_id', opts.companyId)
-    .eq('agent_id', opts.agentId)
-    .order('started_at', { ascending: false })
-    .limit(100);
-
-  if (opts.status) q = q.eq('status', opts.status);
-  if (opts.channel) q = q.eq('channel', opts.channel);
-
-  const { data, error } = await q;
+  const { data, error } = await supabase.rpc('get_deduped_conversations', {
+    p_company_id: opts.companyId,
+    p_agent_id: opts.agentId,
+    p_status: opts.status ?? null,
+    p_channel: opts.channel ?? null,
+    p_limit: opts.limit ?? 4,
+    p_offset: opts.offset ?? 0,
+  });
   if (error) throw error;
 
-  const allConvs = (data ?? []) as ConvWithAnalysis[];
-  const seen = new Set<string>();
-  const unique: ConvWithAnalysis[] = [];
-
-  for (const conv of allConvs) {
-    const key = getConversationDedupKey(conv);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    unique.push(conv);
-  }
-
-  return { convs: unique.slice(0, desiredLimit), total: seen.size };
+  const convs = (data ?? []) as DedupedConversationRow[];
+  return { convs, total: convs[0]?.total_count ?? 0 };
 }
 
 function statusLabel(status: string) {
@@ -166,13 +153,12 @@ function StatPill({
   );
 }
 
-function ConversationRow({ conv }: { conv: ConvWithAnalysis }) {
-  const metrics = Array.isArray(conv.metrics) ? conv.metrics[0] : (conv.metrics as Conversation['metrics'] | undefined);
-  const responseTime = metrics?.avg_response_gap_sec ?? metrics?.first_response_time_sec ?? null;
+function ConversationRow({ conv }: { conv: DedupedConversationRow }) {
+  const responseTime = conv.avg_response_gap_sec ?? conv.first_response_time_sec ?? null;
   const inboundCount = conv.message_count_in ?? 0;
   const outboundCount = conv.message_count_out ?? 0;
   const msgCount = inboundCount + outboundCount;
-  const customerPhone = formatPhoneDisplay(conv.customer?.phone);
+  const customerPhone = formatPhoneDisplay(conv.customer_phone);
 
   return (
     <Link
@@ -189,7 +175,7 @@ function ConversationRow({ conv }: { conv: ConvWithAnalysis }) {
             <div className="min-w-0 space-y-1">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="truncate text-sm font-semibold text-foreground md:text-[15px]">
-                  {stripAgentPrefix(conv.customer?.name, conv.agent?.name, conv.customer?.phone)}
+                  {stripAgentPrefix(conv.customer_name, conv.agent_name, conv.customer_phone)}
                 </p>
                 <span className={cn('rounded-full px-2.5 py-1 text-[11px] font-semibold leading-none shadow-sm', statusClass(conv.status))}>
                   {statusLabel(conv.status)}
@@ -203,7 +189,7 @@ function ConversationRow({ conv }: { conv: ConvWithAnalysis }) {
                 </span>
                 <span className="inline-flex items-center gap-1.5">
                   <User className="h-3.5 w-3.5" />
-                  {conv.agent?.name ?? 'Sem atendente'}
+                  {conv.agent_name ?? 'Sem atendente'}
                 </span>
                 <span className="inline-flex items-center gap-1.5">
                   <Inbox className="h-3.5 w-3.5" />
@@ -227,7 +213,7 @@ function ConversationRow({ conv }: { conv: ConvWithAnalysis }) {
 
 interface AgentCardProps {
   agent: Agent;
-  convs: ConvWithAnalysis[];
+  convs: DedupedConversationRow[];
   total: number;
   loading: boolean;
 }
@@ -284,43 +270,15 @@ function FlatList({ agentId, status, channel }: { agentId: string; status: strin
   const { data, isLoading } = useQuery({
     queryKey: ['flat-conversations', companyId, agentId, status, channel, page],
     queryFn: async () => {
-      if (!companyId) return { convs: [] as ConvWithAnalysis[], total: 0 };
-
-      let q = supabase
-        .from('conversations')
-        .select(
-          `*,
-           agent:agents(id,name,avatar_url),
-           customer:customers(name,phone),
-           metrics:metrics_conversation(avg_response_gap_sec, first_response_time_sec),
-           ai_analysis:ai_conversation_analysis(quality_score, training_tags, structured_analysis)`,
-          { count: 'exact' },
-        )
-        .eq('company_id', companyId)
-        .eq('agent_id', agentId)
-        .order('started_at', { ascending: false })
-        .limit(500);
-
-      if (status) q = q.eq('status', status);
-      if (channel) q = q.eq('channel', channel);
-
-      const { data: rows, error } = await q;
-      if (error) throw error;
-
-      const allConvs = (rows ?? []) as ConvWithAnalysis[];
-      const seen = new Set<string>();
-      const unique: ConvWithAnalysis[] = [];
-
-      for (const conv of allConvs) {
-        const key = getConversationDedupKey(conv);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        unique.push(conv);
-      }
-
-      const start = (page - 1) * pageSize;
-      const end = start + pageSize;
-      return { convs: unique.slice(start, end), total: unique.length };
+      if (!companyId) return { convs: [] as DedupedConversationRow[], total: 0 };
+      return fetchAgentConversations({
+        companyId,
+        agentId,
+        status: status || undefined,
+        channel: channel || undefined,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+      });
     },
     enabled: !!companyId && !!agentId,
     staleTime: CACHE.STALE_TIME,
