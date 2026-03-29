@@ -855,3 +855,170 @@ function buildPerformanceMetrics(memories: ConversationMemory[]): AuditPerforman
     passive_response_rate: roundRate((count((memory) => memory.behavior_flags.passive_response) / denominator) * 100),
   };
 }
+
+function buildSupportMetrics(
+  memories: ConversationMemory[],
+  analysisRows: AnalysisRow[],
+  metricRows: MetricRow[],
+  signalRows: SignalRow[],
+  outcomeRows: OutcomeRow[],
+  openAlerts: number,
+): SupportMetrics {
+  const avgQuality = average(analysisRows.map((row) => row.quality_score));
+  const avgCsat = average(analysisRows.map((row) => row.predicted_csat));
+  const avgFirstResponse = average(metricRows.map((row) => row.first_response_time_sec));
+  const slaMeasured = metricRows.filter((row) => row.sla_first_response_met !== null);
+  const slaFirstResponsePct = slaMeasured.length
+    ? roundRate((slaMeasured.filter((row) => row.sla_first_response_met === true).length / slaMeasured.length) * 100)
+    : null;
+
+  const scorecard = buildScorecard(memories);
+  const performanceMetrics = buildPerformanceMetrics(memories);
+
+  return {
+    total_conversations: memories.length,
+    analyzed_conversations: memories.length,
+    avg_quality_score: avgQuality != null ? Number(avgQuality.toFixed(1)) : null,
+    avg_predicted_csat: avgCsat != null ? Number(avgCsat.toFixed(2)) : null,
+    coaching_needed_count: analysisRows.filter((row) => row.needs_coaching).length,
+    avg_first_response_sec: avgFirstResponse != null ? Number(avgFirstResponse.toFixed(0)) : null,
+    sla_first_response_pct: slaFirstResponsePct,
+    high_risk_count: signalRows.filter((row) => row.loss_risk_level === 'alto').length,
+    hot_intent_count: signalRows.filter((row) => row.intent_level === 'quente').length,
+    won_count: outcomeRows.filter((row) => row.outcome === 'won').length,
+    lost_count: outcomeRows.filter((row) => row.outcome === 'lost').length,
+    won_value: Number(outcomeRows.filter((row) => row.outcome === 'won').reduce((sum, row) => sum + Number(row.value ?? 0), 0).toFixed(2)),
+    open_alerts: openAlerts,
+    scorecard,
+    performance_metrics: performanceMetrics,
+  };
+}
+
+function pickEvidenceSamples(memories: ConversationMemory[]): EvidenceSample[] {
+  const ordered = [...memories].sort((left, right) => {
+    const leftScore = left.quality_score ?? 0;
+    const rightScore = right.quality_score ?? 0;
+    return leftScore - rightScore;
+  });
+
+  const weakest = ordered.slice(0, 4).map((memory) => ({
+    conversation_id: memory.conversation_id,
+    customer_name: memory.customer_name,
+    customer_phone_masked: memory.customer_phone_masked,
+    category: 'fraco' as const,
+    excerpt: memory.closing_excerpt,
+  }));
+
+  const strongest = ordered.slice(-2).reverse().map((memory) => ({
+    conversation_id: memory.conversation_id,
+    customer_name: memory.customer_name,
+    customer_phone_masked: memory.customer_phone_masked,
+    category: 'forte' as const,
+    excerpt: memory.opening_excerpt,
+  }));
+
+  return [...weakest, ...strongest].slice(0, MAX_EVIDENCE_SAMPLES);
+}
+
+function summarizeTopFailures(memories: ConversationMemory[]): {
+  critical: string[];
+  high: string[];
+  medium: string[];
+  low: string[];
+  mainErrors: string[];
+} {
+  const counts = new Map<string, number>();
+  for (const memory of memories) {
+    for (const tag of memory.failure_tags) {
+      counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
+  }
+
+  const grouped: Record<SeverityLevel, string[]> = {
+    critical: [],
+    high: [],
+    medium: [],
+    low: [],
+  };
+
+  for (const [tag, count] of Array.from(counts.entries()).sort((a, b) => b[1] - a[1])) {
+    const catalog = failureTagCatalog[tag];
+    if (!catalog) continue;
+    grouped[catalog.severity].push(`${catalog.label} Recorrencia: ${count} conversa(s).`);
+  }
+
+  const mainErrors = [
+    ...grouped.critical,
+    ...grouped.high,
+    ...grouped.medium,
+    ...grouped.low,
+  ].slice(0, 6);
+
+  return {
+    critical: grouped.critical.slice(0, 4),
+    high: grouped.high.slice(0, 4),
+    medium: grouped.medium.slice(0, 4),
+    low: grouped.low.slice(0, 4),
+    mainErrors,
+  };
+}
+
+function summarizeStrengths(supportMetrics: SupportMetrics, scorecard: AuditScorecard): string[] {
+  const strengths: string[] = [];
+  if ((scorecard.abertura ?? 0) >= 7) strengths.push('A abertura costuma gerar continuacao da conversa sem parecer robotica.');
+  if ((scorecard.comunicacao ?? 0) >= 7) strengths.push('Ha clareza de comunicacao acima da media em boa parte das conversas.');
+  if (supportMetrics.performance_metrics.real_diagnosis_rate >= 45) strengths.push('Existe investigacao real em uma parcela relevante dos leads.');
+  if (supportMetrics.performance_metrics.follow_up_rate >= 35) strengths.push('Ha retomada de oportunidades acima do padrao da operacao.');
+  if (supportMetrics.won_count > 0) strengths.push('Existem sinais concretos de conversao e captura de receita no periodo.');
+  if (!strengths.length) strengths.push('O ponto forte ainda e pontual, nao estrutural. O melhor sinal hoje e a presenca de atendimento ativo.');
+  return strengths.slice(0, 5);
+}
+
+function deriveBehaviorProfile(supportMetrics: SupportMetrics, scorecard: AuditScorecard): string {
+  if (supportMetrics.performance_metrics.passive_response_rate >= 55 && supportMetrics.performance_metrics.close_attempt_rate < 35) {
+    return 'atendente com funcao de vendedor';
+  }
+  if ((scorecard.diagnostico ?? 0) >= 7 && (scorecard.fechamento ?? 0) < 6) {
+    return 'consultivo, mas pouco incisivo';
+  }
+  if ((scorecard.agilidade ?? 0) >= 7 && (scorecard.diagnostico ?? 0) < 6) {
+    return 'rapido, porem superficial';
+  }
+  if ((scorecard.conducao ?? 0) < 5) {
+    return 'vendedor passivo';
+  }
+  if ((scorecard.fechamento ?? 0) >= 7 && (scorecard.conducao ?? 0) >= 7) {
+    return 'vendedor consultivo e consistente';
+  }
+  return 'operador de resposta com oscilacao comercial';
+}
+
+function deriveRecurringPatterns(memories: ConversationMemory[], supportMetrics: SupportMetrics): string[] {
+  const patterns: string[] = [];
+  if (supportMetrics.performance_metrics.passive_response_rate >= 40) {
+    patterns.push('Em grande parte das conversas, o vendedor responde, mas nao conduz o avancar.');
+  }
+  if (supportMetrics.performance_metrics.real_diagnosis_rate < 40) {
+    patterns.push('A investigacao da necessidade aparece pouco e o meio da conversa fica raso.');
+  }
+  if (supportMetrics.performance_metrics.close_attempt_rate < 35) {
+    patterns.push('Boa parte das conversas termina sem tentativa clara de fechamento ou proximo passo.');
+  }
+  if (supportMetrics.performance_metrics.follow_up_rate < 30) {
+    patterns.push('Existe pouca retomada estruturada de leads mornos ou parados.');
+  }
+  if (memories.some((memory) => memory.failure_tags.includes('sem_proposta_valor'))) {
+    patterns.push('Quando o cliente entra em preco, o vendedor perde forca de sustentacao de valor.');
+  }
+  return patterns.slice(0, 6);
+}
+
+function deriveOperationalImpact(supportMetrics: SupportMetrics, behaviorProfile: string): string[] {
+  const impacts: string[] = [];
+  if (supportMetrics.performance_metrics.passive_response_rate >= 40) impacts.push('Reduz taxa de avancao porque o lead precisa puxar a proxima etapa.');
+  if (supportMetrics.performance_metrics.abandonment_rate >= 35) impacts.push('Aumenta desperdicio de lead por encerramentos sem direcao.');
+  if (supportMetrics.performance_metrics.poor_objection_handling_rate >= 30) impacts.push('Perde vendas recuperaveis em momentos de objecao.');
+  if (supportMetrics.high_risk_count > 0) impacts.push('Transforma oportunidades de risco alto em perda por falta de recuperacao ativa.');
+  if (behaviorProfile.includes('atendente')) impacts.push('A operacao entrega lead para atendimento, mas nao recebe conducao comercial consistente.');
+  return impacts.slice(0, 5);
+}
