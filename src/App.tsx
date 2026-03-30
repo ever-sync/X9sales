@@ -22,6 +22,7 @@ import RegisterBusiness from './pages/RegisterBusiness';
 import MarketingLanding from './pages/MarketingLanding';
 import Ranking from './pages/Ranking';
 import Relatorio from './pages/Relatorio';
+import Coach from './pages/Coach';
 
 function SetupScreen() {
   return (
@@ -106,6 +107,14 @@ function ProtectedRoutes() {
       <Routes>
         <Route element={<MainLayout />}>
           <Route index element={<RootDashboard />} />
+          <Route
+            path="coach"
+            element={
+              <PermissionGate permission="dashboard.view" fallback={<Navigate to="/" replace />}>
+                <Coach />
+              </PermissionGate>
+            }
+          />
           <Route
             path="agents"
             element={

@@ -681,6 +681,96 @@ export interface AISellerAuditRun {
   updated_at: string;
 }
 
+export type ProductIntelligenceSeverity = 'critical' | 'high' | 'medium' | 'low';
+export type ProductIntelligenceCause =
+  | 'produto'
+  | 'comunicacao'
+  | 'posicionamento'
+  | 'oferta'
+  | 'atendimento'
+  | 'preco'
+  | 'expectativa';
+
+export interface ProductIntelligenceStrategicItem {
+  title: string;
+  summary: string;
+  frequency: number | null;
+  impact: string;
+  urgency: string;
+  severity: ProductIntelligenceSeverity;
+  likely_cause: ProductIntelligenceCause;
+  evidence_conversation_ids: string[];
+}
+
+export interface ProductIntelligenceClientProfile {
+  profile: string;
+  what_they_seek: string;
+  main_blockers: string;
+  best_approach: string;
+  frequency: number | null;
+}
+
+export interface ProductIntelligenceDecision {
+  title: string;
+  why_now: string;
+  expected_impact: string;
+  urgency: string;
+  evidence_conversation_ids: string[];
+}
+
+export interface ProductIntelligenceStrategicReport {
+  resumo_executivo: string;
+  percepcao_geral_produto: {
+    clareza: string;
+    valor_percebido: string;
+    interesse_gerado: string;
+    principal_risco: string;
+    principal_oportunidade: string;
+  };
+  clientes_buscam: ProductIntelligenceStrategicItem[];
+  principais_dores: ProductIntelligenceStrategicItem[];
+  duvidas_frequentes: ProductIntelligenceStrategicItem[];
+  objecoes_frequentes: ProductIntelligenceStrategicItem[];
+  valor_percebido: ProductIntelligenceStrategicItem[];
+  pontos_de_confusao: ProductIntelligenceStrategicItem[];
+  melhorias_de_produto: ProductIntelligenceStrategicItem[];
+  melhorias_de_oferta_e_comunicacao: ProductIntelligenceStrategicItem[];
+  perfis_de_cliente: ProductIntelligenceClientProfile[];
+  sinais_estrategicos: ProductIntelligenceStrategicItem[];
+  top_5_decisoes_recomendadas: ProductIntelligenceDecision[];
+  totals: {
+    conversations_considered: number;
+    analyzed_conversations: number;
+    evidence_items: number;
+  };
+}
+
+export type ProductIntelligenceRunStatus = 'queued' | 'running' | 'completed' | 'failed';
+
+export interface ProductIntelligenceRun {
+  id: string;
+  company_id: string;
+  requested_by_user_id: string;
+  period_start: string;
+  period_end: string;
+  company_timezone: string;
+  source: 'manual';
+  status: ProductIntelligenceRunStatus;
+  total_conversations: number;
+  processed_count: number;
+  analyzed_count: number;
+  failed_count: number;
+  report_json: ProductIntelligenceStrategicReport | null;
+  report_markdown: string | null;
+  prompt_version: string;
+  model_used: string | null;
+  error_message: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  updated_at: string;
+}
+
 // ============================================================
 // Revenue Copilot / Playbook / ROI Types
 // ============================================================

@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
+  Sparkles,
   Users,
   MessageSquare,
   Settings,
@@ -13,7 +14,7 @@ import {
   X,
   PanelLeftClose,
   PanelLeftOpen,
-  FileBarChart2,
+  Brain,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -45,6 +46,7 @@ const navGroups: NavGroup[] = [
     label: 'PRINCIPAL',
     items: [
       { to: '/', icon: LayoutDashboard, label: 'Dashboard', permission: 'dashboard.view' },
+      { to: '/coach', icon: Sparkles, label: 'Coach', permission: 'dashboard.view' },
       { to: '/sales', icon: HandCoins, label: 'Vendas', permission: 'revenue.view_own' },
       { to: '/ranking', icon: Trophy, label: 'Ranking', permission: 'performance.view' },
       { to: '/conversations', icon: MessageSquare, label: 'Conversas', permission: 'conversations.view_own' },
@@ -54,7 +56,7 @@ const navGroups: NavGroup[] = [
     label: 'GESTAO',
     items: [
       { to: '/agents', icon: Users, label: 'Atendentes', permission: 'agents.view_team' },
-      { to: '/relatorio', icon: FileBarChart2, label: 'Relatório', permission: 'audit.view' },
+      { to: '/relatorio?tab=ai', icon: Brain, label: 'IA analise', permission: 'audit.view' },
     ],
   },
   {
