@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
-import { supabase } from '../integrations/supabase/client';
+import { clearStoredSupabaseSession, isInvalidRefreshTokenError, supabase } from '../integrations/supabase/client';
 
 interface UseAuthReturn {
   user: User | null;
@@ -23,23 +23,51 @@ export function useAuth(): UseAuthReturn {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      setUser(s?.user ?? null);
+    let active = true;
+
+    const applySession = (nextSession: Session | null) => {
+      if (!active) return;
+      setSession(nextSession);
+      setUser(nextSession?.user ?? null);
       setLoading(false);
-    }).catch(() => {
-      setLoading(false);
-    });
+    };
+
+    const resetBrokenSession = async () => {
+      await clearStoredSupabaseSession();
+      applySession(null);
+    };
+
+    void supabase.auth.getSession()
+      .then(async ({ data: { session: s }, error }) => {
+        if (error) {
+          if (isInvalidRefreshTokenError(error)) {
+            await resetBrokenSession();
+            return;
+          }
+          applySession(null);
+          return;
+        }
+
+        applySession(s);
+      })
+      .catch(async (error) => {
+        if (isInvalidRefreshTokenError(error)) {
+          await resetBrokenSession();
+          return;
+        }
+
+        applySession(null);
+      });
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
-      setUser(s?.user ?? null);
-      setLoading(false);
+      applySession(s);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {
@@ -69,7 +97,7 @@ export function useAuth(): UseAuthReturn {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    await clearStoredSupabaseSession();
   };
 
   return { user, session, loading, signIn, signUp, signOut };

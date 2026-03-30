@@ -99,7 +99,7 @@ export function SLAChart() {
         </div>
       ) : (
         <div className="h-56 px-2 pb-4">
-          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={1}>
             <LineChart data={chartData} margin={{ top: 4, right: 12, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
               <XAxis

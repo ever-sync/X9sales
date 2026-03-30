@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
   BookOpen,
@@ -21,6 +21,7 @@ import {
 import { supabase } from '../integrations/supabase/client';
 import { useCompany } from '../contexts/CompanyContext';
 import { useBlockedPhones } from '../hooks/useBlockedPhones';
+import { clearStoredSupabaseSession, isInvalidRefreshTokenError } from '../integrations/supabase/client';
 import type {
   Agent,
   AIAnalysisJob,
@@ -154,6 +155,9 @@ async function getValidAccessToken(forceRefresh = false): Promise<string> {
     const { data, error } = await supabase.auth.refreshSession();
     const refreshedToken = data.session?.access_token;
     if (error || !refreshedToken) {
+      if (isInvalidRefreshTokenError(error)) {
+        await clearStoredSupabaseSession();
+      }
       throw new Error('Sessao expirada. Faca login novamente.');
     }
     return refreshedToken;
@@ -161,6 +165,9 @@ async function getValidAccessToken(forceRefresh = false): Promise<string> {
 
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
   if (sessionError) {
+    if (isInvalidRefreshTokenError(sessionError)) {
+      await clearStoredSupabaseSession();
+    }
     throw new Error('Nao foi possivel validar a sessao. Faca login novamente.');
   }
 
@@ -295,10 +302,17 @@ function buildRpcParams(filters: {
   };
 }
 
+function isSessionExpiredMessage(message: string | null | undefined): boolean {
+  const normalized = (message ?? '').toLowerCase();
+  return normalized.includes('sessao expirada') || normalized.includes('faça login novamente') || normalized.includes('faca login novamente');
+}
+
 export default function AIInsights() {
   const { companyId, company, role } = useCompany();
   const { isBlockedPhone } = useBlockedPhones();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const location = useLocation();
   const reviewSectionRef = useRef<HTMLDivElement | null>(null);
   const canRunManualAnalysis = role === 'owner_admin';
   const timezone = company?.settings?.timezone || 'UTC';
@@ -529,6 +543,13 @@ export default function AIInsights() {
     finishedJobRef.current = null;
   };
 
+  const redirectToLogin = (message?: string) => {
+    closeModal();
+    toast.error(message || 'Sessao expirada. Faca login novamente.');
+    const redirect = `${location.pathname}${location.search}${location.hash}`;
+    navigate(`/login?redirect=${encodeURIComponent(redirect)}`, { replace: true });
+  };
+
   const openModal = () => {
     if (!canRunManualAnalysis) return;
     setShowModal(true);
@@ -608,6 +629,10 @@ export default function AIInsights() {
       setFormError(null);
     },
     onError: (error) => {
+      if (isSessionExpiredMessage(error.message)) {
+        redirectToLogin(error.message);
+        return;
+      }
       setFormError(error.message || 'Erro ao iniciar analise manual.');
     },
   });
@@ -630,9 +655,21 @@ export default function AIInsights() {
       queryClient.invalidateQueries({ queryKey: ['ai-seller-audit'] });
     },
     onError: (error) => {
+      if (isSessionExpiredMessage(error.message)) {
+        redirectToLogin(error.message);
+        return;
+      }
       toast.error(error.message || 'Falha ao iniciar auditoria mensal.');
     },
   });
+
+  useEffect(() => {
+    if (!showModal || !previewQuery.isError) return;
+    const message = previewQuery.error?.message ?? '';
+    if (isSessionExpiredMessage(message)) {
+      redirectToLogin(message);
+    }
+  }, [previewQuery.error, previewQuery.isError, showModal]);
 
   const jobQuery = useQuery<AIAnalysisJob, Error>({
     queryKey: ['ai-insights', 'job', companyId, jobId],

@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 import { env } from './config/env';
@@ -97,7 +97,8 @@ function ProtectedRoutes() {
     if (location.pathname === '/') {
       return <MarketingLanding />;
     }
-    return <Navigate to="/" replace />;
+    const redirect = `${location.pathname}${location.search}${location.hash}`;
+    return <Navigate to={`/login?redirect=${encodeURIComponent(redirect)}`} replace />;
   }
 
   return (
@@ -201,6 +202,8 @@ function ProtectedRoutes() {
 
 function AuthRoute() {
   const { user, loading } = useAuth();
+  const [searchParams] = useSearchParams();
+  const redirectTo = searchParams.get('redirect') || '/';
 
   if (loading) {
     return (
@@ -209,7 +212,7 @@ function AuthRoute() {
       </div>
     );
   }
-  if (user) return <Navigate to="/" replace />;
+  if (user) return <Navigate to={redirectTo} replace />;
 
   return <Login />;
 }
