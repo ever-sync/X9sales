@@ -1,5 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk';
-import { config, supabase } from '../config';
+import { supabase } from '../config';
+import { generateTextWithCompanyProviders } from '../lib/ai-provider';
 
 export const SELLER_AUDIT_MODEL = 'claude-haiku-4-5-20251001';
 export const SELLER_AUDIT_PROMPT_VERSION = 'v1-manager-hard';
@@ -359,15 +359,6 @@ const failureTagCatalog: Record<string, { label: string; severity: SeverityLevel
     impact: 'Transforma oportunidade em conversa sem direcao.',
   },
 };
-
-let anthropic: Anthropic | null = null;
-
-function getAnthropicClient(): Anthropic {
-  if (!anthropic) {
-    anthropic = new Anthropic({ apiKey: config.anthropicApiKey });
-  }
-  return anthropic;
-}
 
 function coerceRpcSingleRow<T>(value: unknown): T | null {
   if (!value) return null;
@@ -1207,16 +1198,13 @@ function buildMemoryPayload(memories: ConversationMemory[]): Array<Record<string
 }
 
 async function callClaudeForSellerAudit(
+  companyId: string,
   agentName: string,
   periodStart: string,
   periodEnd: string,
   supportMetrics: SupportMetrics,
   memories: ConversationMemory[],
-): Promise<Partial<AuditReport>> {
-  if (!config.anthropicApiKey) {
-    return {};
-  }
-
+): Promise<{ report: Partial<AuditReport>; modelUsed: string }> {
   const systemPrompt =
     'Voce e uma IA especialista em auditoria comercial, performance de vendedores, vendas por WhatsApp e analise critica para gestor. ' +
     'Seu tom deve ser duro, executivo, claro e objetivo. ' +
@@ -1314,24 +1302,24 @@ async function callClaudeForSellerAudit(
     '- se o vendedor for fraco, diga com clareza que ele e fraco\n' +
     '- o compromisso e com a verdade comercial, nao com o conforto do vendedor';
 
-  const response = await getAnthropicClient().messages.create({
-    model: SELLER_AUDIT_MODEL,
-    max_tokens: 3200,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }],
+  const response = await generateTextWithCompanyProviders({
+    companyId,
+    systemPrompt,
+    userPrompt,
+    maxTokens: 3200,
+    defaultModel: SELLER_AUDIT_MODEL,
+    taskLabel: 'SellerAudit',
   });
 
-  const content = response.content[0];
-  if (content.type !== 'text') {
-    throw new Error('Unexpected non-text response from Claude.');
-  }
-
-  const jsonMatch = content.text.match(/\{[\s\S]*\}/);
+  const jsonMatch = response.text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    throw new Error(`Claude did not return JSON: ${content.text.slice(0, 260)}`);
+    throw new Error(`Modelo nao retornou JSON: ${response.text.slice(0, 260)}`);
   }
 
-  return JSON.parse(jsonMatch[0]) as Partial<AuditReport>;
+  return {
+    report: JSON.parse(jsonMatch[0]) as Partial<AuditReport>,
+    modelUsed: response.modelUsed,
+  };
 }
 
 function mergeScorecard(parsed: unknown, fallback: AuditScorecard): AuditScorecard {
@@ -1474,6 +1462,7 @@ function buildAuditMarkdown(
   periodStart: string,
   periodEnd: string,
   report: AuditReport,
+  modelUsed: string,
 ): string {
   const opportunityLines = report.lost_opportunities.length
     ? report.lost_opportunities.map((opportunity) =>
@@ -1561,7 +1550,7 @@ function buildAuditMarkdown(
     `**Conclusao final**`,
     report.final_conclusion,
     '',
-    `_Modelo: ${SELLER_AUDIT_MODEL} | Prompt: ${SELLER_AUDIT_PROMPT_VERSION}_`,
+    `_Modelo: ${modelUsed} | Prompt: ${SELLER_AUDIT_PROMPT_VERSION}_`,
   ].join('\n');
 }
 
@@ -1909,7 +1898,7 @@ function buildEmptyAuditReport(agentName: string, openAlerts: number): AuditRepo
 
 async function generateSellerAudit(
   run: AISellerAuditRunRow,
-): Promise<{ report: AuditReport; markdown: string; totalConversations: number; analyzedCount: number; failedCount: number }> {
+): Promise<{ report: AuditReport; markdown: string; totalConversations: number; analyzedCount: number; failedCount: number; modelUsed: string }> {
   const settings = await getCompanyAuditSettings(run.company_id);
   const companyTimezone = sanitizeText(run.company_timezone, 80) || settings.timezone;
   const agent = await fetchAgent(run.company_id, run.agent_id);
@@ -1929,10 +1918,11 @@ async function generateSellerAudit(
     const report = buildEmptyAuditReport(agent.name, openAlerts);
     return {
       report,
-      markdown: buildAuditMarkdown(agent.name, run.period_start, run.period_end, report),
+      markdown: buildAuditMarkdown(agent.name, run.period_start, run.period_end, report, SELLER_AUDIT_MODEL),
       totalConversations: 0,
       analyzedCount: 0,
       failedCount: 0,
+      modelUsed: SELLER_AUDIT_MODEL,
     };
   }
 
@@ -2000,14 +1990,18 @@ async function generateSellerAudit(
   const fallbackReport = buildFallbackAuditReport(agent.name, supportMetrics, memories);
 
   let parsedReport: Partial<AuditReport> = {};
+  let modelUsed = SELLER_AUDIT_MODEL;
   try {
-    parsedReport = await callClaudeForSellerAudit(
+    const llm = await callClaudeForSellerAudit(
+      run.company_id,
       agent.name,
       run.period_start,
       run.period_end,
       supportMetrics,
       memories,
     );
+    parsedReport = llm.report;
+    modelUsed = llm.modelUsed;
   } catch (error) {
     console.error(`[SellerAudit] Claude generation failed for run ${run.id}, using fallback report:`, error);
   }
@@ -2015,10 +2009,11 @@ async function generateSellerAudit(
   const report = mergeAuditReport(parsedReport, fallbackReport);
   return {
     report,
-    markdown: buildAuditMarkdown(agent.name, run.period_start, run.period_end, report),
+    markdown: buildAuditMarkdown(agent.name, run.period_start, run.period_end, report, modelUsed),
     totalConversations,
     analyzedCount: memories.length,
     failedCount,
+    modelUsed,
   };
 }
 
@@ -2029,6 +2024,7 @@ async function completeRun(
   totalConversations: number,
   analyzedCount: number,
   failedCount: number,
+  modelUsed: string,
 ): Promise<void> {
   await updateRun(runId, {
     status: 'completed',
@@ -2038,7 +2034,7 @@ async function completeRun(
     failed_count: failedCount,
     report_json: report as unknown as Record<string, unknown>,
     report_markdown: markdown,
-    model_used: SELLER_AUDIT_MODEL,
+    model_used: modelUsed,
     prompt_version: SELLER_AUDIT_PROMPT_VERSION,
     error_message: null,
     finished_at: new Date().toISOString(),
@@ -2101,6 +2097,7 @@ async function executeSellerAuditRun(run: AISellerAuditRunRow): Promise<AISeller
       generated.totalConversations,
       generated.analyzedCount,
       generated.failedCount,
+      generated.modelUsed,
     );
   } catch (error) {
     const message = trimErrorMessage(error);

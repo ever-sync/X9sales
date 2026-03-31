@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  ArrowDown,
+  ArrowUp,
   BellRing,
+  BrainCircuit,
   Building2,
   CreditCard,
   Globe2,
@@ -12,6 +15,7 @@ import {
   ShieldAlert,
   UserPlus,
   Users,
+  Trash2,
   X,
   Clock3,
   RefreshCcw,
@@ -32,7 +36,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Input } from '../components/ui/input';
 import { supabase } from '../integrations/supabase/client';
 import { env } from '../config/env';
-import type { BillingInvoice, BillingSubscription, BlockedAnalysisCustomer, CompanyInvite, CompanySettings, NotificationJobSummary } from '../types';
+import type { AIProviderConfig, AIProviderKind, BillingInvoice, BillingSubscription, BlockedAnalysisCustomer, Company, CompanyInvite, CompanySettings, NotificationJobSummary } from '../types';
 import { cn, formatCurrency, formatDate, formatDateTime, formatSeconds } from '../lib/utils';
 import { areBrowserAlertsEnabled, requestBrowserAlertPermission, setBrowserAlertsEnabled } from '../lib/browserNotifications';
 
@@ -244,6 +248,109 @@ function roleLabel(role: string) {
     agent: 'VISUALIZADOR',
   };
   return labels[role] ?? role;
+}
+
+type AIProviderOption = {
+  value: AIProviderKind;
+  label: string;
+  defaultModel: string;
+  defaultBaseUrl?: string;
+  apiKeyPlaceholder: string;
+};
+
+const aiProviderOptions: AIProviderOption[] = [
+  {
+    value: 'anthropic',
+    label: 'Anthropic',
+    defaultModel: 'claude-haiku-4-5-20251001',
+    apiKeyPlaceholder: 'sk-ant-...',
+  },
+  {
+    value: 'openai',
+    label: 'OpenAI',
+    defaultModel: 'gpt-4o-mini',
+    defaultBaseUrl: 'https://api.openai.com/v1',
+    apiKeyPlaceholder: 'sk-...',
+  },
+  {
+    value: 'gemini',
+    label: 'Gemini',
+    defaultModel: 'gemini-2.5-flash',
+    defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    apiKeyPlaceholder: 'AIza...',
+  },
+  {
+    value: 'grok',
+    label: 'Grok (xAI)',
+    defaultModel: 'grok-3-mini',
+    defaultBaseUrl: 'https://api.x.ai/v1',
+    apiKeyPlaceholder: 'xai-...',
+  },
+  {
+    value: 'deepseek',
+    label: 'DeepSeek',
+    defaultModel: 'deepseek-chat',
+    defaultBaseUrl: 'https://api.deepseek.com/v1',
+    apiKeyPlaceholder: 'sk-...',
+  },
+  {
+    value: 'custom',
+    label: 'Custom (OpenAI compat)',
+    defaultModel: 'gpt-4o-mini',
+    defaultBaseUrl: 'https://api.openai.com/v1',
+    apiKeyPlaceholder: 'chave da sua API',
+  },
+];
+
+function getProviderOption(kind: AIProviderKind): AIProviderOption {
+  return aiProviderOptions.find((option) => option.value === kind) ?? aiProviderOptions[0];
+}
+
+function createProviderId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `prov-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createProviderConfig(kind: AIProviderKind, order: number): AIProviderConfig {
+  const option = getProviderOption(kind);
+  return {
+    id: createProviderId(),
+    provider: kind,
+    label: option.label,
+    api_key: '',
+    model: option.defaultModel,
+    base_url: option.defaultBaseUrl ?? '',
+    enabled: true,
+    order,
+  };
+}
+
+function normalizeAIProviderConfigs(value: unknown): AIProviderConfig[] {
+  if (!Array.isArray(value)) return [];
+  const normalized = value
+    .filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === 'object')
+    .map((entry, index) => {
+      const provider = aiProviderOptions.some((option) => option.value === entry.provider)
+        ? (entry.provider as AIProviderKind)
+        : 'anthropic';
+      const option = getProviderOption(provider);
+      return {
+        id: typeof entry.id === 'string' && entry.id.trim() ? entry.id : createProviderId(),
+        provider,
+        label: typeof entry.label === 'string' && entry.label.trim() ? entry.label.trim() : option.label,
+        api_key: typeof entry.api_key === 'string' ? entry.api_key : '',
+        model: typeof entry.model === 'string' && entry.model.trim() ? entry.model.trim() : option.defaultModel,
+        base_url: typeof entry.base_url === 'string' ? entry.base_url : option.defaultBaseUrl ?? '',
+        enabled: entry.enabled !== false,
+        order: typeof entry.order === 'number' ? entry.order : index,
+      } satisfies AIProviderConfig;
+    })
+    .sort((a, b) => a.order - b.order)
+    .map((item, index) => ({ ...item, order: index }));
+
+  return normalized;
 }
 
 export default function Settings() {
@@ -2091,7 +2198,16 @@ export default function Settings() {
         )}
 
         <TabsContent value="integrations" className="mt-0">
-          <IntegrationsTab companyId={company?.id ?? null} />
+          <IntegrationsTab
+            company={company}
+            onSaveAiProviders={(providers) =>
+              updateSettingsMutation.mutate({
+                ...company.settings,
+                ai_providers: providers,
+              })
+            }
+            isSavingAiProviders={updateSettingsMutation.isPending}
+          />
         </TabsContent>
       </Tabs>
     </div>
@@ -2130,7 +2246,23 @@ function CopyField({ label, value }: { label: string; value: string }) {
   );
 }
 
-function IntegrationsTab({ companyId }: { companyId: string | null }) {
+function IntegrationsTab({
+  company,
+  onSaveAiProviders,
+  isSavingAiProviders,
+}: {
+  company: Company;
+  onSaveAiProviders: (providers: AIProviderConfig[]) => void;
+  isSavingAiProviders: boolean;
+}) {
+  const companyId = company?.id ?? null;
+  const [aiProviders, setAiProviders] = useState<AIProviderConfig[]>([]);
+
+  useEffect(() => {
+    const fromSettings = normalizeAIProviderConfigs(company.settings.ai_providers);
+    setAiProviders(fromSettings.length ? fromSettings : [createProviderConfig('anthropic', 0)]);
+  }, [company.settings.ai_providers]);
+
   const { data: conversationCount = 0 } = useQuery<number>({
     queryKey: ['integration-status', companyId],
     queryFn: async () => {
@@ -2148,6 +2280,77 @@ function IntegrationsTab({ companyId }: { companyId: string | null }) {
 
   const isConnected = conversationCount > 0;
   const webhookUrl = `${env.VITE_SUPABASE_URL}/functions/v1/uazapi-webhook`;
+
+  const addProvider = () => {
+    setAiProviders((current) => [...current, createProviderConfig('anthropic', current.length)]);
+  };
+
+  const moveProvider = (index: number, direction: -1 | 1) => {
+    setAiProviders((current) => {
+      const targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= current.length) return current;
+      const next = [...current];
+      const [item] = next.splice(index, 1);
+      next.splice(targetIndex, 0, item);
+      return next.map((entry, position) => ({ ...entry, order: position }));
+    });
+  };
+
+  const removeProvider = (id: string) => {
+    setAiProviders((current) => {
+      if (current.length <= 1) {
+        toast.error('Mantenha pelo menos um provedor configurado.');
+        return current;
+      }
+      return current.filter((item) => item.id !== id).map((entry, index) => ({ ...entry, order: index }));
+    });
+  };
+
+  const updateProvider = (id: string, patch: Partial<AIProviderConfig>) => {
+    setAiProviders((current) =>
+      current.map((entry) => {
+        if (entry.id !== id) return entry;
+        const next = { ...entry, ...patch };
+        if (patch.provider && patch.provider !== entry.provider) {
+          const option = getProviderOption(patch.provider);
+          next.label = option.label;
+          next.model = option.defaultModel;
+          next.base_url = option.defaultBaseUrl ?? '';
+        }
+        return next;
+      }),
+    );
+  };
+
+  const saveAIProviders = () => {
+    const cleaned = aiProviders
+      .map((provider, index) => {
+        const option = getProviderOption(provider.provider);
+        return {
+          ...provider,
+          label: provider.label.trim() || option.label,
+          api_key: provider.api_key.trim(),
+          model: provider.model?.trim() || option.defaultModel,
+          base_url: provider.provider === 'anthropic'
+            ? ''
+            : (provider.base_url?.trim() || option.defaultBaseUrl || ''),
+          order: index,
+        };
+      })
+      .filter((provider) => provider.api_key.length > 0);
+
+    if (!cleaned.length) {
+      toast.error('Preencha ao menos uma chave de IA antes de salvar.');
+      return;
+    }
+
+    if (!cleaned.some((provider) => provider.enabled)) {
+      toast.error('Ative ao menos um provedor.');
+      return;
+    }
+
+    onSaveAiProviders(cleaned);
+  };
 
   return (
     <div className="space-y-6 rounded-3xl border border-border bg-card p-6">
@@ -2198,6 +2401,143 @@ function IntegrationsTab({ companyId }: { companyId: string | null }) {
         <h4 className="text-sm font-semibold text-foreground">Credenciais da integracao</h4>
         <CopyField label="URL do Webhook" value={webhookUrl} />
         {companyId && <CopyField label="Company ID (use no campo company_id)" value={companyId} />}
+      </div>
+
+      <div className="space-y-4 rounded-2xl border border-border bg-background p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <h4 className="text-sm font-semibold text-foreground">Provedores de IA</h4>
+            <p className="text-xs text-muted-foreground">
+              Voce pode ativar varios provedores. O primeiro da lista sera tentado primeiro (padrao) e, se falhar, o sistema testa os proximos.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={addProvider}
+            className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:bg-muted"
+          >
+            <BrainCircuit className="h-3.5 w-3.5" />
+            Adicionar chave
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          {aiProviders.map((provider, index) => {
+            const option = getProviderOption(provider.provider);
+            const isFirst = index === 0;
+            return (
+              <div key={provider.id} className="rounded-2xl border border-border bg-card p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground">
+                      Prioridade {index + 1}
+                    </span>
+                    {isFirst && (
+                      <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-primary">
+                        Padrao
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-medium text-muted-foreground">Ativo</label>
+                    <Switch
+                      checked={provider.enabled}
+                      onChange={(event) => updateProvider(provider.id, { enabled: event.target.checked })}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => moveProvider(index, -1)}
+                      disabled={index === 0}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label="Subir prioridade"
+                    >
+                      <ArrowUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveProvider(index, 1)}
+                      disabled={index === aiProviders.length - 1}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label="Descer prioridade"
+                    >
+                      <ArrowDown className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeProvider(provider.id)}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border text-red-600 transition-colors hover:bg-red-50"
+                      aria-label="Remover provedor"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Provedor</label>
+                    <select
+                      value={provider.provider}
+                      onChange={(event) => updateProvider(provider.id, { provider: event.target.value as AIProviderKind })}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      {aiProviderOptions.map((providerOption) => (
+                        <option key={providerOption.value} value={providerOption.value}>{providerOption.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Nome exibicao</label>
+                    <Input
+                      value={provider.label}
+                      onChange={(event) => updateProvider(provider.id, { label: event.target.value })}
+                      placeholder={option.label}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Modelo</label>
+                    <Input
+                      value={provider.model ?? ''}
+                      onChange={(event) => updateProvider(provider.id, { model: event.target.value })}
+                      placeholder={option.defaultModel}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Chave API</label>
+                    <Input
+                      type="password"
+                      value={provider.api_key}
+                      onChange={(event) => updateProvider(provider.id, { api_key: event.target.value })}
+                      placeholder={option.apiKeyPlaceholder}
+                    />
+                  </div>
+                  {provider.provider !== 'anthropic' && (
+                    <div className="md:col-span-2">
+                      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Base URL (opcional)</label>
+                      <Input
+                        value={provider.base_url ?? ''}
+                        onChange={(event) => updateProvider(provider.id, { base_url: event.target.value })}
+                        placeholder={option.defaultBaseUrl ?? 'https://api.seu-provedor.com/v1'}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={saveAIProviders}
+            disabled={isSavingAiProviders}
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Save className="h-4 w-4" />
+            Salvar provedores IA
+          </button>
+        </div>
       </div>
 
       {/* passo a passo */}

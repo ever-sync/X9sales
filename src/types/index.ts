@@ -26,6 +26,19 @@ export interface BlockedAnalysisCustomer {
   phone: string;
 }
 
+export type AIProviderKind = 'anthropic' | 'openai' | 'gemini' | 'grok' | 'deepseek' | 'custom';
+
+export interface AIProviderConfig {
+  id: string;
+  provider: AIProviderKind;
+  label: string;
+  api_key: string;
+  model?: string;
+  base_url?: string;
+  enabled: boolean;
+  order: number;
+}
+
 export interface CompanySettings {
   sla_first_response_sec: number;
   sla_resolution_sec: number;
@@ -47,6 +60,7 @@ export interface CompanySettings {
   blocked_report_numbers?: string[];
   block_team_analysis?: boolean;
   blocked_analysis_customers?: BlockedAnalysisCustomer[];
+  ai_providers?: AIProviderConfig[];
 }
 
 export interface BillingSubscription {

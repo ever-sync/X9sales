@@ -1,5 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk';
-import { config, supabase } from '../config';
+import { supabase } from '../config';
+import { generateTextWithCompanyProviders } from '../lib/ai-provider';
 
 export const PRODUCT_INTELLIGENCE_MODEL = 'claude-haiku-4-5-20251001';
 export const PRODUCT_INTELLIGENCE_PROMPT_VERSION = 'v1-product-market-intel';
@@ -223,15 +223,6 @@ interface ProductSupportSummary {
   top_profiles: CountBucket[];
   top_customer_intents: CountBucket[];
   top_loss_reasons: CountBucket[];
-}
-
-let anthropic: Anthropic | null = null;
-
-function getAnthropicClient(): Anthropic {
-  if (!anthropic) {
-    anthropic = new Anthropic({ apiKey: config.anthropicApiKey });
-  }
-  return anthropic;
 }
 
 function coerceRpcSingleRow<T>(value: unknown): T | null {
@@ -1001,15 +992,12 @@ function buildFallbackProductReport(summary: ProductSupportSummary): ProductStra
 }
 
 async function callClaudeForProductIntelligence(
+  companyId: string,
   periodStart: string,
   periodEnd: string,
   supportSummary: ProductSupportSummary,
   memories: ConversationMemory[],
-): Promise<Partial<ProductStrategicReport>> {
-  if (!config.anthropicApiKey) {
-    return {};
-  }
-
+): Promise<{ report: Partial<ProductStrategicReport>; modelUsed: string }> {
   const systemPrompt =
     'Voce e uma IA especialista em analise de produto, inteligencia de mercado, comportamento do cliente e atendimento comercial. ' +
     'Sua funcao e analisar conversas de todos os atendentes para extrair inteligencia estrategica sobre produto, oferta, posicionamento, comunicacao e mercado. ' +
@@ -1057,24 +1045,24 @@ async function callClaudeForProductIntelligence(
     '- foque no que a empresa precisa decidir primeiro\n' +
     '- cite apenas conversation_id reais presentes nas memorias compactas';
 
-  const response = await getAnthropicClient().messages.create({
-    model: PRODUCT_INTELLIGENCE_MODEL,
-    max_tokens: 3600,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }],
+  const response = await generateTextWithCompanyProviders({
+    companyId,
+    systemPrompt,
+    userPrompt,
+    maxTokens: 3600,
+    defaultModel: PRODUCT_INTELLIGENCE_MODEL,
+    taskLabel: 'ProductIntelligence',
   });
 
-  const content = response.content[0];
-  if (content.type !== 'text') {
-    throw new Error('Unexpected non-text response from Claude.');
-  }
-
-  const jsonMatch = content.text.match(/\{[\s\S]*\}/);
+  const jsonMatch = response.text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    throw new Error(`Claude did not return JSON: ${content.text.slice(0, 260)}`);
+    throw new Error(`Modelo nao retornou JSON: ${response.text.slice(0, 260)}`);
   }
 
-  return JSON.parse(jsonMatch[0]) as Partial<ProductStrategicReport>;
+  return {
+    report: JSON.parse(jsonMatch[0]) as Partial<ProductStrategicReport>,
+    modelUsed: response.modelUsed,
+  };
 }
 
 function sanitizeCause(value: unknown): CauseLevel {
@@ -1294,7 +1282,7 @@ async function findFreshCompletedProductRun(
 
 async function generateProductIntelligence(
   run: ProductIntelligenceRunRow,
-): Promise<{ report: ProductStrategicReport; markdown: string; totalConversations: number; analyzedCount: number; failedCount: number }> {
+): Promise<{ report: ProductStrategicReport; markdown: string; totalConversations: number; analyzedCount: number; failedCount: number; modelUsed: string }> {
   const settings = await getCompanyProductSettings(run.company_id);
   const companyTimezone = sanitizeText(run.company_timezone, 80) || settings.timezone;
   const conversations = await loadCandidateConversations({
@@ -1314,6 +1302,7 @@ async function generateProductIntelligence(
       totalConversations: 0,
       analyzedCount: 0,
       failedCount: 0,
+      modelUsed: PRODUCT_INTELLIGENCE_MODEL,
     };
   }
 
@@ -1371,8 +1360,17 @@ async function generateProductIntelligence(
   const fallbackReport = buildFallbackProductReport(supportSummary);
 
   let parsedReport: Partial<ProductStrategicReport> = {};
+  let modelUsed = PRODUCT_INTELLIGENCE_MODEL;
   try {
-    parsedReport = await callClaudeForProductIntelligence(run.period_start, run.period_end, supportSummary, memories);
+    const llm = await callClaudeForProductIntelligence(
+      run.company_id,
+      run.period_start,
+      run.period_end,
+      supportSummary,
+      memories,
+    );
+    parsedReport = llm.report;
+    modelUsed = llm.modelUsed;
   } catch (error) {
     console.error(`[ProductIntelligence] Claude generation failed for run ${run.id}, using fallback report:`, error);
   }
@@ -1386,6 +1384,7 @@ async function generateProductIntelligence(
     totalConversations,
     analyzedCount: memories.length,
     failedCount,
+    modelUsed,
   };
 }
 
@@ -1396,6 +1395,7 @@ async function completeRun(
   totalConversations: number,
   analyzedCount: number,
   failedCount: number,
+  modelUsed: string,
 ): Promise<void> {
   await updateRun(runId, {
     status: 'completed',
@@ -1405,7 +1405,7 @@ async function completeRun(
     failed_count: failedCount,
     report_json: report as unknown as Record<string, unknown>,
     report_markdown: markdown,
-    model_used: PRODUCT_INTELLIGENCE_MODEL,
+    model_used: modelUsed,
     prompt_version: PRODUCT_INTELLIGENCE_PROMPT_VERSION,
     error_message: null,
     finished_at: new Date().toISOString(),
@@ -1460,7 +1460,15 @@ async function executeProductIntelligenceRun(run: ProductIntelligenceRunRow): Pr
 
   try {
     const generated = await generateProductIntelligence(run);
-    await completeRun(run.id, generated.report, generated.markdown, generated.totalConversations, generated.analyzedCount, generated.failedCount);
+    await completeRun(
+      run.id,
+      generated.report,
+      generated.markdown,
+      generated.totalConversations,
+      generated.analyzedCount,
+      generated.failedCount,
+      generated.modelUsed,
+    );
   } catch (error) {
     const message = trimErrorMessage(error);
     await failRun(run.id, run, message);

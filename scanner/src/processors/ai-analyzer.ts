@@ -1,5 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk';
-import { config, supabase } from '../config';
+import { supabase } from '../config';
+import { generateTextWithCompanyProviders, hasAnyAIProviderConfigured } from '../lib/ai-provider';
 import { queueSellerAuditRun } from './seller-audit';
 
 const MODEL = 'claude-haiku-4-5-20251001';
@@ -158,15 +158,6 @@ interface ConversationForAnalysis {
   company_id: string;
   agent_id: string;
   raw_conversation_id: string;
-}
-
-let anthropic: Anthropic | null = null;
-
-function getAnthropicClient(): Anthropic {
-  if (!anthropic) {
-    anthropic = new Anthropic({ apiKey: config.anthropicApiKey });
-  }
-  return anthropic;
 }
 
 function coerceRpcSingleRow<T>(value: unknown): T | null {
@@ -380,14 +371,22 @@ function normalizeAnalysis(result: AIAnalysisResult): AIAnalysisResult {
 }
 
 export async function processAiAnalysisJobs(): Promise<void> {
-  if (!config.anthropicApiKey) {
-    console.log('[AIAnalyzer] ANTHROPIC_API_KEY not configured, skipping manual jobs.');
-    return;
-  }
-
   const job = await dequeueAiAnalysisJob();
   if (!job) {
     console.log('[AIAnalyzer] No queued manual AI analysis jobs.');
+    return;
+  }
+
+  const hasProvider = await hasAnyAIProviderConfigured(job.company_id);
+  if (!hasProvider) {
+    const message = 'Nenhum provedor de IA ativo configurado para a empresa.';
+    console.error(`[AIAnalyzer] ${message} company=${job.company_id}`);
+    await failJob(job.id, {
+      processed_count: job.processed_count ?? 0,
+      analyzed_count: job.analyzed_count ?? 0,
+      skipped_count: job.skipped_count ?? 0,
+      failed_count: job.failed_count ?? 0,
+    }, message);
     return;
   }
 
@@ -578,10 +577,15 @@ async function analyzeCandidateConversation(candidate: CandidateConversation): P
   }
 
   const kbContext = await fetchKnowledgeContext(transcript, conversation.company_id);
-  const result = await callClaudeHaiku(transcript, (rawConv as RawConversation).channel ?? 'unknown', kbContext);
+  const { result, modelUsed } = await callClaudeHaiku(
+    transcript,
+    (rawConv as RawConversation).channel ?? 'unknown',
+    kbContext,
+    conversation.company_id,
+  );
   const { quality_score, weighted_breakdown } = calculateWeightedScore(result);
   result.quality_score = quality_score;
-  await saveAnalysis(conversation, result, weighted_breakdown);
+  await saveAnalysis(conversation, result, weighted_breakdown, modelUsed);
 
   if (result.needs_coaching && (result.quality_score ?? 100) < 70) {
     try {
@@ -678,9 +682,8 @@ async function callClaudeHaiku(
   transcript: string,
   channel: string,
   kbContext: string,
-): Promise<AIAnalysisResult> {
-  const client = getAnthropicClient();
-
+  companyId: string,
+): Promise<{ result: AIAnalysisResult; modelUsed: string }> {
   const systemPrompt =
     'Voce e um analista especialista em qualidade de vendas e atendimento ao cliente. ' +
     'Analise a conversa de forma estruturada seguindo as instrucoes exatas. ' +
@@ -806,34 +809,31 @@ async function callClaudeHaiku(
     '- Em pillar_evidence, cite trechos reais que comprovem o score dado\n' +
     '- failure_tags devem usar APENAS as tags da lista fornecida';
 
-  const response = await client.messages.create({
-    model: MODEL,
-    max_tokens: 2800,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }],
+  const response = await generateTextWithCompanyProviders({
+    companyId,
+    systemPrompt,
+    userPrompt,
+    maxTokens: 2800,
+    defaultModel: MODEL,
+    taskLabel: 'AIAnalyzer',
   });
 
-  if (response.stop_reason === 'max_tokens') {
-    console.warn('[AIAnalyzer] Response truncated due to max_tokens limit. Consider increasing.');
-  }
-
-  const content = response.content[0];
-  if (content.type !== 'text') {
-    throw new Error('Unexpected non-text response from Claude.');
-  }
-
-  const jsonMatch = content.text.match(/\{[\s\S]*\}/);
+  const jsonMatch = response.text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    throw new Error(`Claude did not return JSON: ${content.text.slice(0, 200)}`);
+    throw new Error(`Modelo nao retornou JSON: ${response.text.slice(0, 200)}`);
   }
 
-  return JSON.parse(jsonMatch[0]) as AIAnalysisResult;
+  return {
+    result: JSON.parse(jsonMatch[0]) as AIAnalysisResult,
+    modelUsed: response.modelUsed,
+  };
 }
 
 async function saveAnalysis(
   conversation: ConversationForAnalysis,
   result: AIAnalysisResult,
   weightedBreakdown: WeightedBreakdown,
+  modelUsed: string,
 ): Promise<void> {
   const normalized = normalizeAnalysis(result);
   const analyzedAt = new Date().toISOString();
@@ -880,7 +880,7 @@ async function saveAnalysis(
         needs_coaching: normalized.needs_coaching,
         coaching_tips: normalized.coaching_tips,
         training_tags: normalized.training_tags,
-        model_used: MODEL,
+        model_used: modelUsed,
         prompt_version: PROMPT_VERSION,
         raw_ai_response: result as unknown as Record<string, unknown>,
         structured_analysis: structuredAnalysis,
