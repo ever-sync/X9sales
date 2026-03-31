@@ -21,3 +21,6 @@ site_url = "http://localhost:5173"
 [auth.email]
 enable_signup = true
 enable_confirmations = false
+
+[functions.uazapi-webhook]
+verify_jwt = false
