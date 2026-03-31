@@ -175,6 +175,16 @@ function trimErrorMessage(value: unknown): string {
   return message.slice(0, MAX_ERROR_MESSAGE_LENGTH);
 }
 
+function isProviderQuotaError(value: unknown): boolean {
+  const message = trimErrorMessage(value).toLowerCase();
+  return (
+    message.includes('http 429') ||
+    message.includes('quota') ||
+    message.includes('rate limit') ||
+    message.includes('exceeded your current quota')
+  );
+}
+
 function normalizeSmallint(
   value: unknown,
   min: number,
@@ -483,6 +493,11 @@ async function runAiAnalysisJob(job: AIAnalysisJobRow): Promise<void> {
           counters.skipped_count += 1;
         }
       } catch (error) {
+        if (isProviderQuotaError(error)) {
+          throw new Error(
+            `Provedor de IA indisponivel por quota/limite. Interrompendo job para evitar falhas em massa. Detalhe: ${trimErrorMessage(error)}`,
+          );
+        }
         counters.failed_count += 1;
         console.error(
           `[AIAnalyzer] Job ${job.id} failed conversation ${candidate.conversation_id}:`,
