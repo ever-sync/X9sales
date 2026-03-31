@@ -160,6 +160,8 @@ interface ConversationForAnalysis {
   raw_conversation_id: string;
 }
 
+let embeddingsEnabled: boolean | null = null;
+
 function coerceRpcSingleRow<T>(value: unknown): T | null {
   if (!value) return null;
   const row = Array.isArray(value) ? (value[0] ?? null) : value;
@@ -283,6 +285,45 @@ function normalizeSeverityFindings(value: unknown): SeverityFinding[] {
     }))
     .filter((item) => item.tag.length > 0)
     .slice(0, 10);
+}
+
+function sanitizeJsonCandidate(value: string): string {
+  return value
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/\u00A0/g, ' ')
+    .trim();
+}
+
+function tryParseJsonObject(raw: string): AIAnalysisResult {
+  const cleaned = sanitizeJsonCandidate(raw);
+  const direct = cleaned.match(/\{[\s\S]*\}/);
+  const candidates = [
+    cleaned,
+    direct?.[0] ?? '',
+  ].filter((item) => item.length > 0);
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate) as AIAnalysisResult;
+    } catch {
+      // Try a light repair pass for common LLM output mistakes.
+      try {
+        const repaired = candidate
+          .replace(/,\s*([}\]])/g, '$1')
+          .replace(/[\u0000-\u001F]+/g, ' ')
+          .trim();
+        return JSON.parse(repaired) as AIAnalysisResult;
+      } catch {
+        // Continue trying next candidate.
+      }
+    }
+  }
+
+  throw new Error(`Nao foi possivel converter resposta da IA em JSON valido: ${cleaned.slice(0, 280)}`);
 }
 
 const PILLAR_WEIGHTS = {
@@ -624,6 +665,11 @@ function buildTranscript(messages: RawMessage[]): string {
 async function fetchKnowledgeContext(transcript: string, companyId: string): Promise<string> {
   const openAiKey = process.env.OPENAI_API_KEY;
   if (!openAiKey) {
+    embeddingsEnabled = false;
+    return '';
+  }
+
+  if (embeddingsEnabled === false) {
     return '';
   }
 
@@ -641,9 +687,14 @@ async function fetchKnowledgeContext(transcript: string, companyId: string): Pro
     });
 
     if (!embeddingResponse.ok) {
+      if (embeddingResponse.status === 401) {
+        embeddingsEnabled = false;
+      }
       console.warn(`[AIAnalyzer] Embedding API request failed: ${embeddingResponse.status}`);
       return '';
     }
+
+    embeddingsEnabled = true;
 
     const embeddingData = (await embeddingResponse.json()) as OpenAIEmbeddingResponse;
     const embedding = embeddingData.data?.[0]?.embedding;
@@ -818,13 +869,8 @@ async function callClaudeHaiku(
     taskLabel: 'AIAnalyzer',
   });
 
-  const jsonMatch = response.text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error(`Modelo nao retornou JSON: ${response.text.slice(0, 200)}`);
-  }
-
   return {
-    result: JSON.parse(jsonMatch[0]) as AIAnalysisResult,
+    result: tryParseJsonObject(response.text),
     modelUsed: response.modelUsed,
   };
 }

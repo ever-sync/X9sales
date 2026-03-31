@@ -236,7 +236,8 @@ async function callOpenAICompatible(provider: ResolvedProvider, params: Generate
     body: JSON.stringify({
       model: provider.model || params.defaultModel,
       max_tokens: params.maxTokens,
-      temperature: 0.2,
+      temperature: 0,
+      response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: params.systemPrompt },
         { role: 'user', content: params.userPrompt },
