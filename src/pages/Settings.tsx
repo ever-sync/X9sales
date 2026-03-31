@@ -23,6 +23,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useSearchParams } from 'react-router-dom';
 import { useCompany } from '../contexts/CompanyContext';
 import { usePermissions } from '../hooks/usePermissions';
 import { useAuth } from '../hooks/useAuth';
@@ -155,6 +156,16 @@ const weekdayLabels: Record<string, string> = {
   sunday: 'Domingo',
 };
 
+const settingsTabs = ['account', 'company', 'billing', 'notifications', 'blocking', 'users', 'integrations'] as const;
+type SettingsTab = (typeof settingsTabs)[number];
+
+function resolveSettingsTab(value: string | null): SettingsTab {
+  if (value && settingsTabs.includes(value as SettingsTab)) {
+    return value as SettingsTab;
+  }
+  return 'account';
+}
+
 function sanitizeDigits(value: string) {
   return value.replace(/\D/g, '');
 }
@@ -239,6 +250,7 @@ export default function Settings() {
   const { company } = useCompany();
   const { can } = usePermissions();
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [showCreateAccess, setShowCreateAccess] = useState(false);
@@ -336,6 +348,41 @@ export default function Settings() {
 
   const canManageUsers = can('settings.users');
   const canManageBilling = can('settings.company');
+  const requestedTab = resolveSettingsTab(searchParams.get('tab'));
+  const activeTab = requestedTab === 'users' && !canManageUsers ? 'account' : requestedTab;
+  const checkoutStatus = searchParams.get('checkout');
+
+  const handleTabChange = (value: string) => {
+    const nextTab = resolveSettingsTab(value);
+    const params = new URLSearchParams(searchParams);
+
+    if (nextTab === 'account') {
+      params.delete('tab');
+    } else {
+      params.set('tab', nextTab);
+    }
+    params.delete('checkout');
+
+    setSearchParams(params, { replace: true });
+  };
+
+  useEffect(() => {
+    if (!checkoutStatus) return;
+
+    if (checkoutStatus === 'success') {
+      toast.success('Assinatura iniciada com sucesso. Aguarde alguns segundos para sincronizar os dados.');
+      queryClient.invalidateQueries({ queryKey: ['billing-subscription', company?.id] });
+      queryClient.invalidateQueries({ queryKey: ['billing-invoices', company?.id] });
+    } else if (checkoutStatus === 'cancelled') {
+      toast.info('Checkout cancelado. Nenhuma cobranca foi realizada.');
+    } else {
+      toast.error('Nao foi possivel confirmar o resultado do checkout.');
+    }
+
+    const params = new URLSearchParams(searchParams);
+    params.delete('checkout');
+    setSearchParams(params, { replace: true });
+  }, [checkoutStatus, company?.id, queryClient, searchParams, setSearchParams]);
 
   const { data: workspaceUsers = [], isLoading: isLoadingUsers } = useQuery<WorkspaceUser[]>({
     queryKey: ['workspace-users', company?.id],
@@ -780,6 +827,36 @@ export default function Settings() {
     onError: (err: Error) => toast.error(`Erro ao abrir portal de cobranca: ${err.message}`),
   });
 
+  const accessRows = useMemo<WorkspaceAccessRow[]>(
+    () =>
+      [
+        ...workspaceUsers.map((member) => ({
+          kind: 'member' as const,
+          id: member.id,
+          role: member.role,
+          status: member.is_active ? ('Ativo' as const) : ('Inativo' as const),
+          createdAt: member.created_at,
+          display_name: member.display_name,
+          email: member.email,
+          member_id: member.id,
+          user_id: member.user_id,
+          is_active: member.is_active,
+        })),
+        ...pendingInvites.map((invite) => ({
+          kind: 'invite' as const,
+          id: `invite-${invite.id}`,
+          role: invite.role,
+          status: 'Convite pendente' as const,
+          createdAt: invite.created_at,
+          display_name: invite.email.split('@')[0],
+          email: invite.email,
+          invite_id: invite.id,
+          expires_at: invite.expires_at,
+        })),
+      ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    [pendingInvites, workspaceUsers],
+  );
+
   if (!company) {
     return (
       <div className="flex h-64 items-center justify-center text-muted-foreground">
@@ -812,35 +889,6 @@ export default function Settings() {
       .filter((job) => job.job_type === 'admin_report' && job.status === 'pending')
       .sort((a, b) => new Date(a.scheduled_for).getTime() - new Date(b.scheduled_for).getTime())[0] ?? null;
   const pendingInvitesCount = pendingInvites.length;
-  const accessRows = useMemo<WorkspaceAccessRow[]>(
-    () =>
-      [
-        ...workspaceUsers.map((member) => ({
-          kind: 'member' as const,
-          id: member.id,
-          role: member.role,
-          status: member.is_active ? ('Ativo' as const) : ('Inativo' as const),
-          createdAt: member.created_at,
-          display_name: member.display_name,
-          email: member.email,
-          member_id: member.id,
-          user_id: member.user_id,
-          is_active: member.is_active,
-        })),
-        ...pendingInvites.map((invite) => ({
-          kind: 'invite' as const,
-          id: `invite-${invite.id}`,
-          role: invite.role,
-          status: 'Convite pendente' as const,
-          createdAt: invite.created_at,
-          display_name: invite.email.split('@')[0],
-          email: invite.email,
-          invite_id: invite.id,
-          expires_at: invite.expires_at,
-        })),
-      ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
-    [pendingInvites, workspaceUsers],
-  );
 
   const handleProfileChange = (field: keyof ProfileForm, value: string) => {
     setProfileForm((current) => {
@@ -980,7 +1028,7 @@ export default function Settings() {
         <p className="text-muted-foreground mt-1">Gerencie dados da empresa, cobranca e regras de notificacao</p>
       </div>
 
-      <Tabs defaultValue="account" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
         <TabsList className="h-auto w-full justify-start gap-2 rounded-2xl bg-card p-2">
           <TabsTrigger value="account" className="rounded-xl px-4 py-2.5">
             Perfil

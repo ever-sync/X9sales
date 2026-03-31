@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
-import { corsHeaders, getBaseUrl, getServiceClient, getStripeSecretKey, json, requireOwnerAdmin } from "../_shared/settings-runtime.ts";
+import { corsHeaders, getBaseUrl, getStripeSecretKey, json, requireOwnerAdmin } from "../_shared/settings-runtime.ts";
 
 type CheckoutPayload = {
   company_id: string;
@@ -89,12 +89,15 @@ serve(async (req) => {
       body: encodeForm({
         mode: "subscription",
         customer: stripeCustomerId,
+        client_reference_id: payload.company_id,
         success_url: `${baseUrl}/settings?tab=billing&checkout=success`,
         cancel_url: `${baseUrl}/settings?tab=billing&checkout=cancelled`,
         "line_items[0][price]": priceId,
         "line_items[0][quantity]": "1",
         "metadata[company_id]": payload.company_id,
         "metadata[plan_code]": planCode,
+        "subscription_data[metadata][company_id]": payload.company_id,
+        "subscription_data[metadata][plan_code]": planCode,
       }),
     });
 

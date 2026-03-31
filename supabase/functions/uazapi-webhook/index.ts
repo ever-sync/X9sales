@@ -72,6 +72,10 @@ interface UazApiMessageEntry {
 interface UazApiPayload {
   event?: string;
   instance?: string;
+  company_id?: string;
+  companyId?: string;
+  agent_id?: string;
+  agentId?: string;
   data?: unknown;
   [k: string]: unknown;
 }
@@ -406,6 +410,47 @@ function resolveContactName(
   return null;
 }
 
+function resolveCompanyId(queryCompanyId: string | null, payload: UazApiPayload): string | null {
+  const rootData = isRecord(payload.data) ? payload.data : null;
+  const candidates = [
+    queryCompanyId,
+    payload.company_id,
+    payload.companyId,
+    rootData?.["company_id"],
+    rootData?.["companyId"],
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+
+  return null;
+}
+
+function resolveAgentId(queryAgentId: string | null, payload: UazApiPayload): string | null {
+  const rootData = isRecord(payload.data) ? payload.data : null;
+  const aiMetadata = rootData && isRecord(rootData["ai_metadata"]) ? rootData["ai_metadata"] : null;
+  const candidates = [
+    queryAgentId,
+    payload.agent_id,
+    payload.agentId,
+    payload.instance,
+    rootData?.["agent_id"],
+    rootData?.["agentId"],
+    aiMetadata?.["agent_id"],
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+
+  return null;
+}
+
 function isLikelyMessageEntry(candidate: Record<string, unknown>): boolean {
   const hints = [
     "id",
@@ -466,11 +511,8 @@ serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   const url = new URL(req.url);
-  const companyId = url.searchParams.get("company_id");
-  const agentId = url.searchParams.get("agent_id");
-
-  if (!companyId) return err(400, "Parametro 'company_id' obrigatorio na URL");
-  if (!agentId) return err(400, "Parametro 'agent_id' obrigatorio na URL");
+  const queryCompanyId = url.searchParams.get("company_id");
+  const queryAgentId = url.searchParams.get("agent_id");
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
@@ -492,6 +534,16 @@ serve(async (req: Request) => {
       payload = (await req.json()) as UazApiPayload;
     } catch {
       return err(400, "Payload JSON invalido");
+    }
+
+    const companyId = resolveCompanyId(queryCompanyId, payload);
+    if (!companyId) {
+      return err(400, "Parametro 'company_id' obrigatorio (URL ou payload)");
+    }
+
+    const agentId = resolveAgentId(queryAgentId, payload);
+    if (!agentId) {
+      console.warn("[uazapi-webhook] agent_id ausente; mensagens serao ingeridas sem vinculo direto com vendedor");
     }
 
     const normalizedEvent = normalizeEventName(payload.event);
@@ -578,7 +630,7 @@ serve(async (req: Request) => {
       const rawCustomerExternalId = jidToExternalId(remoteJid);
       const customerExternalId = normalizePhone(rawCustomerExternalId) || rawCustomerExternalId;
       const conversationExternalId = `whatsapp:${customerExternalId}`;
-      const scopedMessageId = `${agentId}:${messageId}`;
+      const scopedMessageId = `${agentId ?? "unknown-agent"}:${messageId}`;
       let messageText = rawMessage ? extractText(rawMessage) : (fallbackText ?? "[mensagem]");
       const audioUrl = resolveAudioUrl(rawMessage) ?? resolveFlatAudioUrl(entry);
       const audioMetadata: Record<string, unknown> = {
@@ -640,7 +692,7 @@ serve(async (req: Request) => {
       }
 
       const contactName = resolveContactName(entry, fallbackPushName);
-      if (payload.instance && payload.instance !== agentId) {
+      if (payload.instance && agentId && payload.instance !== agentId) {
         console.warn(
           `[uazapi-webhook] instance mismatch: payload.instance=${payload.instance} agent_id=${agentId}`,
         );

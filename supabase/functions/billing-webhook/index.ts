@@ -10,16 +10,25 @@ type StripeEvent = {
 };
 
 async function verifyStripeSignature(body: string, header: string, secret: string) {
-  const elements = Object.fromEntries(
-    header.split(",").map((part) => {
-      const [k, v] = part.split("=");
-      return [k, v];
-    }),
-  );
+  if (!header) return false;
 
-  const timestamp = elements.t;
-  const expected = elements.v1;
-  if (!timestamp || !expected) return false;
+  let timestamp: string | null = null;
+  const signatures: string[] = [];
+
+  for (const part of header.split(",")) {
+    const [key, ...rest] = part.split("=");
+    const value = rest.join("=").trim();
+    if (!value) continue;
+
+    if (key === "t") timestamp = value;
+    if (key === "v1") signatures.push(value.toLowerCase());
+  }
+
+  if (!timestamp || signatures.length === 0) return false;
+
+  const timestampSeconds = Number.parseInt(timestamp, 10);
+  if (!Number.isFinite(timestampSeconds)) return false;
+  if (Math.abs(Math.floor(Date.now() / 1000) - timestampSeconds) > 5 * 60) return false;
 
   const key = await crypto.subtle.importKey(
     "raw",
@@ -35,8 +44,8 @@ async function verifyStripeSignature(body: string, header: string, secret: strin
     new TextEncoder().encode(`${timestamp}.${body}`),
   );
 
-  const hex = Array.from(new Uint8Array(signature)).map((b) => b.toString(16).padStart(2, "0")).join("");
-  return hex === expected;
+  const hex = Array.from(new Uint8Array(signature)).map((b) => b.toString(16).padStart(2, "0")).join("").toLowerCase();
+  return signatures.includes(hex);
 }
 
 function resolveCompanyId(object: Record<string, any>) {
