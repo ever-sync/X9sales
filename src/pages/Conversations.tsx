@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery, useQueries } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import {
   ArrowDownLeft,
-  ArrowRight,
   ArrowUpRight,
   ChevronLeft,
   ChevronRight,
@@ -74,15 +73,11 @@ function useAgents() {
 
 interface AgentConvOptions {
   companyId: string | null;
-  agentId: string;
+  agentId?: string;
   status?: string;
   channel?: string;
   limit?: number;
   offset?: number;
-}
-
-function agentConvQueryKey(opts: AgentConvOptions) {
-  return ['agent-conversations-preview', opts.companyId, opts.agentId, opts.status, opts.channel, opts.limit];
 }
 
 async function fetchAgentConversations(
@@ -92,7 +87,7 @@ async function fetchAgentConversations(
 
   const { data, error } = await supabase.rpc('get_deduped_conversations', {
     p_company_id: opts.companyId,
-    p_agent_id: opts.agentId,
+    p_agent_id: opts.agentId ?? null,
     p_status: opts.status ?? null,
     p_channel: opts.channel ?? null,
     p_limit: opts.limit ?? 4,
@@ -212,65 +207,14 @@ function ConversationRow({ conv }: { conv: DedupedConversationRow }) {
   );
 }
 
-interface AgentCardProps {
-  agent: Agent;
-  convs: DedupedConversationRow[];
-  total: number;
-  loading: boolean;
-}
-
-function AgentCard({ agent, convs, total, loading }: AgentCardProps) {
-  return (
-    <div className="overflow-hidden rounded-[26px] border border-border/70 bg-card">
-      <div className="flex items-center gap-3 border-b border-border/70 bg-muted/25 px-5 py-4">
-        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 shrink-0">
-          <User className="h-4 w-4 text-primary" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <span className="text-sm font-semibold text-foreground">{agent.name}</span>
-          {!loading && (
-            <span className="ml-2 text-xs text-muted-foreground">
-              {total} conversa{total !== 1 ? 's' : ''}
-            </span>
-          )}
-        </div>
-        <Link
-          to={`/agents/${agent.id}`}
-          className="flex items-center gap-1 text-xs text-primary hover:underline shrink-0"
-        >
-          Ver todas <ArrowRight className="h-3 w-3" />
-        </Link>
-      </div>
-
-      {loading ? (
-        <div className="space-y-2 p-4">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-20 rounded-2xl bg-muted animate-pulse" />
-          ))}
-        </div>
-      ) : convs.length === 0 ? (
-        <div className="px-5 py-8 text-center text-xs text-muted-foreground">
-          Nenhuma conversa encontrada
-        </div>
-      ) : (
-        <div className="divide-y divide-border/70">
-          {convs.map(conv => (
-            <ConversationRow key={conv.id} conv={conv} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function FlatList({ agentId, status, channel }: { agentId: string; status: string; channel: string }) {
+function FlatList({ agentId, status, channel }: { agentId?: string; status: string; channel: string }) {
   const [page, setPage] = useState(1);
   const { companyId } = useCompany();
   const { isBlockedPhone } = useBlockedPhones();
   const pageSize = PAGINATION.DEFAULT_PAGE_SIZE;
 
   const { data, isLoading } = useQuery({
-    queryKey: ['flat-conversations', companyId, agentId, status, channel, page],
+    queryKey: ['flat-conversations', companyId, agentId ?? 'all', status, channel, page],
     queryFn: async () => {
       if (!companyId) return { convs: [] as DedupedConversationRow[], total: 0 };
       return fetchAgentConversations({
@@ -282,7 +226,7 @@ function FlatList({ agentId, status, channel }: { agentId: string; status: strin
         offset: (page - 1) * pageSize,
       });
     },
-    enabled: !!companyId && !!agentId,
+    enabled: !!companyId,
     staleTime: CACHE.STALE_TIME,
   });
 
@@ -336,36 +280,6 @@ function FlatList({ agentId, status, channel }: { agentId: string; status: strin
   );
 }
 
-function GroupedView({ agents, status, channel, companyId }: {
-  agents: Agent[];
-  status: string;
-  channel: string;
-  companyId: string | null;
-}) {
-  const { isBlockedPhone } = useBlockedPhones();
-  const results = useQueries({
-    queries: agents.map(agent => ({
-      queryKey: agentConvQueryKey({ companyId, agentId: agent.id, status: status || undefined, channel: channel || undefined }),
-      queryFn: () => fetchAgentConversations({ companyId, agentId: agent.id, status: status || undefined, channel: channel || undefined }),
-      enabled: !!companyId,
-    })),
-  });
-
-  return (
-    <div className="space-y-4">
-      {agents.map((agent, i) => (
-        <AgentCard
-          key={agent.id}
-          agent={agent}
-          convs={(results[i]?.data?.convs ?? []).filter(c => !isBlockedPhone(c.customer_phone))}
-          total={results[i]?.data?.total ?? 0}
-          loading={results[i]?.isLoading ?? true}
-        />
-      ))}
-    </div>
-  );
-}
-
 function SummaryBar({
   agentsCount,
   activeFilters,
@@ -409,7 +323,6 @@ export default function Conversations() {
   const [channel, setChannel] = useState<string>('');
   const [agentId, setAgentId] = useState<string>('');
 
-  const { companyId } = useCompany();
   const { data: agentsData, isLoading: agentsLoading } = useAgents();
   const agents = agentsData ?? [];
   const selectedAgent = agents.find(agent => agent.id === agentId) ?? null;
@@ -475,10 +388,8 @@ export default function Conversations() {
             <div key={i} className="h-52 rounded-2xl bg-muted animate-pulse" />
           ))}
         </div>
-      ) : agentId ? (
-        <FlatList agentId={agentId} status={status} channel={channel} />
       ) : (
-        <GroupedView agents={agents} status={status} channel={channel} companyId={companyId} />
+        <FlatList agentId={agentId || undefined} status={status} channel={channel} />
       )}
     </div>
   );
