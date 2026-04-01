@@ -463,6 +463,7 @@ async function runAiAnalysisJob(job: AIAnalysisJobRow): Promise<void> {
     skipped_count: job.skipped_count ?? 0,
     failed_count: job.failed_count ?? 0,
   };
+  let firstFailureMessage: string | null = null;
 
   try {
     const candidates = await fetchJobCandidates(job);
@@ -498,6 +499,9 @@ async function runAiAnalysisJob(job: AIAnalysisJobRow): Promise<void> {
             `Provedor de IA indisponivel por quota/limite. Interrompendo job para evitar falhas em massa. Detalhe: ${trimErrorMessage(error)}`,
           );
         }
+        if (!firstFailureMessage) {
+          firstFailureMessage = trimErrorMessage(error);
+        }
         counters.failed_count += 1;
         console.error(
           `[AIAnalyzer] Job ${job.id} failed conversation ${candidate.conversation_id}:`,
@@ -513,7 +517,21 @@ async function runAiAnalysisJob(job: AIAnalysisJobRow): Promise<void> {
       });
     }
 
-    await completeJob(job.id, counters, candidates.length);
+    if (counters.analyzed_count === 0 && counters.failed_count > 0) {
+      const message = `Nenhuma conversa foi analisada com sucesso. Primeira falha: ${firstFailureMessage ?? 'erro nao detalhado'}`;
+      await failJob(job.id, counters, message);
+      console.error(`[AIAnalyzer] Job ${job.id} finished with zero analyzed conversations.`);
+      return;
+    }
+
+    await completeJob(
+      job.id,
+      counters,
+      candidates.length,
+      counters.failed_count > 0
+        ? `Job concluido com falhas parciais (${counters.failed_count}/${counters.processed_count}).`
+        : null,
+    );
     await maybeQueueSellerAudit(job);
     console.log(
       `[AIAnalyzer] Job ${job.id} completed: analyzed=${counters.analyzed_count}, skipped=${counters.skipped_count}, failed=${counters.failed_count}`,
@@ -1017,6 +1035,7 @@ async function completeJob(
   jobId: string,
   counters: JobCounters,
   totalCandidates: number,
+  errorMessage: string | null = null,
 ): Promise<void> {
   await updateJob(jobId, {
     status: 'completed',
@@ -1025,7 +1044,7 @@ async function completeJob(
     analyzed_count: counters.analyzed_count,
     skipped_count: counters.skipped_count,
     failed_count: counters.failed_count,
-    error_message: null,
+    error_message: errorMessage,
     finished_at: new Date().toISOString(),
   });
 }
