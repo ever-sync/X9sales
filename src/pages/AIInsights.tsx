@@ -674,6 +674,7 @@ export default function AIInsights() {
   const jobQuery = useQuery<AIAnalysisJob, Error>({
     queryKey: ['ai-insights', 'job', companyId, jobId],
     enabled: !!companyId && !!jobId && showModal && (modalStep === 'processing' || modalStep === 'result'),
+    refetchInterval: showModal && modalStep === 'processing' ? 3000 : false,
     queryFn: async () => {
       if (!companyId || !jobId) throw new Error('Job invalido.');
       const { data, error } = await supabase
@@ -696,7 +697,7 @@ export default function AIInsights() {
         'postgres_changes',
         {
           event: 'UPDATE',
-          schema: 'public',
+          schema: 'app',
           table: 'ai_analysis_jobs',
           filter: `id=eq.${jobId}`,
         },
