@@ -23,6 +23,10 @@ import MarketingLanding from './pages/MarketingLanding';
 import Ranking from './pages/Ranking';
 import Relatorio from './pages/Relatorio';
 import Coach from './pages/Coach';
+import Templates from './pages/Templates';
+import AIInsights from './pages/AIInsights';
+import ProductIntelligence from './pages/ProductIntelligence';
+import CustomerIntelligence from './pages/CustomerIntelligence';
 
 function SetupScreen() {
   return (
@@ -116,6 +120,14 @@ function ProtectedRoutes() {
             }
           />
           <Route
+            path="templates"
+            element={
+              <PermissionGate permission="dashboard.view" fallback={<Navigate to="/" replace />}>
+                <Templates />
+              </PermissionGate>
+            }
+          />
+          <Route
             path="agents"
             element={
               <PermissionGate permission="agents.view_team" fallback={<Navigate to="/" replace />}>
@@ -155,9 +167,16 @@ function ProtectedRoutes() {
               </PermissionGate>
             }
           />
-          <Route path="alerts" element={<Navigate to="/relatorio?tab=ai" replace />} />
+          <Route path="alerts" element={<Navigate to="/ai-insights" replace />} />
           <Route path="audit" element={<Navigate to="/relatorio?tab=auditoria" replace />} />
-          <Route path="ai-insights" element={<Navigate to="/relatorio?tab=ai" replace />} />
+          <Route
+            path="ai-insights"
+            element={
+              <PermissionGate permission="audit.view" fallback={<Navigate to="/" replace />}>
+                <AIInsights />
+              </PermissionGate>
+            }
+          />
           <Route
             path="relatorio"
             element={
@@ -200,8 +219,22 @@ function ProtectedRoutes() {
               </PermissionGate>
             }
           />
-          <Route path="customer-intelligence" element={<Navigate to="/relatorio?tab=cliente" replace />} />
-          <Route path="product-intelligence" element={<Navigate to="/relatorio?tab=produto" replace />} />
+          <Route
+            path="customer-intelligence"
+            element={
+              <PermissionGate permission="audit.view" fallback={<Navigate to="/" replace />}>
+                <CustomerIntelligence />
+              </PermissionGate>
+            }
+          />
+          <Route
+            path="product-intelligence"
+            element={
+              <PermissionGate permission="audit.view" fallback={<Navigate to="/" replace />}>
+                <ProductIntelligence />
+              </PermissionGate>
+            }
+          />
           <Route path="register-business" element={<RegisterBusiness />} />
         </Route>
       </Routes>

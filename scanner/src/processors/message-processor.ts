@@ -558,15 +558,52 @@ function extractCustomerName(messages: RawMessage[]): string | null {
 
 function extractMessageContent(payload: Record<string, unknown>): string {
   const text = payload.text;
-  if (typeof text === 'string' && text.trim().length > 0) return text.trim();
+  if (typeof text === 'string' && text.trim().length > 0) {
+    const normalized = text.trim().toLowerCase();
+    if (normalized !== '[mensagem sem conteudo]' && normalized !== '[mensagem sem conteúdo]') {
+      return text.trim();
+    }
+  }
 
   const body = payload.body;
-  if (typeof body === 'string' && body.trim().length > 0) return body.trim();
+  if (typeof body === 'string' && body.trim().length > 0) {
+    const normalized = body.trim().toLowerCase();
+    if (normalized !== '[mensagem sem conteudo]' && normalized !== '[mensagem sem conteúdo]') {
+      return body.trim();
+    }
+  }
+
+  const audioMetadata = payload.audio;
+  if (audioMetadata && typeof audioMetadata === 'object') {
+    const audioText = (audioMetadata as Record<string, unknown>).text;
+    if (typeof audioText === 'string' && audioText.trim().length > 0) {
+      return `[audio transcrito]: ${audioText.trim()}`;
+    }
+  }
+
+  const inferredType = inferContentType(payload);
+  if (inferredType === 'audio') return '[audio]';
+  if (inferredType === 'image') return '[imagem]';
+  if (inferredType === 'video') return '[video]';
+  if (inferredType === 'document') return '[documento]';
+  if (inferredType === 'interactive') return '[mensagem interativa]';
 
   return '[Mensagem sem conteudo]';
 }
 
 function inferContentType(payload: Record<string, unknown>): 'text' | 'image' | 'video' | 'audio' | 'document' | 'interactive' {
+  const text = payload.text;
+  const textObj = text && typeof text === 'object' ? (text as Record<string, unknown>) : null;
+  const textMimetype = typeof textObj?.mimetype === 'string' ? textObj.mimetype.toLowerCase() : '';
+  const textIsPtt = textObj?.PTT === true;
+  const mediaType = typeof payload.mediaType === 'string' ? payload.mediaType.toLowerCase() : '';
+  const messageType = typeof payload.messageType === 'string' ? payload.messageType.toLowerCase() : '';
+
+  if (textIsPtt || textMimetype.startsWith('audio/') || mediaType === 'ptt' || mediaType === 'audio' || messageType === 'audiomessage') return 'audio';
+  if (textMimetype.startsWith('image/') || mediaType === 'image' || messageType === 'imagemessage') return 'image';
+  if (textMimetype.startsWith('video/') || mediaType === 'video' || messageType === 'videomessage' || messageType === 'ptv') return 'video';
+  if (textMimetype.startsWith('application/') || mediaType === 'document' || messageType === 'documentmessage') return 'document';
+
   if (payload.audioUrl || payload.audioMessage) return 'audio';
   if (payload.imageUrl || payload.imageMessage) return 'image';
   if (payload.videoUrl || payload.videoMessage) return 'video';

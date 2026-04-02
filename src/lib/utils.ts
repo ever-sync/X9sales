@@ -111,18 +111,49 @@ export function normalizePhone(value: string | null | undefined): string {
 
 export function getMessageDisplayContent(message: Pick<Message, 'content' | 'content_type' | 'metadata'>): string {
   const content = message.content?.trim();
-  if (content) return content;
+  const normalizedContent = content?.toLowerCase() ?? '';
+  const isPlaceholderContent =
+    normalizedContent === '[mensagem sem conteudo]' ||
+    normalizedContent === '[mensagem sem conteúdo]';
+
+  if (content && !isPlaceholderContent) return content;
+
+  const metadataRecord = (message.metadata ?? {}) as Record<string, unknown>;
+  const textMetadata = (metadataRecord.text ?? {}) as Record<string, unknown>;
+  const mimetype = typeof textMetadata.mimetype === 'string' ? textMetadata.mimetype.toLowerCase() : '';
+  const mediaType = typeof textMetadata.mediaType === 'string' ? textMetadata.mediaType.toLowerCase() : '';
+  const isPtt = textMetadata.PTT === true;
+
+  const inferredAudio =
+    message.content_type === 'audio' ||
+    isPtt ||
+    mediaType === 'ptt' ||
+    mediaType === 'audio' ||
+    mimetype.startsWith('audio/');
+  const inferredVideo = message.content_type === 'video' || mediaType === 'video' || mimetype.startsWith('video/');
+  const inferredImage = message.content_type === 'image' || mediaType === 'image' || mimetype.startsWith('image/');
+  const inferredDocument =
+    message.content_type === 'document' ||
+    mediaType === 'document' ||
+    mediaType === 'file' ||
+    mimetype.startsWith('application/');
+  const inferredInteractive = message.content_type === 'interactive' || mediaType === 'interactive';
 
   const audio = message.metadata?.audio;
   const transcript = audio?.text?.trim();
   if (transcript) return transcript;
 
-  if (message.content_type === 'audio') {
+  if (inferredAudio) {
     if (audio?.transcription_status === 'pending') return '[Audio em transcricao]';
     if (audio?.transcription_status === 'failed') return '[Falha na transcricao do audio]';
     if (audio?.transcription_status === 'no_speech') return '[Audio sem fala detectada]';
     return '[Audio sem transcricao]';
   }
+
+  if (inferredVideo) return '[Video sem legenda]';
+  if (inferredImage) return '[Imagem sem legenda]';
+  if (inferredDocument) return '[Documento sem texto]';
+  if (inferredInteractive) return '[Mensagem interativa]';
 
   return '[Mensagem sem conteudo]';
 }

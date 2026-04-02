@@ -905,7 +905,10 @@ export default function AIInsights() {
               >
                 Exportar CSV
               </Button>
-              <Button variant="outline" className="shrink-0" onClick={openModal}>
+              <Button
+                className="shrink-0 border border-primary/40 bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
+                onClick={openModal}
+              >
                 <PlayCircle className="mr-2 h-4 w-4" />
                 Atualizar analise manual
               </Button>

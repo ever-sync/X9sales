@@ -86,7 +86,32 @@ interface AnalysisResult {
   product: ProductIntelligence;
 }
 
-// ── Claude extraction ─────────────────────────────────────────────────────────
+type AIProviderKind = "anthropic" | "openai" | "gemini" | "grok" | "deepseek" | "custom";
+
+interface CompanyAIProvider {
+  provider: AIProviderKind;
+  apiKey: string;
+  model: string;
+  baseUrl: string | null;
+}
+
+const DEFAULT_MODELS: Record<AIProviderKind, string> = {
+  anthropic: "claude-haiku-4-5-20251001",
+  openai: "gpt-4o-mini",
+  gemini: "gemini-2.5-flash",
+  grok: "grok-3-mini",
+  deepseek: "deepseek-chat",
+  custom: "gpt-4o-mini",
+};
+
+const DEFAULT_BASE_URLS: Partial<Record<AIProviderKind, string>> = {
+  openai: "https://api.openai.com/v1",
+  gemini: "https://generativelanguage.googleapis.com/v1beta/openai",
+  grok: "https://api.x.ai/v1",
+  deepseek: "https://api.deepseek.com/v1",
+};
+
+// ── AI extraction ─────────────────────────────────────────────────────────────
 
 const EXTRACTION_PROMPT = `Você é um analista de vendas especialista. Analise esta conversa de WhatsApp entre um vendedor e um cliente e extraia as informações abaixo em JSON.
 
@@ -143,32 +168,52 @@ function formatConversation(messages: MessageRow[]): string {
 }
 
 async function extractIntelligence(
-  apiKey: string,
+  provider: CompanyAIProvider,
   conversationText: string,
 ): Promise<AnalysisResult | null> {
   const prompt = EXTRACTION_PROMPT.replace("{CONVERSATION}", conversationText);
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 1024,
-      messages: [{ role: "user", content: prompt }],
-    }),
-  });
+  const response = provider.provider === "anthropic"
+    ? await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": provider.apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: provider.model || DEFAULT_MODELS.anthropic,
+        max_tokens: 1024,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    })
+    : await fetch(`${(provider.baseUrl || DEFAULT_BASE_URLS.openai || "https://api.openai.com/v1").replace(/\/+$/, "")}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${provider.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: provider.model || DEFAULT_MODELS[provider.provider],
+        max_tokens: 1024,
+        temperature: 0,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: "Responda apenas JSON valido." },
+          { role: "user", content: prompt },
+        ],
+      }),
+    });
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Claude API error ${response.status}: ${errorText.slice(0, 200)}`);
+    throw new Error(`AI API error ${response.status}: ${errorText.slice(0, 200)}`);
   }
 
   const data = await response.json();
-  const text = data?.content?.[0]?.text;
+  const text = provider.provider === "anthropic"
+    ? data?.content?.[0]?.text
+    : extractOpenAIContentText(data?.choices?.[0]?.message?.content);
   if (typeof text !== "string") return null;
 
   try {
@@ -187,6 +232,82 @@ async function extractIntelligence(
       return null;
     }
   }
+}
+
+function extractOpenAIContentText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+
+  return content
+    .map((part) => (isRecord(part) && typeof part.text === "string" ? part.text : ""))
+    .filter((chunk) => chunk.trim().length > 0)
+    .join("\n");
+}
+
+function normalizeProvider(value: unknown): AIProviderKind | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  const allowed: AIProviderKind[] = ["anthropic", "openai", "gemini", "grok", "deepseek", "custom"];
+  return allowed.includes(normalized as AIProviderKind) ? normalized as AIProviderKind : null;
+}
+
+function normalizeModel(value: unknown, provider: AIProviderKind): string {
+  if (typeof value === "string" && value.trim().length > 0) return value.trim();
+  return DEFAULT_MODELS[provider];
+}
+
+function normalizeBaseUrl(value: unknown, provider: AIProviderKind): string | null {
+  if (provider === "anthropic") return null;
+  if (typeof value === "string" && value.trim().length > 0) return value.trim();
+  return DEFAULT_BASE_URLS[provider] ?? null;
+}
+
+async function resolveCompanyAIProvider(
+  supabase: ReturnType<typeof createClient>,
+  companyId: string,
+): Promise<CompanyAIProvider | null> {
+  const { data, error } = await supabase
+    .schema("app")
+    .from("companies")
+    .select("settings")
+    .eq("id", companyId)
+    .single();
+
+  if (error) {
+    throw new Error(`Falha ao carregar providers de IA da empresa: ${error.message}`);
+  }
+
+  if (!isRecord(data) || !isRecord(data.settings) || !Array.isArray(data.settings.ai_providers)) {
+    return null;
+  }
+
+  const providers = data.settings.ai_providers
+    .filter((item): item is Record<string, unknown> => isRecord(item))
+    .map((item, index) => {
+      const provider = normalizeProvider(item.provider);
+      if (!provider) return null;
+      const apiKey = typeof item.api_key === "string" ? item.api_key.trim() : "";
+      if (!apiKey || item.enabled === false) return null;
+      const order = typeof item.order === "number" && Number.isFinite(item.order) ? item.order : index;
+      return {
+        provider,
+        apiKey,
+        model: normalizeModel(item.model, provider),
+        baseUrl: normalizeBaseUrl(item.base_url, provider),
+        order,
+      };
+    })
+    .filter((item): item is CompanyAIProvider & { order: number } => item !== null)
+    .sort((a, b) => a.order - b.order);
+
+  if (providers.length === 0) return null;
+  const selected = providers[0];
+  return {
+    provider: selected.provider,
+    apiKey: selected.apiKey,
+    model: selected.model,
+    baseUrl: selected.baseUrl,
+  };
 }
 
 // ── safe coerce helpers ───────────────────────────────────────────────────────
@@ -229,10 +350,8 @@ serve(async (req) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const anthropicApiKey = Deno.env.get("ANTHROPIC_API_KEY");
 
   if (!supabaseUrl || !serviceRoleKey) return json(500, { error: "SUPABASE env vars ausentes." });
-  if (!anthropicApiKey) return json(500, { error: "ANTHROPIC_API_KEY nao configurada." });
 
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
@@ -277,6 +396,11 @@ serve(async (req) => {
       return json(403, { error: "Perfil sem permissao para executar analise de inteligencia." });
     }
 
+    const aiProvider = await resolveCompanyAIProvider(supabase, companyId);
+    if (!aiProvider) {
+      return json(400, { error: "Nenhum provedor de IA ativo encontrado para esta empresa." });
+    }
+
     // Fetch conversations not yet analyzed in the period
     const startTs = `${period_start}T00:00:00Z`;
     const endTs = `${period_end}T23:59:59Z`;
@@ -307,7 +431,7 @@ serve(async (req) => {
         total_candidates: candidates.length,
         candidates: candidates.map((c) => ({
           conversation_id: c.id,
-          customer_name: (c.customer as any)?.name ?? null,
+          customer_name: c.customer?.name ?? null,
         })),
       });
     }
@@ -339,7 +463,7 @@ serve(async (req) => {
           continue;
         }
 
-        const result = await extractIntelligence(anthropicApiKey, conversationText);
+        const result = await extractIntelligence(aiProvider, conversationText);
         if (!result) {
           failed++;
           continue;
@@ -389,7 +513,7 @@ serve(async (req) => {
         }, { onConflict: "conversation_id" });
 
         processed++;
-      } catch (_err) {
+      } catch {
         failed++;
       }
     }

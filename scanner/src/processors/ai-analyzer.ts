@@ -1,5 +1,9 @@
 import { supabase } from '../config';
-import { generateTextWithCompanyProviders, hasAnyAIProviderConfigured } from '../lib/ai-provider';
+import {
+  generateTextWithCompanyProviders,
+  getCompanyProviderByKind,
+  hasAnyAIProviderConfigured,
+} from '../lib/ai-provider';
 import { queueSellerAuditRun } from './seller-audit';
 
 const MODEL = 'claude-haiku-4-5-20251001';
@@ -173,6 +177,10 @@ function coerceRpcSingleRow<T>(value: unknown): T | null {
 function trimErrorMessage(value: unknown): string {
   const message = value instanceof Error ? value.message : String(value ?? 'Unknown error');
   return message.slice(0, MAX_ERROR_MESSAGE_LENGTH);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 function isProviderQuotaError(value: unknown): boolean {
@@ -673,11 +681,50 @@ async function analyzeCandidateConversation(candidate: CandidateConversation): P
 }
 
 function buildTranscript(messages: RawMessage[]): string {
+  const extractTextFromPayload = (payload: RawMessage['raw_payload']): string => {
+    if (!payload) return '';
+    const textCandidate = payload.text;
+    const bodyCandidate = payload.body;
+
+    const sanitizeCandidate = (value: unknown): string => {
+      if (typeof value !== 'string') return '';
+      const normalized = value.trim();
+      if (!normalized) return '';
+      const lowered = normalized.toLowerCase();
+      if (lowered === '[mensagem sem conteudo]' || lowered === '[mensagem sem conteúdo]') return '';
+      return normalized.replace(/^\[audio transcrito\]:\s*/i, '');
+    };
+
+    const directText = sanitizeCandidate(textCandidate);
+    if (directText) return directText;
+    const directBody = sanitizeCandidate(bodyCandidate);
+    if (directBody) return directBody;
+
+    const audioMeta = isRecord(payload.audio) ? payload.audio : null;
+    const audioText = sanitizeCandidate(audioMeta?.text);
+    if (audioText) return audioText;
+
+    const textMeta = isRecord(payload.text) ? payload.text : null;
+    const mimetype = typeof textMeta?.mimetype === 'string' ? textMeta.mimetype.toLowerCase() : '';
+    const isPtt = textMeta?.PTT === true;
+    const mediaType = typeof payload.mediaType === 'string' ? payload.mediaType.toLowerCase() : '';
+    const messageType = typeof payload.messageType === 'string' ? payload.messageType.toLowerCase() : '';
+    const hasAudio =
+      isPtt ||
+      mimetype.startsWith('audio/') ||
+      mediaType === 'audio' ||
+      mediaType === 'ptt' ||
+      messageType === 'audiomessage' ||
+      payload.audioMessage === true ||
+      typeof payload.audioUrl === 'string';
+
+    if (hasAudio) return '[AUDIO_SEM_TRANSCRICAO]';
+    return '';
+  };
+
   return messages
     .map((msg) => {
-      const payload = msg.raw_payload ?? {};
-      const rawText = payload.text ?? payload.body ?? '';
-      const text = typeof rawText === 'string' ? rawText.trim() : '';
+      const text = extractTextFromPayload(msg.raw_payload);
       if (!text) return null;
 
       const speaker =
@@ -696,9 +743,8 @@ function buildTranscript(messages: RawMessage[]): string {
 }
 
 async function fetchKnowledgeContext(transcript: string, companyId: string): Promise<string> {
-  const openAiKey = process.env.OPENAI_API_KEY;
-  if (!openAiKey) {
-    embeddingsEnabled = false;
+  const openAiProvider = await getCompanyProviderByKind(companyId, 'openai');
+  if (!openAiProvider?.apiKey) {
     return '';
   }
 
@@ -707,10 +753,11 @@ async function fetchKnowledgeContext(transcript: string, companyId: string): Pro
   }
 
   try {
-    const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
+    const embeddingBaseUrl = (openAiProvider.baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
+    const embeddingResponse = await fetch(`${embeddingBaseUrl}/embeddings`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${openAiKey}`,
+        Authorization: `Bearer ${openAiProvider.apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({

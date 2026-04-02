@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
   Sparkles,
+  FileText,
   Users,
   MessageSquare,
   Settings,
@@ -56,7 +57,8 @@ const navGroups: NavGroup[] = [
     label: 'GESTAO',
     items: [
       { to: '/agents', icon: Users, label: 'Atendentes', permission: 'agents.view_team' },
-      { to: '/relatorio?tab=ai', icon: Brain, label: 'IA analise', permission: 'audit.view' },
+      { to: '/relatorio', icon: BookOpen, label: 'Relatorio', permission: 'audit.view' },
+      { to: '/ai-insights', icon: Brain, label: 'Analise com IA', permission: 'audit.view' },
     ],
   },
   {
@@ -64,6 +66,7 @@ const navGroups: NavGroup[] = [
     items: [
       { to: '/playbooks', icon: BookCheck, label: 'Playbooks', permission: 'playbooks.view' },
       { to: '/knowledge-base', icon: BookOpen, label: 'Base de Conhecimento', permission: 'settings.company' },
+      { to: '/templates', icon: FileText, label: 'Templates', permission: 'settings.company' },
       { to: '/settings', icon: Settings, label: 'Configuracoes', permission: 'settings.company' },
     ],
   },

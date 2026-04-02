@@ -41,6 +41,7 @@ interface CompanySettingsPayload {
   timezone: string;
   blockedReportNumbers: string[];
   blockTeamAnalysis: boolean;
+  hasAIProvider: boolean;
 }
 
 function json(status: number, body: Record<string, unknown>) {
@@ -73,6 +74,16 @@ function clampInt(value: unknown, min: number, max: number, fallback: number): n
 
 function normalizePhone(value: string | null | undefined): string {
   return (value ?? "").replace(/\D/g, "");
+}
+
+function hasConfiguredAIProvider(settings: unknown): boolean {
+  if (!isRecord(settings) || !Array.isArray(settings.ai_providers)) return false;
+  return settings.ai_providers.some((item) => {
+    if (!isRecord(item)) return false;
+    const enabled = item.enabled !== false;
+    const apiKey = typeof item.api_key === "string" ? item.api_key.trim() : "";
+    return enabled && apiKey.length > 0;
+  });
 }
 
 function parseBody(value: unknown): RunRequestBody {
@@ -187,6 +198,11 @@ async function getCompanySettings(
   let timezone = "UTC";
   let blockedReportNumbers: string[] = [];
   let blockTeamAnalysis = false;
+  let hasAIProvider = false;
+
+  if (isRecord(data) && isRecord(data.settings)) {
+    hasAIProvider = hasConfiguredAIProvider(data.settings);
+  }
 
   if (isRecord(data) && isRecord(data.settings) && typeof data.settings.timezone === "string") {
     const tz = data.settings.timezone.trim();
@@ -226,6 +242,7 @@ async function getCompanySettings(
     timezone,
     blockedReportNumbers: Array.from(new Set(blockedReportNumbers)),
     blockTeamAnalysis,
+    hasAIProvider,
   };
 }
 
@@ -342,14 +359,13 @@ serve(async (req) => {
       });
     }
 
-    const anthropicApiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!anthropicApiKey) {
-      return json(500, { error: "ANTHROPIC_API_KEY nao configurada." });
-    }
-
     const scope = body.scope;
     if (scope !== "single" && scope !== "all") {
       return json(400, { error: "Campo 'scope' obrigatorio: single|all." });
+    }
+
+    if (!companySettings.hasAIProvider) {
+      return json(400, { error: "Nenhum provedor de IA ativo encontrado. Configure a chave da empresa em Settings > IA." });
     }
 
     const allCandidatesRaw = await fetchCandidates(supabase, {

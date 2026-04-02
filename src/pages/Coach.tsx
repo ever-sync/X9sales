@@ -1,20 +1,9 @@
-import type { ElementType } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  BellRing,
-  BrainCircuit,
   CheckCircle2,
-  Clock3,
-  Mail,
-  MessageSquareText,
-  Phone,
-  ShieldCheck,
-  Sparkles,
-  Target,
-  Workflow,
   XCircle,
 } from 'lucide-react';
 import { useCompany } from '../contexts/CompanyContext';
@@ -38,124 +27,6 @@ type CoachHistoryGroup = {
   phone: string | null;
   jobs: NotificationJobSummary[];
 };
-
-type InfoCard = {
-  title: string;
-  description: string;
-  detail: string;
-  icon: ElementType;
-};
-
-type FlowStep = {
-  step: string;
-  title: string;
-  description: string;
-};
-
-type DeliveryStatus = 'enabled' | 'attention' | 'planned';
-
-const platformBlocks: InfoCard[] = [
-  {
-    title: 'Agendamento no scanner',
-    description: 'Ja existe um processor dedicado para o coach matinal.',
-    detail: 'A base atual ja sabe quando disparar o fluxo e onde plugar a geracao das mensagens.',
-    icon: Clock3,
-  },
-  {
-    title: 'IA conectada',
-    description: 'O scanner ja conversa com Anthropic para montar a mensagem do dia.',
-    detail: 'A estrutura atual recebe um resumo do vendedor e devolve tema, erro atacado e mensagem.',
-    icon: BrainCircuit,
-  },
-  {
-    title: 'Base de performance pronta',
-    description: 'As analises do vendedor ja estao em ai_conversation_analysis.',
-    detail: 'Falhas, pilares fracos, oportunidades perdidas e coaching tips ja entram como materia-prima.',
-    icon: Target,
-  },
-  {
-    title: 'Timezone da empresa',
-    description: 'A empresa ja possui timezone salvo em settings.',
-    detail: 'Isso permite transformar o objetivo em 08:00 local, em vez de 08:00 do servidor.',
-    icon: ShieldCheck,
-  },
-  {
-    title: 'Toggle de notificacao',
-    description: 'Ja existe um controle de ideia matinal para agentes.',
-    detail: 'Podemos reaproveitar esse ligador no MVP ou separar depois em um toggle proprio do Coach IA.',
-    icon: BellRing,
-  },
-  {
-    title: 'Fila e historico',
-    description: 'notification_jobs ja oferece status, erro, data e payload.',
-    detail: 'Essa trilha evita disparo solto e abre caminho para auditoria, retry e visibilidade no painel.',
-    icon: Workflow,
-  },
-];
-
-const flowSteps: FlowStep[] = [
-  {
-    step: '01',
-    title: 'Ler empresas ativas',
-    description: 'O scanner identifica a empresa, pega o timezone e confirma se o coach matinal esta habilitado.',
-  },
-  {
-    step: '02',
-    title: 'Filtrar agentes elegiveis',
-    description: 'Entram no fluxo os agentes ativos com telefone valido e permissao para receber o acompanhamento.',
-  },
-  {
-    step: '03',
-    title: 'Montar o resumo do vendedor',
-    description: 'A IA usa analises de ontem e, se necessario, os ultimos 7 dias para entender falhas, pilares e oportunidades perdidas.',
-  },
-  {
-    step: '04',
-    title: 'Gerar a mensagem do dia',
-    description: 'O prompt escolhe um tema principal, define o erro atacado e devolve uma mensagem curta, pratica e acionavel.',
-  },
-  {
-    step: '05',
-    title: 'Enfileirar o envio',
-    description: 'O ideal e registrar um notification_job por agente para controlar horario, status de entrega e erros.',
-  },
-  {
-    step: '06',
-    title: 'Mandar as 08:00 locais',
-    description: 'O canal alvo e WhatsApp, mas a operacao deve respeitar o horario da empresa e nao depender de UTC puro.',
-  },
-];
-
-const nextMilestones: Array<InfoCard & { status: DeliveryStatus }> = [
-  {
-    title: '08:00 local por empresa',
-    description: 'Parar de usar horario fixo do servidor.',
-    detail: 'O job precisa validar a hora local de cada empresa antes de disparar qualquer mensagem.',
-    icon: Clock3,
-    status: 'attention',
-  },
-  {
-    title: 'WhatsApp com fila',
-    description: 'Mover o envio para notification_jobs.',
-    detail: 'Assim o painel ganha historico, reprocessamento e trilha de entrega por agente.',
-    icon: MessageSquareText,
-    status: 'attention',
-  },
-  {
-    title: 'Historico de temas',
-    description: 'Evitar repeticao de assunto para o mesmo vendedor.',
-    detail: 'Os ultimos temas enviados devem voltar para o prompt para aumentar variedade e coerencia.',
-    icon: Sparkles,
-    status: 'planned',
-  },
-  {
-    title: 'Comparacao de periodo',
-    description: 'Levar tendencia para a mensagem do dia.',
-    detail: 'Comparar 7 dias atuais vs 7 dias anteriores melhora a qualidade do coaching e o tom usado.',
-    icon: Target,
-    status: 'planned',
-  },
-];
 
 function formatLocalTime(timezone?: string) {
   const fallback = 'Horario indisponivel';
@@ -237,18 +108,6 @@ function extractError(job: NotificationJobSummary) {
     : null;
 }
 
-function statusPill(status: DeliveryStatus) {
-  if (status === 'enabled') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
-  if (status === 'attention') return 'border-amber-200 bg-amber-50 text-amber-700';
-  return 'border-slate-200 bg-slate-50 text-slate-700';
-}
-
-function statusLabel(status: DeliveryStatus) {
-  if (status === 'enabled') return 'Pronto';
-  if (status === 'attention') return 'Prioridade';
-  return 'Planejado';
-}
-
 function jobTone(status: NotificationJobSummary['status']) {
   if (status === 'sent') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
   if (status === 'failed') return 'border-rose-200 bg-rose-50 text-rose-700';
@@ -261,10 +120,6 @@ function jobLabel(status: NotificationJobSummary['status']) {
   if (status === 'failed') return 'Falhou';
   if (status === 'pending') return 'Pendente';
   return 'Ignorado';
-}
-
-function metricTone(enabled: boolean) {
-  return enabled ? 'text-emerald-600' : 'text-amber-600';
 }
 
 export default function Coach() {
@@ -540,122 +395,6 @@ export default function Coach() {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground">Enviados {sentJobs}, pendentes {pendingJobs}, falhos {failedJobs}.</p>
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <Card className="rounded-[1.75rem] border-slate-200 shadow-sm">
-          <CardHeader>
-            <CardDescription>Base que ja existe no produto</CardDescription>
-            <CardTitle className="text-2xl">O que ja temos para subir o Coach IA</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-2">
-            {platformBlocks.map((item) => (
-              <div key={item.title} className="rounded-3xl border border-slate-200 bg-white p-5">
-                <div className="mb-4 inline-flex rounded-2xl bg-slate-950 p-3 text-primary">
-                  <item.icon className="h-5 w-5" />
-                </div>
-                <h3 className="text-base font-semibold text-foreground">{item.title}</h3>
-                <p className="mt-2 text-sm font-medium text-foreground/90">{item.description}</p>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.detail}</p>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-[1.75rem] border-slate-200 shadow-sm">
-          <CardHeader>
-            <CardDescription>Estado da operacao</CardDescription>
-            <CardTitle className="text-2xl">Leitura rapida do coach hoje</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
-              <div className="flex items-center gap-3">
-                <Phone className="h-5 w-5 text-primary" />
-                <div>
-                  <p className="text-sm font-semibold text-foreground">Cobertura de envio</p>
-                  <p className="text-sm text-muted-foreground">Quem pode receber mensagem assim que o fluxo estiver ativo.</p>
-                </div>
-              </div>
-              <p className="mt-4 text-3xl font-semibold text-foreground">{activeAgents.length === 0 ? '0%' : `${Math.round((agentsWithPhone / activeAgents.length) * 100)}%`}</p>
-            </div>
-
-            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
-              <div className="flex items-center gap-3">
-                <Mail className="h-5 w-5 text-primary" />
-                <div>
-                  <p className="text-sm font-semibold text-foreground">Canal da base atual</p>
-                  <p className="text-sm text-muted-foreground">Hoje a fila pronta do produto esta modelada para ideias matinais por notificacao.</p>
-                </div>
-              </div>
-              <p className="mt-4 text-lg font-semibold text-foreground">Fila pronta em notification_jobs</p>
-              <p className="mt-1 text-sm text-muted-foreground">Recomendacao: manter a fila e evoluir o canal para WhatsApp.</p>
-            </div>
-
-            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
-              <div className="flex items-center gap-3">
-                <Sparkles className="h-5 w-5 text-primary" />
-                <div>
-                  <p className="text-sm font-semibold text-foreground">Status do switch</p>
-                  <p className="text-sm text-muted-foreground">Agora o gestor pode ligar e desligar o coach sem sair desta pagina.</p>
-                </div>
-              </div>
-              <p className={`mt-4 text-lg font-semibold ${metricTone(coachEnabled)}`}>
-                {coachEnabled ? 'Rotina matinal ativa' : 'Rotina matinal pausada'}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {coachEnabled
-                  ? 'A empresa esta pronta para receber os jobs diarios assim que o fluxo de envio estiver fechado.'
-                  : 'Enquanto estiver desligado, nenhuma rotina matinal deve ser gerada para a empresa.'}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-        <Card className="rounded-[1.75rem] border-slate-200 shadow-sm">
-          <CardHeader>
-            <CardDescription>Fluxo operacional</CardDescription>
-            <CardTitle className="text-2xl">Como o agente deve mandar a mensagem todo dia</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {flowSteps.map((item) => (
-              <div key={item.step} className="flex gap-4 rounded-3xl border border-slate-200 p-4">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/15 text-sm font-semibold text-primary">
-                  {item.step}
-                </div>
-                <div className="space-y-1">
-                  <h3 className="font-semibold text-foreground">{item.title}</h3>
-                  <p className="text-sm leading-6 text-muted-foreground">{item.description}</p>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-[1.75rem] border-slate-200 shadow-sm">
-          <CardHeader>
-            <CardDescription>Fechamentos para producao</CardDescription>
-            <CardTitle className="text-2xl">Prioridades do Coach IA</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-2">
-            {nextMilestones.map((item) => (
-              <div key={item.title} className="rounded-3xl border border-slate-200 p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="inline-flex rounded-2xl bg-slate-950 p-3 text-primary">
-                    <item.icon className="h-5 w-5" />
-                  </div>
-                  <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${statusPill(item.status)}`}>
-                    {statusLabel(item.status)}
-                  </span>
-                </div>
-                <h3 className="mt-4 text-base font-semibold text-foreground">{item.title}</h3>
-                <p className="mt-2 text-sm font-medium text-foreground/90">{item.description}</p>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.detail}</p>
-              </div>
-            ))}
           </CardContent>
         </Card>
       </section>

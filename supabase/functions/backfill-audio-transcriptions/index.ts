@@ -82,11 +82,29 @@ function getAudioMetadata(metadata: Record<string, unknown> | null): Record<stri
 
 function getAudioUrl(metadata: Record<string, unknown> | null): string | null {
   const audio = getAudioMetadata(metadata);
-  const candidates = [audio.url, metadata?.audioUrl, metadata?.url];
+  const textMeta = metadata && isRecord(metadata.text) ? (metadata.text as Record<string, unknown>) : null;
+  const candidates = [audio.url, metadata?.audioUrl, metadata?.url, textMeta?.URL];
   for (const candidate of candidates) {
     if (typeof candidate === "string" && candidate.trim().length > 0) return candidate.trim();
   }
   return null;
+}
+
+function isLikelyAudioMessage(row: MessageRow): boolean {
+  if (row.content_type === "audio") return true;
+  const metadata = row.metadata;
+  if (!metadata) return false;
+  const audio = getAudioMetadata(metadata);
+  if (Object.keys(audio).length > 0) return true;
+  const textMeta = isRecord(metadata.text) ? (metadata.text as Record<string, unknown>) : null;
+  const mimetype = typeof textMeta?.mimetype === "string" ? textMeta.mimetype.toLowerCase() : "";
+  const mediaType = typeof metadata.mediaType === "string" ? metadata.mediaType.toLowerCase() : "";
+  const messageType = typeof metadata.messageType === "string" ? metadata.messageType.toLowerCase() : "";
+  return textMeta?.PTT === true ||
+    mimetype.startsWith("audio/") ||
+    mediaType === "audio" ||
+    mediaType === "ptt" ||
+    messageType === "audiomessage";
 }
 
 function buildAudioMetadata(params: {
@@ -160,7 +178,6 @@ serve(async (req) => {
       .from("messages")
       .select("id, company_id, conversation_id, content, content_type, metadata, created_at")
       .eq("company_id", body.company_id)
-      .eq("content_type", "audio")
       .order("created_at", { ascending: true })
       .limit(limit);
 
@@ -173,7 +190,7 @@ serve(async (req) => {
       return json(500, { error: `Falha ao carregar mensagens: ${error.message}` });
     }
 
-    const rows = (data ?? []) as MessageRow[];
+    const rows = ((data ?? []) as MessageRow[]).filter(isLikelyAudioMessage);
     let completed = 0;
     let failed = 0;
     let noSpeech = 0;
@@ -237,7 +254,7 @@ serve(async (req) => {
           "Content-Type": "application/json",
           Authorization: `Bearer ${serviceRoleKey}`,
         },
-        body: JSON.stringify({ audioUrl }),
+        body: JSON.stringify({ audioUrl, company_id: row.company_id }),
       });
 
       processed += 1;

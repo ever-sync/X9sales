@@ -652,7 +652,7 @@ serve(async (req: Request) => {
               "Content-Type": "application/json",
               Authorization: `Bearer ${serviceRoleKey}`,
             },
-            body: JSON.stringify({ audioUrl }),
+            body: JSON.stringify({ audioUrl, company_id: companyId }),
           });
 
           if (transcribeRes.ok) {

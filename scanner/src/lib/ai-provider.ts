@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { config, supabase } from '../config';
+import { supabase } from '../config';
 
 export type AIProviderKind = 'anthropic' | 'openai' | 'gemini' | 'grok' | 'deepseek' | 'custom';
 
@@ -178,26 +178,12 @@ async function loadCompanyProviders(companyId: string): Promise<ResolvedProvider
     ? parseStoredProviders((settings as { ai_providers?: unknown }).ai_providers)
     : [];
 
-  const fallbackProviders = providers.length > 0
-    ? providers
-    : (config.anthropicApiKey
-      ? [{
-          id: 'fallback-anthropic-env',
-          provider: 'anthropic' as const,
-          label: 'Anthropic (env)',
-          apiKey: config.anthropicApiKey,
-          model: DEFAULT_MODELS.anthropic,
-          baseUrl: null,
-          order: 0,
-        }]
-      : []);
-
   companyProviderCache.set(companyId, {
     expiresAt: Date.now() + PROVIDER_CACHE_TTL_MS,
-    providers: fallbackProviders,
+    providers,
   });
 
-  return fallbackProviders;
+  return providers;
 }
 
 async function callAnthropic(provider: ResolvedProvider, params: GenerateParams): Promise<GenerateResult> {
@@ -268,11 +254,25 @@ export async function hasAnyAIProviderConfigured(companyId: string): Promise<boo
   return providers.length > 0;
 }
 
+export async function getCompanyProviderByKind(
+  companyId: string,
+  provider: AIProviderKind,
+): Promise<{ apiKey: string; baseUrl: string | null; model: string } | null> {
+  const providers = await loadCompanyProviders(companyId);
+  const found = providers.find((item) => item.provider === provider);
+  if (!found) return null;
+  return {
+    apiKey: found.apiKey,
+    baseUrl: found.baseUrl,
+    model: found.model,
+  };
+}
+
 export async function generateTextWithCompanyProviders(params: GenerateParams): Promise<GenerateResult> {
   const providers = await loadCompanyProviders(params.companyId);
   if (!providers.length) {
     throw new Error(
-      `[${params.taskLabel}] Nenhum provedor de IA ativo encontrado. Configure em settings.ai_providers ou ANTHROPIC_API_KEY.`,
+      `[${params.taskLabel}] Nenhum provedor de IA ativo encontrado. Configure em settings.ai_providers.`,
     );
   }
 
