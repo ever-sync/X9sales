@@ -56,6 +56,10 @@ interface CandidateConversation {
   customer_phone: string | null;
 }
 
+interface CompanySettingsRow {
+  settings?: unknown;
+}
+
 interface RawConversation {
   conversation_external_id: string;
   channel: string | null;
@@ -76,6 +80,21 @@ interface OpenAIEmbeddingResponse {
 
 interface KnowledgeBaseMatch {
   content: string;
+}
+
+interface ActivePlaybookRow {
+  id: string;
+  name: string;
+  segment: string;
+  version: number;
+}
+
+interface PlaybookRuleRow {
+  rule_type: string;
+  rule_text: string;
+  weight: number;
+  is_required: boolean;
+  position: number;
 }
 
 interface MissedOpportunity {
@@ -165,6 +184,10 @@ interface ConversationForAnalysis {
 }
 
 let embeddingsEnabled: boolean | null = null;
+const PLAYBOOK_CACHE_TTL_MS = 60_000;
+const playbookContextCache = new Map<string, { expiresAt: number; context: string }>();
+const BLOCKED_NUMBERS_CACHE_TTL_MS = 60_000;
+const blockedNumbersCache = new Map<string, { expiresAt: number; values: Set<string> }>();
 
 function coerceRpcSingleRow<T>(value: unknown): T | null {
   if (!value) return null;
@@ -183,6 +206,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+function normalizePhone(value: string | null | undefined): string {
+  return (value ?? '').replace(/\D/g, '');
+}
+
+function parseBlockedNumbersFromSettings(settings: unknown): string[] {
+  if (!isRecord(settings) || !Array.isArray(settings.blocked_report_numbers)) return [];
+  return settings.blocked_report_numbers
+    .map((item) => normalizePhone(typeof item === 'string' ? item : ''))
+    .filter((item) => item.length > 0);
+}
+
 function isProviderQuotaError(value: unknown): boolean {
   const message = trimErrorMessage(value).toLowerCase();
   return (
@@ -191,6 +225,54 @@ function isProviderQuotaError(value: unknown): boolean {
     message.includes('rate limit') ||
     message.includes('exceeded your current quota')
   );
+}
+
+async function loadBlockedReportNumbers(companyId: string): Promise<Set<string>> {
+  const cached = blockedNumbersCache.get(companyId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.values;
+  }
+
+  const { data: companyData, error: companyError } = await supabase
+    .schema('app')
+    .from('companies')
+    .select('settings')
+    .eq('id', companyId)
+    .maybeSingle();
+
+  if (companyError) {
+    throw new Error(`Failed to load company settings for blocked numbers: ${companyError.message}`);
+  }
+
+  const settings = (companyData as CompanySettingsRow | null)?.settings;
+  const blocked = new Set<string>(parseBlockedNumbersFromSettings(settings));
+  const blockTeamAnalysis = isRecord(settings) && settings.block_team_analysis === true;
+
+  if (blockTeamAnalysis) {
+    const { data: teamRows, error: teamError } = await supabase
+      .schema('app')
+      .from('agents')
+      .select('phone')
+      .eq('company_id', companyId)
+      .eq('is_active', true)
+      .not('phone', 'is', null);
+
+    if (teamError) {
+      throw new Error(`Failed to load team phones for blocked numbers: ${teamError.message}`);
+    }
+
+    for (const row of teamRows ?? []) {
+      const phone = normalizePhone(typeof row.phone === 'string' ? row.phone : '');
+      if (phone) blocked.add(phone);
+    }
+  }
+
+  blockedNumbersCache.set(companyId, {
+    expiresAt: Date.now() + BLOCKED_NUMBERS_CACHE_TTL_MS,
+    values: blocked,
+  });
+
+  return blocked;
 }
 
 function normalizeSmallint(
@@ -597,13 +679,17 @@ async function fetchJobCandidates(job: AIAnalysisJobRow): Promise<CandidateConve
       !!row?.agent_id &&
       !!row?.raw_conversation_id,
   );
+  const blockedNumbers = await loadBlockedReportNumbers(job.company_id);
+  const filteredCandidates = candidates.filter(
+    (row) => !blockedNumbers.has(normalizePhone(row.customer_phone)),
+  );
 
   if (job.scope === 'single') {
     if (!job.conversation_id) {
       throw new Error('Single-scope job missing conversation_id.');
     }
 
-    const singleMatch = candidates.filter(
+    const singleMatch = filteredCandidates.filter(
       (candidate) => candidate.conversation_id === job.conversation_id,
     );
 
@@ -614,7 +700,7 @@ async function fetchJobCandidates(job: AIAnalysisJobRow): Promise<CandidateConve
     return singleMatch;
   }
 
-  return candidates;
+  return filteredCandidates;
 }
 
 async function analyzeCandidateConversation(candidate: CandidateConversation): Promise<AnalysisOutcome> {
@@ -658,10 +744,12 @@ async function analyzeCandidateConversation(candidate: CandidateConversation): P
     return 'skipped';
   }
 
+  const playbookContext = await fetchPlaybookContext(conversation.company_id);
   const kbContext = await fetchKnowledgeContext(transcript, conversation.company_id);
   const { result, modelUsed } = await callClaudeHaiku(
     transcript,
     (rawConv as RawConversation).channel ?? 'unknown',
+    playbookContext,
     kbContext,
     conversation.company_id,
   );
@@ -742,6 +830,86 @@ function buildTranscript(messages: RawMessage[]): string {
     .join('\n');
 }
 
+async function fetchPlaybookContext(companyId: string): Promise<string> {
+  const cached = playbookContextCache.get(companyId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.context;
+  }
+
+  try {
+    const { data: activePlaybook, error: playbookError } = await supabase
+      .schema('app')
+      .from('playbooks')
+      .select('id, name, segment, version')
+      .eq('company_id', companyId)
+      .eq('status', 'active')
+      .order('updated_at', { ascending: false })
+      .order('version', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (playbookError) {
+      console.warn(`[AIAnalyzer] Failed to load active playbook: ${playbookError.message}`);
+      playbookContextCache.set(companyId, { expiresAt: Date.now() + PLAYBOOK_CACHE_TTL_MS, context: '' });
+      return '';
+    }
+
+    if (!activePlaybook) {
+      playbookContextCache.set(companyId, { expiresAt: Date.now() + PLAYBOOK_CACHE_TTL_MS, context: '' });
+      return '';
+    }
+
+    const playbook = activePlaybook as ActivePlaybookRow;
+
+    const { data: rulesData, error: rulesError } = await supabase
+      .schema('app')
+      .from('playbook_rules')
+      .select('rule_type, rule_text, weight, is_required, position')
+      .eq('company_id', companyId)
+      .eq('playbook_id', playbook.id)
+      .order('is_required', { ascending: false })
+      .order('weight', { ascending: false })
+      .order('position', { ascending: true })
+      .limit(20);
+
+    if (rulesError) {
+      console.warn(`[AIAnalyzer] Failed to load active playbook rules: ${rulesError.message}`);
+      playbookContextCache.set(companyId, { expiresAt: Date.now() + PLAYBOOK_CACHE_TTL_MS, context: '' });
+      return '';
+    }
+
+    const rules = ((rulesData ?? []) as PlaybookRuleRow[])
+      .map((rule, index) => {
+        const type = typeof rule.rule_type === 'string' ? rule.rule_type : 'custom';
+        const text = typeof rule.rule_text === 'string' ? rule.rule_text.trim() : '';
+        if (!text) return null;
+        const required = rule.is_required ? 'obrigatoria' : 'recomendada';
+        const weight = Number.isFinite(rule.weight) ? rule.weight : 0;
+        return `${index + 1}. [${type}] (${required}, peso ${weight}) ${text.slice(0, 260)}`;
+      })
+      .filter((line): line is string => !!line);
+
+    if (rules.length === 0) {
+      playbookContextCache.set(companyId, { expiresAt: Date.now() + PLAYBOOK_CACHE_TTL_MS, context: '' });
+      return '';
+    }
+
+    const context =
+      `PLAYBOOK ATIVO:\n` +
+      `- Nome: ${playbook.name}\n` +
+      `- Segmento: ${playbook.segment}\n` +
+      `- Versao: ${playbook.version}\n` +
+      `- Regras:\n${rules.join('\n')}`;
+
+    playbookContextCache.set(companyId, { expiresAt: Date.now() + PLAYBOOK_CACHE_TTL_MS, context });
+    return context;
+  } catch (error) {
+    console.error('[AIAnalyzer] Failed to build playbook context:', error);
+    playbookContextCache.set(companyId, { expiresAt: Date.now() + PLAYBOOK_CACHE_TTL_MS, context: '' });
+    return '';
+  }
+}
+
 async function fetchKnowledgeContext(transcript: string, companyId: string): Promise<string> {
   const openAiProvider = await getCompanyProviderByKind(companyId, 'openai');
   if (!openAiProvider?.apiKey) {
@@ -812,6 +980,7 @@ async function fetchKnowledgeContext(transcript: string, companyId: string): Pro
 async function callClaudeHaiku(
   transcript: string,
   channel: string,
+  playbookContext: string,
   kbContext: string,
   companyId: string,
 ): Promise<{ result: AIAnalysisResult; modelUsed: string }> {
@@ -820,13 +989,18 @@ async function callClaudeHaiku(
     'Analise a conversa de forma estruturada seguindo as instrucoes exatas. ' +
     'Retorne apenas JSON valido, sem texto adicional. Responda em portugues (pt-BR).';
 
-  const contextBlock = kbContext
+  const playbookBlock = playbookContext
+    ? `${playbookContext}\n\n`
+    : '';
+
+  const kbBlock = kbContext
     ? `BASE DE CONHECIMENTO DA EMPRESA:\n${kbContext}\n\n`
     : '';
 
   const userPrompt =
     `Canal: ${channel.toUpperCase()}\n\n` +
-    contextBlock +
+    playbookBlock +
+    kbBlock +
     `Transcript:\n${transcript}\n\n` +
     '---\n' +
     'Analise a conversa como uma IA especialista em performance comercial por WhatsApp.\n' +
@@ -938,7 +1112,8 @@ async function callClaudeHaiku(
     '- Se houver objecao mal trabalhada, marque objection_mishandled=true\n' +
     '- Em missed_opportunities, cite o trecho real da conversa\n' +
     '- Em pillar_evidence, cite trechos reais que comprovem o score dado\n' +
-    '- failure_tags devem usar APENAS as tags da lista fornecida';
+    '- failure_tags devem usar APENAS as tags da lista fornecida\n' +
+    '- Quando houver PLAYBOOK ATIVO, avalie aderencia as regras do playbook antes de concluir strengths, improvements e severity_findings';
 
   const response = await generateTextWithCompanyProviders({
     companyId,
