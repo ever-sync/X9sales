@@ -64,6 +64,15 @@ interface StartResponse {
   error?: string;
 }
 
+interface CancelJobResponse {
+  success: boolean;
+  cancelled: boolean;
+  job_id: string;
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  message?: string;
+  error?: string;
+}
+
 interface SellerAuditStartResponse {
   success: boolean;
   reused: boolean;
@@ -84,6 +93,7 @@ type AnyStartResult = StartResponse | BulkStartResult;
 type AnalysisScope = 'single' | 'all';
 type ModalStep = 'form' | 'processing' | 'result';
 type CoachingFilter = 'all' | 'yes' | 'no';
+type PeriodPreset = '30' | '15' | '7' | '3' | 'custom';
 
 interface FunctionPayload {
   success?: boolean;
@@ -109,9 +119,13 @@ function toDateInput(value: Date): string {
 }
 
 function getDefaultPeriod() {
+  return getPeriodByDays(30);
+}
+
+function getPeriodByDays(days: number) {
   const end = new Date();
   const start = new Date();
-  start.setDate(end.getDate() - 29);
+  start.setDate(end.getDate() - Math.max(0, days - 1));
   return {
     periodStart: toDateInput(start),
     periodEnd: toDateInput(end),
@@ -317,9 +331,20 @@ export default function AIInsights() {
   const canRunManualAnalysis = role === 'owner_admin';
   const timezone = company?.settings?.timezone || 'UTC';
   const defaultPeriod = useMemo(() => getDefaultPeriod(), []);
+  const periodPresetOptions: Array<{ value: PeriodPreset; label: string; days?: number }> = useMemo(
+    () => [
+      { value: '30', label: '30d', days: 30 },
+      { value: '15', label: '15d', days: 15 },
+      { value: '7', label: '7d', days: 7 },
+      { value: '3', label: '3d', days: 3 },
+      { value: 'custom', label: 'Calendario' },
+    ],
+    [],
+  );
 
   const [periodStart, setPeriodStart] = useState(defaultPeriod.periodStart);
   const [periodEnd, setPeriodEnd] = useState(defaultPeriod.periodEnd);
+  const [periodPreset, setPeriodPreset] = useState<PeriodPreset>('30');
   const [selectedAgentId, setSelectedAgentId] = useState(ALL_AGENTS);
   const [selectedTag, setSelectedTag] = useState('');
   const [coachingFilter, setCoachingFilter] = useState<CoachingFilter>('all');
@@ -328,6 +353,7 @@ export default function AIInsights() {
   const [showModal, setShowModal] = useState(false);
   const [modalStep, setModalStep] = useState<ModalStep>('form');
   const [form, setForm] = useState<ManualAnalysisForm>(getDefaultForm());
+  const [modalPeriodPreset, setModalPeriodPreset] = useState<PeriodPreset>('30');
   const [formError, setFormError] = useState<string | null>(null);
   const [conversationSearch, setConversationSearch] = useState('');
   const [jobId, setJobId] = useState<string | null>(null);
@@ -536,6 +562,7 @@ export default function AIInsights() {
     setShowModal(false);
     setModalStep('form');
     setForm(getDefaultForm());
+    setModalPeriodPreset('30');
     setFormError(null);
     setConversationSearch('');
     setJobId(null);
@@ -559,6 +586,7 @@ export default function AIInsights() {
     setJobId(null);
     setSubmittedTotalCandidates(0);
     finishedJobRef.current = null;
+    setModalPeriodPreset('custom');
     setForm({
       agentId: selectedAgentId,
       scope: 'all',
@@ -599,6 +627,40 @@ export default function AIInsights() {
       }
 
       if (!effectiveAgentId) throw new Error('Selecione um atendente.');
+      const { data: existingJob, error: existingJobError } = await supabase
+        .from('ai_analysis_jobs')
+        .select('id, status, created_at')
+        .eq('company_id', companyId)
+        .eq('agent_id', effectiveAgentId)
+        .in('status', ['queued', 'running'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingJobError) {
+        throw new Error(`Falha ao validar jobs em andamento: ${existingJobError.message}`);
+      }
+
+      if (existingJob?.id) {
+        const shouldCancel = window.confirm(
+          'Ja existe um job em andamento para este atendente. Deseja cancelar o anterior e iniciar um novo?',
+        );
+
+        if (!shouldCancel) {
+          throw new Error('Inicio cancelado. Mantenha o job atual em andamento.');
+        }
+
+        const cancelResult = await invokeRunAiAnalysis<CancelJobResponse>({
+          action: 'cancel',
+          company_id: companyId,
+          job_id: existingJob.id,
+        });
+
+        if (!cancelResult.cancelled) {
+          throw new Error(cancelResult.message || 'Nao foi possivel cancelar o job anterior.');
+        }
+      }
+
       if (form.scope === 'single') {
         if (!effectiveConversationId) throw new Error('Selecione uma conversa para analisar.');
         if (previewCandidates.length === 0) throw new Error('Nao ha conversas elegiveis para os filtros informados.');
@@ -624,6 +686,28 @@ export default function AIInsights() {
       }
       setJobId(result.job_id);
       setSubmittedTotalCandidates(result.total_candidates ?? 0);
+      queryClient.setQueryData(['ai-insights', 'job', companyId, result.job_id], {
+        id: result.job_id,
+        company_id: companyId,
+        requested_by_user_id: '',
+        agent_id: effectiveAgentId === ALL_AGENTS ? '' : effectiveAgentId,
+        scope: form.scope,
+        conversation_id: form.scope === 'single' ? (effectiveConversationId || null) : null,
+        period_start: form.periodStart,
+        period_end: form.periodEnd,
+        company_timezone: 'America/Sao_Paulo',
+        status: 'queued',
+        total_candidates: result.total_candidates ?? 0,
+        processed_count: 0,
+        analyzed_count: 0,
+        skipped_count: 0,
+        failed_count: 0,
+        error_message: null,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        finished_at: null,
+        updated_at: new Date().toISOString(),
+      } as AIAnalysisJob);
       finishedJobRef.current = null;
       setModalStep('processing');
       setFormError(null);
@@ -674,7 +758,9 @@ export default function AIInsights() {
   const jobQuery = useQuery<AIAnalysisJob, Error>({
     queryKey: ['ai-insights', 'job', companyId, jobId],
     enabled: !!companyId && !!jobId && showModal && (modalStep === 'processing' || modalStep === 'result'),
-    refetchInterval: showModal && modalStep === 'processing' ? 3000 : false,
+    refetchInterval: showModal && modalStep === 'processing' ? 1500 : false,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
     queryFn: async () => {
       if (!companyId || !jobId) throw new Error('Job invalido.');
       const { data, error } = await supabase
@@ -687,6 +773,43 @@ export default function AIInsights() {
       return data as AIAnalysisJob;
     },
   });
+
+  const latestProcessingJobQuery = useQuery<AIAnalysisJob | null, Error>({
+    queryKey: ['ai-insights', 'latest-processing-job', companyId, effectiveAgentId, form.periodStart, form.periodEnd],
+    enabled:
+      !!companyId &&
+      !!showModal &&
+      modalStep === 'processing' &&
+      effectiveAgentId !== ALL_AGENTS,
+    refetchInterval: showModal && modalStep === 'processing' ? 1500 : false,
+    refetchIntervalInBackground: true,
+    queryFn: async () => {
+      if (!companyId || effectiveAgentId === ALL_AGENTS) return null;
+      const { data, error } = await supabase
+        .from('ai_analysis_jobs')
+        .select('id, company_id, requested_by_user_id, agent_id, scope, conversation_id, period_start, period_end, company_timezone, status, total_candidates, processed_count, analyzed_count, skipped_count, failed_count, error_message, created_at, started_at, finished_at, updated_at')
+        .eq('company_id', companyId)
+        .eq('agent_id', effectiveAgentId)
+        .eq('period_start', form.periodStart)
+        .eq('period_end', form.periodEnd)
+        .in('status', ['queued', 'running'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return (data as AIAnalysisJob | null) ?? null;
+    },
+  });
+
+  useEffect(() => {
+    if (!showModal || modalStep !== 'processing') return;
+    const latest = latestProcessingJobQuery.data;
+    if (!latest?.id) return;
+    if (jobId === latest.id) return;
+    setJobId(latest.id);
+    setSubmittedTotalCandidates(latest.total_candidates ?? 0);
+    queryClient.setQueryData(['ai-insights', 'job', companyId, latest.id], latest);
+  }, [companyId, jobId, latestProcessingJobQuery.data, modalStep, queryClient, showModal]);
 
   useEffect(() => {
     if (!companyId || !jobId || !showModal || (modalStep !== 'processing' && modalStep !== 'result')) return;
@@ -812,10 +935,35 @@ export default function AIInsights() {
     const defaults = getDefaultPeriod();
     setPeriodStart(defaults.periodStart);
     setPeriodEnd(defaults.periodEnd);
+    setPeriodPreset('30');
     setSelectedAgentId(ALL_AGENTS);
     setSelectedTag('');
     setCoachingFilter('all');
     setReviewPage(1);
+  };
+
+  const applyMainPeriodPreset = (preset: PeriodPreset) => {
+    setPeriodPreset(preset);
+    if (preset === 'custom') return;
+    const days = Number(preset);
+    if (!Number.isFinite(days)) return;
+    const next = getPeriodByDays(days);
+    setPeriodStart(next.periodStart);
+    setPeriodEnd(next.periodEnd);
+  };
+
+  const applyModalPeriodPreset = (preset: PeriodPreset) => {
+    setModalPeriodPreset(preset);
+    if (preset === 'custom') return;
+    const days = Number(preset);
+    if (!Number.isFinite(days)) return;
+    const next = getPeriodByDays(days);
+    setForm((prev) => ({
+      ...prev,
+      periodStart: next.periodStart,
+      periodEnd: next.periodEnd,
+      conversationId: '',
+    }));
   };
 
   const drillToReviews = (agentId?: string | null, tag?: string, coaching: CoachingFilter = 'yes') => {
@@ -928,12 +1076,28 @@ export default function AIInsights() {
 
           <div className="space-y-1">
             <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Data inicial</label>
-            <input type="date" value={periodStart} onChange={(event) => setPeriodStart(event.target.value)} className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/35" />
+            <input
+              type="date"
+              value={periodStart}
+              onChange={(event) => {
+                setPeriodStart(event.target.value);
+                setPeriodPreset('custom');
+              }}
+              className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/35"
+            />
           </div>
 
           <div className="space-y-1">
             <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Data final</label>
-            <input type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/35" />
+            <input
+              type="date"
+              value={periodEnd}
+              onChange={(event) => {
+                setPeriodEnd(event.target.value);
+                setPeriodPreset('custom');
+              }}
+              className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/35"
+            />
           </div>
 
           <div className="space-y-1">
@@ -961,6 +1125,23 @@ export default function AIInsights() {
               </button>
             </div>
           </div>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {periodPresetOptions.map((option) => (
+            <button
+              key={`main-period-${option.value}`}
+              type="button"
+              onClick={() => applyMainPeriodPreset(option.value)}
+              className={cn(
+                'rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors',
+                periodPreset === option.value
+                  ? 'border-primary/35 bg-accent text-primary'
+                  : 'border-border bg-background text-muted-foreground hover:bg-muted',
+              )}
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
 
         {filterError && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{filterError}</div>}
@@ -1485,12 +1666,45 @@ export default function AIInsights() {
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div>
                     <label className="mb-1 block text-sm font-medium text-foreground">Data inicial <span className="text-red-500">*</span></label>
-                    <input type="date" value={form.periodStart} onChange={(event) => setForm((prev) => ({ ...prev, periodStart: event.target.value, conversationId: '' }))} className="w-full rounded-xl border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35" />
+                    <input
+                      type="date"
+                      value={form.periodStart}
+                      onChange={(event) => {
+                        setModalPeriodPreset('custom');
+                        setForm((prev) => ({ ...prev, periodStart: event.target.value, conversationId: '' }));
+                      }}
+                      className="w-full rounded-xl border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35"
+                    />
                   </div>
                   <div>
                     <label className="mb-1 block text-sm font-medium text-foreground">Data final <span className="text-red-500">*</span></label>
-                    <input type="date" value={form.periodEnd} onChange={(event) => setForm((prev) => ({ ...prev, periodEnd: event.target.value, conversationId: '' }))} className="w-full rounded-xl border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35" />
+                    <input
+                      type="date"
+                      value={form.periodEnd}
+                      onChange={(event) => {
+                        setModalPeriodPreset('custom');
+                        setForm((prev) => ({ ...prev, periodEnd: event.target.value, conversationId: '' }));
+                      }}
+                      className="w-full rounded-xl border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35"
+                    />
                   </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {periodPresetOptions.map((option) => (
+                    <button
+                      key={`modal-period-${option.value}`}
+                      type="button"
+                      onClick={() => applyModalPeriodPreset(option.value)}
+                      className={cn(
+                        'rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors',
+                        modalPeriodPreset === option.value
+                          ? 'border-primary/35 bg-accent text-primary'
+                          : 'border-border bg-background text-muted-foreground hover:bg-muted',
+                      )}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
                 </div>
 
                 {modalPeriodError && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600">{modalPeriodError}</p>}

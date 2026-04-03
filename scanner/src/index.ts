@@ -12,6 +12,7 @@ import { sendDailyDigest } from './processors/daily-digest';
 import { sendWeeklyAgentFeedback } from './processors/weekly-agent-feedback';
 import { syncAgentAvatars } from './processors/avatar-sync';
 import { sendMorningCoaching } from './processors/morning-coaching';
+import { queueDailyAiFullScanForAllAgents } from './processors/daily-ai-full-scan';
 
 let isProcessing = false;
 let isAggregating = false;
@@ -25,6 +26,7 @@ let isDigesting = false;
 let isWeeklyFeedback = false;
 let isAvatarSync = false;
 let isMorningCoaching = false;
+let isDailyAiFullScan = false;
 
 console.log('=== MonitoraIA Scanner Agent ===');
 console.log(`Message processing cron: ${config.scannerCron}`);
@@ -36,6 +38,7 @@ console.log(`Manager copilot cron: ${config.managerCopilotCron}`);
 console.log(`Seller audit cron: ${config.aiJobsCron}`);
 console.log(`Product intelligence cron: ${config.aiJobsCron}`);
 console.log(`Morning coaching cron: ${config.morningCoachingCron}`);
+console.log(`Daily AI full scan cron: ${config.dailyAiFullScanCron}`);
 console.log(`Batch size: ${config.batchSize}`);
 console.log('Starting...\n');
 
@@ -219,6 +222,24 @@ cron.schedule(config.morningCoachingCron, async () => {
     console.error('[Scheduler] Morning coaching failed:', err);
   } finally {
     isMorningCoaching = false;
+  }
+});
+
+// Daily AI full scan: runs around midnight and enqueues one job per active agent
+// for the previous local day of each company timezone.
+cron.schedule(config.dailyAiFullScanCron, async () => {
+  if (isDailyAiFullScan) {
+    console.log('[Scheduler] Daily AI full scan still running, skipping...');
+    return;
+  }
+
+  isDailyAiFullScan = true;
+  try {
+    await queueDailyAiFullScanForAllAgents();
+  } catch (err) {
+    console.error('[Scheduler] Daily AI full scan failed:', err);
+  } finally {
+    isDailyAiFullScan = false;
   }
 });
 

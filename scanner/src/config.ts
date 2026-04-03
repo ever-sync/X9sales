@@ -12,6 +12,7 @@ export const config = {
   aiJobsCron: process.env.SCANNER_AI_JOBS_CRON || process.env.SCANNER_AI_CRON || '*/1 * * * *',
   revenueCopilotCron: process.env.SCANNER_REVENUE_COPILOT_CRON || '*/1 * * * *',
   managerCopilotCron: process.env.SCANNER_MANAGER_COPILOT_CRON || '*/1 * * * *',
+  dailyAiFullScanCron: process.env.SCANNER_DAILY_AI_FULL_SCAN_CRON || '5 0 * * *',
   dailyDigestCron: process.env.SCANNER_DIGEST_CRON || '0 18 * * *', // Runs at 18:00 daily
   morningCoachingCron: process.env.SCANNER_MORNING_COACHING_CRON || '0 8 * * *', // Runs at 08:00 daily
   batchSize: parseInt(process.env.SCANNER_BATCH_SIZE || '1000', 10),

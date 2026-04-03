@@ -8,7 +8,7 @@ const corsHeaders = {
 };
 
 type Role = "owner_admin" | "manager" | "qa_reviewer" | "agent";
-type Action = "preview" | "start";
+type Action = "preview" | "start" | "cancel";
 type Scope = "single" | "all";
 
 interface RunRequestBody {
@@ -17,6 +17,7 @@ interface RunRequestBody {
   agent_id?: string;
   scope?: Scope;
   conversation_id?: string | null;
+  job_id?: string;
   period_start?: string;
   period_end?: string;
   limit?: number;
@@ -90,7 +91,7 @@ function parseBody(value: unknown): RunRequestBody {
   if (!value || typeof value !== "object") return {};
   const body = value as Record<string, unknown>;
 
-  const action = body.action === "preview" || body.action === "start" ? body.action : undefined;
+  const action = body.action === "preview" || body.action === "start" || body.action === "cancel" ? body.action : undefined;
   const scope = body.scope === "single" || body.scope === "all" ? body.scope : undefined;
 
   return {
@@ -103,6 +104,7 @@ function parseBody(value: unknown): RunRequestBody {
       : body.conversation_id === null
         ? null
         : undefined,
+    job_id: typeof body.job_id === "string" ? body.job_id.trim() : undefined,
     period_start: typeof body.period_start === "string" ? body.period_start.trim() : undefined,
     period_end: typeof body.period_end === "string" ? body.period_end.trim() : undefined,
     limit: typeof body.limit === "number" ? body.limit : undefined,
@@ -316,19 +318,89 @@ serve(async (req) => {
     }
 
     const companyId = body.company_id;
-    const agentId = body.agent_id;
     if (!companyId) return json(400, { error: "Campo 'company_id' obrigatorio." });
-    if (!agentId) return json(400, { error: "Campo 'agent_id' obrigatorio." });
-
-    const periodStart = parseDate(body.period_start, "period_start");
-    const periodEnd = parseDate(body.period_end, "period_end");
-    validatePeriod(periodStart, periodEnd);
 
     const role = await getMemberRole(supabase, user.id, companyId);
     const allowedRoles: Role[] = ["owner_admin", "manager", "qa_reviewer"];
     if (!allowedRoles.includes(role)) {
       return json(403, { error: "Seu perfil nao pode executar analise manual." });
     }
+
+    if (body.action === "cancel") {
+      const jobId = body.job_id;
+      if (!jobId) return json(400, { error: "Campo 'job_id' obrigatorio para cancelar." });
+
+      const { data: existingJob, error: existingJobError } = await supabase
+        .schema("app")
+        .from("ai_analysis_jobs")
+        .select("id, status")
+        .eq("id", jobId)
+        .eq("company_id", companyId)
+        .maybeSingle();
+
+      if (existingJobError) {
+        return json(500, { error: `Falha ao localizar job para cancelamento: ${existingJobError.message}` });
+      }
+
+      if (!existingJob) {
+        return json(404, { error: "Job nao encontrado para esta empresa." });
+      }
+
+      const currentStatus = existingJob.status;
+      if (currentStatus !== "queued" && currentStatus !== "running") {
+        return json(200, {
+          success: true,
+          cancelled: false,
+          job_id: existingJob.id,
+          status: currentStatus,
+          message: "Job ja finalizado. Nenhuma alteracao aplicada.",
+        });
+      }
+
+      const nowIso = new Date().toISOString();
+      const { data: cancelledJob, error: cancelError } = await supabase
+        .schema("app")
+        .from("ai_analysis_jobs")
+        .update({
+          status: "failed",
+          error_message: "Cancelado manualmente antes de iniciar nova execucao.",
+          finished_at: nowIso,
+          updated_at: nowIso,
+        })
+        .eq("id", jobId)
+        .eq("company_id", companyId)
+        .in("status", ["queued", "running"])
+        .select("id, status")
+        .maybeSingle();
+
+      if (cancelError) {
+        return json(500, { error: `Falha ao cancelar job: ${cancelError.message}` });
+      }
+
+      if (!cancelledJob) {
+        return json(200, {
+          success: true,
+          cancelled: false,
+          job_id: existingJob.id,
+          status: currentStatus,
+          message: "Job nao estava mais elegivel para cancelamento.",
+        });
+      }
+
+      return json(200, {
+        success: true,
+        cancelled: true,
+        job_id: cancelledJob.id,
+        status: cancelledJob.status,
+      });
+    }
+
+    const agentId = body.agent_id;
+    if (!agentId) return json(400, { error: "Campo 'agent_id' obrigatorio." });
+
+    const periodStart = parseDate(body.period_start, "period_start");
+    const periodEnd = parseDate(body.period_end, "period_end");
+    validatePeriod(periodStart, periodEnd);
 
     await ensureAgentBelongsToCompany(supabase, companyId, agentId);
     const companySettings = await getCompanySettings(supabase, companyId);
