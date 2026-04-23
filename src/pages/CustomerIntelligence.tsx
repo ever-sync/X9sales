@@ -10,6 +10,7 @@ import { cn } from '../lib/utils';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../integrations/supabase/client';
 import { EmptyState } from '../components/ui/EmptyState';
+import { IntelligenceTabs } from '../components/layout/IntelligenceTabs';
 
 type Tab = 'cliente' | 'ciclo';
 
@@ -24,6 +25,75 @@ type CIReport = {
   motivadores_compra: string[];
   risco_perda: string | null;
 };
+
+const MOCK_CI_REPORTS: CIReport[] = [
+  {
+    estagio_funil: 'comparando',
+    urgencia: 'alta',
+    perfil_comportamental: 'analitico',
+    sensibilidade_preco: 'alta',
+    nivel_interesse: 'alto',
+    principais_duvidas: ['Qual diferenca entre plano Pro e Premium?', 'Como funciona a implantacao?'],
+    principais_objecoes: ['Preco acima do esperado', 'Preciso validar com o financeiro'],
+    motivadores_compra: ['Aumentar conversao de vendas', 'Ganhar velocidade no follow-up'],
+    risco_perda: 'medio',
+  },
+  {
+    estagio_funil: 'pesquisando',
+    urgencia: 'media',
+    perfil_comportamental: 'cauteloso',
+    sensibilidade_preco: 'alta',
+    nivel_interesse: 'medio',
+    principais_duvidas: ['Tem integracao com CRM?', 'Quanto tempo para equipe aprender?'],
+    principais_objecoes: ['Equipe pode resistir a mudanca'],
+    motivadores_compra: ['Ter mais controle do funil'],
+    risco_perda: 'alto',
+  },
+  {
+    estagio_funil: 'pronto_fechar',
+    urgencia: 'alta',
+    perfil_comportamental: 'impulsivo',
+    sensibilidade_preco: 'media',
+    nivel_interesse: 'alto',
+    principais_duvidas: ['Existe suporte na implantacao?'],
+    principais_objecoes: ['Preciso de desconto para fechar hoje'],
+    motivadores_compra: ['Melhorar resultado do time comercial', 'Reducao de retrabalho'],
+    risco_perda: 'baixo',
+  },
+  {
+    estagio_funil: 'comparando',
+    urgencia: 'baixa',
+    perfil_comportamental: 'analitico',
+    sensibilidade_preco: 'media',
+    nivel_interesse: 'medio',
+    principais_duvidas: ['Quais indicadores vou acompanhar?', 'Tem caso de sucesso no meu segmento?'],
+    principais_objecoes: ['Nao vi diferencial claro ainda'],
+    motivadores_compra: ['Tomada de decisao com dados'],
+    risco_perda: 'medio',
+  },
+  {
+    estagio_funil: 'pronto_fechar',
+    urgencia: 'alta',
+    perfil_comportamental: 'cauteloso',
+    sensibilidade_preco: 'baixa',
+    nivel_interesse: 'alto',
+    principais_duvidas: ['Como fica o onboarding dos vendedores novos?'],
+    principais_objecoes: ['Preciso alinhar prazo de contrato'],
+    motivadores_compra: ['Escalar operacao mantendo qualidade', 'Melhor experiencia do cliente'],
+    risco_perda: 'baixo',
+  },
+  {
+    estagio_funil: 'pesquisando',
+    urgencia: 'media',
+    perfil_comportamental: 'cauteloso',
+    sensibilidade_preco: 'alta',
+    nivel_interesse: 'medio',
+    principais_duvidas: ['Existe periodo de teste?', 'Consigo começar com pacote menor?'],
+    principais_objecoes: ['Momento de caixa apertado'],
+    motivadores_compra: ['Economia de tempo da equipe'],
+    risco_perda: 'alto',
+  },
+];
 
 // ── Aggregation helpers ───────────────────────────────────────────────────────
 
@@ -203,6 +273,7 @@ function StageBadge({ label, pct: p, active }: { label: string; pct: number; act
 export default function CustomerIntelligence() {
   const [tab, setTab] = useState<Tab>('cliente');
   const { companyId } = useCompany();
+  const isLocalhostPreview = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
 
   const { data: rawReports = [], isLoading } = useQuery<CIReport[]>({
     queryKey: ['customer-intelligence', companyId],
@@ -222,18 +293,24 @@ export default function CustomerIntelligence() {
     staleTime: 1000 * 60 * 5,
   });
 
+  const effectiveReports = useMemo(() => {
+    if (rawReports.length > 0) return rawReports;
+    if (isLocalhostPreview) return MOCK_CI_REPORTS;
+    return [];
+  }, [isLocalhostPreview, rawReports]);
+
   const agg = useMemo(() => {
-    const total = rawReports.length;
+    const total = effectiveReports.length;
     if (total === 0) return null;
 
-    const urgenciaCounts = countByField(rawReports.map(r => r.urgencia));
-    const perfilCounts = countByField(rawReports.map(r => r.perfil_comportamental));
-    const estagioCounts = countByField(rawReports.map(r => r.estagio_funil));
-    const sensPrecoCounts = countByField(rawReports.map(r => r.sensibilidade_preco));
+    const urgenciaCounts = countByField(effectiveReports.map(r => r.urgencia));
+    const perfilCounts = countByField(effectiveReports.map(r => r.perfil_comportamental));
+    const estagioCounts = countByField(effectiveReports.map(r => r.estagio_funil));
+    const sensPrecoCounts = countByField(effectiveReports.map(r => r.sensibilidade_preco));
 
-    const allDuvidas = rawReports.flatMap(r => r.principais_duvidas ?? []);
-    const allObjecoes = rawReports.flatMap(r => r.principais_objecoes ?? []);
-    const allMotivadores = rawReports.flatMap(r => r.motivadores_compra ?? []);
+    const allDuvidas = effectiveReports.flatMap(r => r.principais_duvidas ?? []);
+    const allObjecoes = effectiveReports.flatMap(r => r.principais_objecoes ?? []);
+    const allMotivadores = effectiveReports.flatMap(r => r.motivadores_compra ?? []);
 
     const topDuvidas = topN(countOcc(allDuvidas), 7);
     const topObjecoes = topN(countOcc(allObjecoes), 5);
@@ -243,7 +320,7 @@ export default function CustomerIntelligence() {
     const pesquisando = estagioCounts['pesquisando'] ?? 0;
     const comparando = estagioCounts['comparando'] ?? 0;
     const prontoFechar = estagioCounts['pronto_fechar'] ?? 0;
-    const highInterest = rawReports.filter(r => r.nivel_interesse === 'alto' || r.nivel_interesse === 'medio').length;
+    const highInterest = effectiveReports.filter(r => r.nivel_interesse === 'alto' || r.nivel_interesse === 'medio').length;
 
     return {
       total,
@@ -265,14 +342,14 @@ export default function CustomerIntelligence() {
       comparandoPct: pct(comparando, total),
       prontoFecharPct: pct(prontoFechar, total),
     };
-  }, [rawReports]);
+  }, [effectiveReports]);
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'cliente', label: 'Como o cliente decide' },
     { id: 'ciclo', label: 'Ciclo de Decisao' },
   ];
 
-  if (isLoading) {
+  if (isLoading && !isLocalhostPreview) {
     return (
       <div className="flex items-center justify-center p-16">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -298,6 +375,8 @@ export default function CustomerIntelligence() {
           <span className="text-xs font-semibold text-primary">IA</span>
         </div>
       </div>
+
+      <IntelligenceTabs />
 
       {/* Tabs */}
       <div className="flex gap-1 rounded-2xl border border-border bg-muted/40 p-1 w-fit">

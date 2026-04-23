@@ -1,7 +1,9 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+/* eslint-disable react-refresh/only-export-components */
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { supabase } from '../integrations/supabase/client';
 import { useAuth } from '../hooks/useAuth';
+import { isAppRole } from '../config/rbac';
 import type { Company, AppRole, CompanySettings } from '../types';
 
 interface CompanyContextValue {
@@ -27,27 +29,29 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [roleMap, setRoleMap] = useState<Record<string, AppRole>>({});
-  const [isLoading, setIsLoading] = useState(true);
+  const [loadedUserId, setLoadedUserId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    if (authLoading) {
-      setIsLoading(true);
+    if (authLoading || !user) {
       return () => {
         cancelled = true;
       };
     }
 
-    if (!user) {
-      setCompanies([]);
-      setCompanyId(null);
-      setRoleMap({});
-      setIsLoading(false);
-      return () => {
-        cancelled = true;
-      };
-    }
+    type CompanyJoinRow = {
+      name: string;
+      slug: string;
+      settings: CompanySettings;
+      created_at: string;
+    };
+
+    type CompanyMemberFallbackRow = {
+      company_id: string;
+      role: string;
+      company: CompanyJoinRow | CompanyJoinRow[] | null;
+    };
 
     type CompanyRow = {
       company_id: string;
@@ -71,7 +75,9 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
 
       const roles: Record<string, AppRole> = {};
       rows.forEach(r => {
-        if (r.company_id && r.role) roles[r.company_id] = r.role as AppRole;
+        if (r.company_id && isAppRole(r.role)) {
+          roles[r.company_id] = r.role;
+        }
       });
 
       setCompanies(comps);
@@ -80,12 +86,10 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       const stored = localStorage.getItem('monitoraia_company_id');
       const match = comps.find(c => c.id === stored);
       setCompanyId(match?.id ?? comps[0]?.id ?? null);
-      setIsLoading(false);
+      setLoadedUserId(user.id);
     };
 
     const loadCompanies = async () => {
-      setIsLoading(true);
-
       const { data, error } = await supabase.rpc('get_my_companies');
 
       if (!error) {
@@ -118,13 +122,13 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
         setCompanies([]);
         setCompanyId(null);
         setRoleMap({});
-        setIsLoading(false);
+        setLoadedUserId(user.id);
         return;
       }
 
-      const rows: CompanyRow[] = ((fallbackData ?? []) as any[])
+      const rows: CompanyRow[] = ((fallbackData ?? []) as CompanyMemberFallbackRow[])
         .map(row => {
-          const company = row.company;
+          const company = Array.isArray(row.company) ? row.company[0] : row.company;
           if (!row.company_id || !row.role || !company?.name) return null;
           return {
             company_id: row.company_id,
@@ -145,22 +149,31 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [user?.id, authLoading]);
+  }, [authLoading, user]);
 
   const handleSetCompanyId = (id: string) => {
     setCompanyId(id);
     localStorage.setItem('monitoraia_company_id', id);
   };
 
-  const company = companies.find(c => c.id === companyId) ?? null;
-  const role = companyId ? (roleMap[companyId] ?? null) : null;
+  const resolvedCompanies = useMemo(
+    () => (user ? companies : []),
+    [companies, user],
+  );
+  const resolvedCompanyId = user ? companyId : null;
+  const company = useMemo(
+    () => resolvedCompanies.find(c => c.id === resolvedCompanyId) ?? null,
+    [resolvedCompanies, resolvedCompanyId],
+  );
+  const role = resolvedCompanyId ? (roleMap[resolvedCompanyId] ?? null) : null;
+  const isLoading = authLoading || (!!user && loadedUserId !== user.id);
 
   return (
     <CompanyContext.Provider
       value={{
-        companyId,
+        companyId: resolvedCompanyId,
         company,
-        companies,
+        companies: resolvedCompanies,
         role,
         setCompanyId: handleSetCompanyId,
         isLoading,

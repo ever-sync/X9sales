@@ -7,7 +7,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-type Role = "owner_admin" | "manager" | "qa_reviewer" | "agent";
+type Role = "owner_admin" | "agent";
 type Action = "preview" | "start" | "cancel";
 type Scope = "single" | "all";
 
@@ -321,9 +321,9 @@ serve(async (req) => {
     if (!companyId) return json(400, { error: "Campo 'company_id' obrigatorio." });
 
     const role = await getMemberRole(supabase, user.id, companyId);
-    const allowedRoles: Role[] = ["owner_admin", "manager", "qa_reviewer"];
+    const allowedRoles: Role[] = ["owner_admin"];
     if (!allowedRoles.includes(role)) {
-      return json(403, { error: "Seu perfil nao pode executar analise manual." });
+      return json(403, { error: "Somente owner_admin pode executar analise manual." });
     }
 
     if (body.action === "cancel") {

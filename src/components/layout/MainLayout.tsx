@@ -1,5 +1,5 @@
 import { Outlet, useLocation, Navigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { BottomNav } from './BottomNav';
@@ -10,14 +10,14 @@ import { useCompany } from '../../contexts/CompanyContext';
 export function MainLayout() {
   const { companies, isLoading } = useCompany();
   const location = useLocation();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarState, setSidebarState] = useState<{ isOpen: boolean; pathname: string }>({
+    isOpen: false,
+    pathname: location.pathname,
+  });
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem('sidebar-collapsed') === 'true',
   );
-
-  useEffect(() => {
-    setSidebarOpen(false);
-  }, [location.pathname]);
+  const sidebarOpen = sidebarState.isOpen && sidebarState.pathname === location.pathname;
 
   function toggleCollapse() {
     setCollapsed(prev => {
@@ -51,9 +51,14 @@ export function MainLayout() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} collapsed={collapsed} onToggleCollapse={toggleCollapse} />
+      <Sidebar
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarState({ isOpen: false, pathname: location.pathname })}
+        collapsed={collapsed}
+        onToggleCollapse={toggleCollapse}
+      />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <Header onOpenSidebar={() => setSidebarOpen(true)} />
+        <Header onOpenSidebar={() => setSidebarState({ isOpen: true, pathname: location.pathname })} />
         <main className="flex-1 overflow-y-auto px-4 py-4 text-foreground sm:px-5 lg:px-8 lg:py-6 pb-32 md:pb-6">
           <div className="mx-auto w-full max-w-[1600px]">
             <Outlet />

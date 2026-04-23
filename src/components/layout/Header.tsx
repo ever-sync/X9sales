@@ -15,6 +15,7 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../../integrations/supabase/client';
 import { CACHE } from '../../config/constants';
+import { getRoleLabel } from '../../config/rbac';
 
 export function Header({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const { user, signOut } = useAuth();
@@ -36,11 +37,6 @@ export function Header({ onOpenSidebar }: { onOpenSidebar: () => void }) {
     enabled: !!companyId,
     staleTime: CACHE.STALE_TIME,
   });
-
-  const roleLabels: Record<string, string> = {
-    owner_admin: 'Administrador',
-    agent: 'Visualizador',
-  };
 
   return (
     <header className="z-30 flex h-[64px] shrink-0 items-center justify-between border-b border-border bg-white/95 px-4 backdrop-blur-md sm:px-5 lg:px-8">
@@ -107,7 +103,7 @@ export function Header({ onOpenSidebar }: { onOpenSidebar: () => void }) {
               </p>
               {role && (
                 <p className="text-[11px] text-muted-foreground leading-none mt-1">
-                  {roleLabels[role] ?? role}
+                  {getRoleLabel(role)}
                 </p>
               )}
             </div>

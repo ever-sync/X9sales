@@ -36,6 +36,7 @@ import { CACHE } from '../config/constants';
 import { env } from '../config/env';
 import { MetricCard } from '../components/dashboard/MetricCard';
 import { Button } from '../components/ui/button';
+import { IntelligenceTabs } from '../components/layout/IntelligenceTabs';
 import { channelLabel, cn, formatDateTime, formatPercent } from '../lib/utils';
 import { downloadCsv } from '../lib/export';
 import { toast } from 'sonner';
@@ -348,7 +349,19 @@ export default function AIInsights() {
   const [selectedAgentId, setSelectedAgentId] = useState(ALL_AGENTS);
   const [selectedTag, setSelectedTag] = useState('');
   const [coachingFilter, setCoachingFilter] = useState<CoachingFilter>('all');
-  const [reviewPage, setReviewPage] = useState(1);
+  const reviewFilterKey = [companyId, selectedAgentId, periodStart, periodEnd, timezone, selectedTag, coachingFilter].join('|');
+  const [reviewPageState, setReviewPageState] = useState<{ filterKey: string; page: number }>({
+    filterKey: '',
+    page: 1,
+  });
+  const reviewPage = reviewPageState.filterKey === reviewFilterKey ? reviewPageState.page : 1;
+  const setReviewPage = (value: number | ((page: number) => number)) => {
+    setReviewPageState((current) => {
+      const currentPage = current.filterKey === reviewFilterKey ? current.page : 1;
+      const nextPage = typeof value === 'function' ? value(currentPage) : value;
+      return { filterKey: reviewFilterKey, page: nextPage };
+    });
+  };
 
   const [showModal, setShowModal] = useState(false);
   const [modalStep, setModalStep] = useState<ModalStep>('form');
@@ -441,10 +454,6 @@ export default function AIInsights() {
     enabled: filtersReady && !!companyId,
     staleTime: CACHE.STALE_TIME,
   });
-
-  useEffect(() => {
-    setReviewPage(1);
-  }, [companyId, selectedAgentId, periodStart, periodEnd, timezone, selectedTag, coachingFilter]);
 
   const reviewFeedQuery = useQuery<AIInsightsReviewItem[]>({
     queryKey: ['ai-insights', 'review-feed', companyId, selectedAgentId, periodStart, periodEnd, timezone, selectedTag, coachingFilter, reviewPage],
@@ -750,10 +759,17 @@ export default function AIInsights() {
   useEffect(() => {
     if (!showModal || !previewQuery.isError) return;
     const message = previewQuery.error?.message ?? '';
-    if (isSessionExpiredMessage(message)) {
-      redirectToLogin(message);
-    }
-  }, [previewQuery.error, previewQuery.isError, showModal]);
+    if (!isSessionExpiredMessage(message)) return;
+
+    const redirect = `${location.pathname}${location.search}${location.hash}`;
+    const timeoutId = window.setTimeout(() => {
+      closeModal();
+      toast.error(message || 'Sessao expirada. Faca login novamente.');
+      navigate(`/login?redirect=${encodeURIComponent(redirect)}`, { replace: true });
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [location.hash, location.pathname, location.search, navigate, previewQuery.error, previewQuery.isError, showModal]);
 
   const jobQuery = useQuery<AIAnalysisJob, Error>({
     queryKey: ['ai-insights', 'job', companyId, jobId],
@@ -806,9 +822,12 @@ export default function AIInsights() {
     const latest = latestProcessingJobQuery.data;
     if (!latest?.id) return;
     if (jobId === latest.id) return;
-    setJobId(latest.id);
-    setSubmittedTotalCandidates(latest.total_candidates ?? 0);
-    queryClient.setQueryData(['ai-insights', 'job', companyId, latest.id], latest);
+    const timeoutId = window.setTimeout(() => {
+      setJobId(latest.id);
+      setSubmittedTotalCandidates(latest.total_candidates ?? 0);
+      queryClient.setQueryData(['ai-insights', 'job', companyId, latest.id], latest);
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
   }, [companyId, jobId, latestProcessingJobQuery.data, modalStep, queryClient, showModal]);
 
   useEffect(() => {
@@ -1023,6 +1042,9 @@ export default function AIInsights() {
             <p className="mt-2 max-w-3xl text-sm text-muted-foreground md:text-base">
               Leia a operacao por periodo, atendente, tag e necessidade de coaching. Os agregados abaixo nao dependem mais da lista limitada da tela.
             </p>
+            <div className="mt-5">
+              <IntelligenceTabs />
+            </div>
             <div className="mt-4 flex flex-wrap gap-2">
               <Link to="/playbooks" className="rounded-full border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:border-primary/40 hover:bg-primary/10">
                 Ajustar playbooks

@@ -7,7 +7,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-type Role = "owner_admin" | "manager" | "qa_reviewer" | "agent";
+type Role = "owner_admin" | "agent";
 
 interface ReportRequestBody {
   company_id?: string;
@@ -172,9 +172,9 @@ serve(async (req) => {
     validatePeriod(periodStart, periodEnd);
 
     const role = await getMemberRole(supabase, user.id, body.company_id);
-    const allowedRoles: Role[] = ["owner_admin", "manager", "qa_reviewer"];
+    const allowedRoles: Role[] = ["owner_admin"];
     if (!allowedRoles.includes(role)) {
-      return json(403, { error: "Seu perfil nao pode gerar relatorio de ROI." });
+      return json(403, { error: "Somente owner_admin pode gerar relatorio de ROI." });
     }
 
     const agentId = body.agent_id ?? null;

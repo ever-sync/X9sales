@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -126,11 +126,11 @@ export default function Coach() {
   const { company, role } = useCompany();
   const queryClient = useQueryClient();
   const canManageCoach = role === 'owner_admin';
-  const [coachEnabled, setCoachEnabled] = useState(false);
-
-  useEffect(() => {
-    setCoachEnabled(!!company?.settings.agent_morning_improvement_ideas);
-  }, [company?.id, company?.settings.agent_morning_improvement_ideas]);
+  const [coachPreference, setCoachPreference] = useState<{ companyId: string | null; enabled: boolean } | null>(null);
+  const [referenceNow] = useState(() => Date.now());
+  const coachEnabled = coachPreference && coachPreference.companyId === company?.id
+    ? coachPreference.enabled
+    : !!company?.settings.agent_morning_improvement_ideas;
 
   const agentsQuery = useQuery<AgentRow[]>({
     queryKey: ['coach-agents', company?.id],
@@ -201,7 +201,7 @@ export default function Coach() {
       };
 
       const { error } = await supabase
-        .from('companies' as any)
+        .from('companies')
         .update({ settings: nextSettings })
         .eq('id', company.id);
 
@@ -209,7 +209,7 @@ export default function Coach() {
       return enabled;
     },
     onSuccess: (enabled) => {
-      setCoachEnabled(enabled);
+      setCoachPreference({ companyId: company?.id ?? null, enabled });
       toast.success(enabled ? 'Coach matinal ativado.' : 'Coach matinal desativado.');
       queryClient.invalidateQueries({ queryKey: ['coach-notification-jobs', company?.id] });
     },
@@ -218,18 +218,18 @@ export default function Coach() {
     },
   });
 
-  const allAgents = agentsQuery.data ?? [];
+  const allAgents = useMemo(() => agentsQuery.data ?? [], [agentsQuery.data]);
   const activeAgents = allAgents.filter((agent) => agent.is_active);
   const agentsWithPhone = activeAgents.filter((agent) => !!agent.phone?.trim()).length;
   const agentsWithoutPhone = Math.max(activeAgents.length - agentsWithPhone, 0);
 
   const recentCoachJobs = useMemo(() => {
-    const weekWindow = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const weekWindow = referenceNow - 7 * 24 * 60 * 60 * 1000;
     return (coachJobsQuery.data ?? []).filter((job) => {
       const timestamp = Date.parse(job.created_at ?? job.scheduled_for);
       return Number.isFinite(timestamp) && timestamp >= weekWindow;
     });
-  }, [coachJobsQuery.data]);
+  }, [coachJobsQuery.data, referenceNow]);
   const sentJobs = recentCoachJobs.filter((job) => job.status === 'sent').length;
   const pendingJobs = recentCoachJobs.filter((job) => job.status === 'pending').length;
   const failedJobs = recentCoachJobs.filter((job) => job.status === 'failed').length;

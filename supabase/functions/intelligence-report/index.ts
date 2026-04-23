@@ -392,8 +392,8 @@ serve(async (req) => {
       .maybeSingle();
 
     if (!member) return json(403, { error: "Voce nao e membro ativo desta empresa." });
-    if (!["owner_admin", "manager", "qa_reviewer"].includes((member as { role: string }).role)) {
-      return json(403, { error: "Perfil sem permissao para executar analise de inteligencia." });
+    if ((member as { role: string }).role !== "owner_admin") {
+      return json(403, { error: "Somente owner_admin pode executar analise de inteligencia." });
     }
 
     const aiProvider = await resolveCompanyAIProvider(supabase, companyId);

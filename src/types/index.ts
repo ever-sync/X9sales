@@ -1,7 +1,8 @@
 // ============================================================
 // RBAC Types
 // ============================================================
-export type AppRole = 'owner_admin' | 'agent';
+export type { AppRole } from '../config/rbac';
+import type { AppRole } from '../config/rbac';
 
 export interface CompanyMember {
   id: string;

@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - 'codex/**'
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            scanner/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install scanner dependencies
+        run: npm ci
+        working-directory: scanner
+
+      - name: Lint frontend
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Run tests
+        run: npm run test:run
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build scanner
+        run: npm run build
+        working-directory: scanner

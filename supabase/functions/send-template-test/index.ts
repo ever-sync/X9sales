@@ -45,7 +45,7 @@ async function canSendTemplateForCompany(companyId: string, userId: string): Pro
 
   if (error) throw error;
   if (!data) return false;
-  return ["owner_admin", "manager", "qa_reviewer"].includes(data.role);
+  return data.role === "owner_admin";
 }
 
 async function sendWhatsApp(message: string, phone: string) {

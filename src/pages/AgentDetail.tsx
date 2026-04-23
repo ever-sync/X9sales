@@ -508,11 +508,8 @@ export default function AgentDetail() {
       }
     },
   });
-  const [avatarError, setAvatarError] = useState(false);
-
-  useEffect(() => {
-    setAvatarError(false);
-  }, [agent?.avatar_url]);
+  const [erroredAvatarUrl, setErroredAvatarUrl] = useState<string | null>(null);
+  const avatarError = !!agent?.avatar_url && erroredAvatarUrl === agent.avatar_url;
 
   useEffect(() => {
     avatarAutoSyncTriggered.current = false;
@@ -546,7 +543,12 @@ export default function AgentDetail() {
         </Link>
         <div className="flex items-center gap-3">
           {agent.avatar_url && !avatarError ? (
-            <img src={agent.avatar_url} alt={agent.name} className="h-12 w-12 rounded-full object-cover" onError={() => setAvatarError(true)} />
+            <img
+              src={agent.avatar_url}
+              alt={agent.name}
+              className="h-12 w-12 rounded-full object-cover"
+              onError={() => setErroredAvatarUrl(agent.avatar_url ?? null)}
+            />
           ) : (
             <div className="h-12 w-12 bg-accent rounded-full flex items-center justify-center">
               <User className="h-6 w-6 text-primary" />

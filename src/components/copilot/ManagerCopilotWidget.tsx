@@ -386,29 +386,25 @@ export function ManagerCopilotWidget() {
     enabled: enabled && isOpen,
     staleTime: 30 * 1000,
   });
-
-  useEffect(() => {
-    if (!activeThreadId && threads && threads.length > 0) {
-      setActiveThreadId(threads[0].id);
-    }
-  }, [activeThreadId, threads]);
+  const resolvedActiveThreadId = activeThreadId ?? threads?.[0]?.id ?? null;
+  const resolvedAgentId = agentId || agents?.[0]?.id || '';
 
   const { data: activeJob } = useQuery<ManagerFeedbackJob | null>({
-    queryKey: ['manager-copilot-job', companyId, activeThreadId],
+    queryKey: ['manager-copilot-job', companyId, resolvedActiveThreadId],
     queryFn: async () => {
-      if (!companyId || !activeThreadId) return null;
+      if (!companyId || !resolvedActiveThreadId) return null;
       const { data, error } = await supabase
         .from('manager_feedback_jobs')
         .select('*')
         .eq('company_id', companyId)
-        .eq('thread_id', activeThreadId)
+        .eq('thread_id', resolvedActiveThreadId)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
       if (error) throw error;
       return (data as ManagerFeedbackJob | null) ?? null;
     },
-    enabled: enabled && isOpen && !!activeThreadId,
+    enabled: enabled && isOpen && !!resolvedActiveThreadId,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       if (status === 'queued' || status === 'running') return 2000;
@@ -417,20 +413,20 @@ export function ManagerCopilotWidget() {
   });
 
   const { data: messages } = useQuery<ManagerCopilotMessage[]>({
-    queryKey: ['manager-copilot-messages', companyId, activeThreadId],
+    queryKey: ['manager-copilot-messages', companyId, resolvedActiveThreadId],
     queryFn: async () => {
-      if (!companyId || !activeThreadId) return [];
+      if (!companyId || !resolvedActiveThreadId) return [];
       const { data, error } = await supabase
         .from('manager_copilot_messages')
         .select('*')
         .eq('company_id', companyId)
-        .eq('thread_id', activeThreadId)
+        .eq('thread_id', resolvedActiveThreadId)
         .order('created_at', { ascending: true })
         .limit(200);
       if (error) throw error;
       return (data ?? []) as ManagerCopilotMessage[];
     },
-    enabled: enabled && isOpen && !!activeThreadId,
+    enabled: enabled && isOpen && !!resolvedActiveThreadId,
     refetchInterval: activeJob?.status === 'queued' || activeJob?.status === 'running' ? 2000 : false,
     staleTime: 0,
   });
@@ -441,19 +437,13 @@ export function ManagerCopilotWidget() {
     if (prevStatus && (prevStatus === 'queued' || prevStatus === 'running')) {
       if (activeJob.status === 'completed') {
         toast.success('Analise profunda do Copiloto concluida.');
-        queryClient.invalidateQueries({ queryKey: ['manager-copilot-messages', companyId, activeThreadId] });
+        queryClient.invalidateQueries({ queryKey: ['manager-copilot-messages', companyId, resolvedActiveThreadId] });
       } else if (activeJob.status === 'failed') {
         toast.error(activeJob.error_message || 'Falha ao concluir a analise profunda.');
       }
     }
     previousJobStatusRef.current = activeJob.status;
-  }, [activeJob, queryClient, companyId, activeThreadId]);
-
-  useEffect(() => {
-    if (!agentId && agents && agents.length > 0) {
-      setAgentId(agents[0].id);
-    }
-  }, [agentId, agents]);
+  }, [activeJob, queryClient, companyId, resolvedActiveThreadId]);
 
   const askMutation = useMutation({
     mutationFn: async () => {
@@ -469,12 +459,12 @@ export function ManagerCopilotWidget() {
 
       return callAskManagerCopilot(token, {
         action: 'ask',
-        thread_id: activeThreadId,
+        thread_id: resolvedActiveThreadId,
         company_id: companyId,
         question: question.trim(),
         period_start: periodStart,
         period_end: periodEnd,
-        agent_id: agentId || null,
+        agent_id: resolvedAgentId || null,
       });
     },
     onSuccess: (result) => {
@@ -512,9 +502,15 @@ export function ManagerCopilotWidget() {
   });
 
   const sortedMessages = useMemo(() => messages ?? [], [messages]);
-  const selectedAgent = useMemo(() => (agents ?? []).find((agent) => agent.id === agentId) ?? null, [agents, agentId]);
+  const selectedAgent = useMemo(
+    () => (agents ?? []).find((agent) => agent.id === resolvedAgentId) ?? null,
+    [agents, resolvedAgentId],
+  );
   const suggestedQuestions = useSuggestedQuestions(selectedAgent?.name ?? null);
-  const activeThread = useMemo(() => (threads ?? []).find((thread) => thread.id === activeThreadId) ?? null, [threads, activeThreadId]);
+  const activeThread = useMemo(
+    () => (threads ?? []).find((thread) => thread.id === resolvedActiveThreadId) ?? null,
+    [threads, resolvedActiveThreadId],
+  );
   const inProgress = activeJob?.status === 'queued' || activeJob?.status === 'running';
 
   if (!enabled) return null;
@@ -613,7 +609,7 @@ export function ManagerCopilotWidget() {
             <div className="border-b border-border/70 bg-muted/30 px-4 py-3">
               <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Historico</label>
               <select
-                value={activeThreadId ?? ''}
+                value={resolvedActiveThreadId ?? ''}
                 onChange={(event) => setActiveThreadId(event.target.value || null)}
                 className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring/35"
               >
@@ -746,7 +742,7 @@ export function ManagerCopilotWidget() {
                     Atendente
                   </span>
                   <select
-                    value={agentId}
+                    value={resolvedAgentId}
                     onChange={(event) => setAgentId(event.target.value)}
                     className="w-full bg-transparent text-xs text-foreground outline-none"
                   >

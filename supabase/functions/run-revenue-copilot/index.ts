@@ -7,7 +7,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-type Role = "owner_admin" | "manager" | "qa_reviewer" | "agent";
+type Role = "owner_admin" | "agent";
 type Action = "preview" | "start";
 type Scope = "single" | "all";
 
@@ -304,9 +304,9 @@ serve(async (req) => {
     validatePeriod(periodStart, periodEnd);
 
     const role = await getMemberRole(supabase, user.id, companyId);
-    const allowedRoles: Role[] = ["owner_admin", "manager", "qa_reviewer"];
+    const allowedRoles: Role[] = ["owner_admin"];
     if (!allowedRoles.includes(role)) {
-      return json(403, { error: "Seu perfil nao pode executar o Revenue Copilot manual." });
+      return json(403, { error: "Somente owner_admin pode executar o Revenue Copilot manual." });
     }
 
     await ensureAgentBelongsToCompany(supabase, companyId, agentId);

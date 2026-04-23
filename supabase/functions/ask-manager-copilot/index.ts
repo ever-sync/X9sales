@@ -7,7 +7,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-type Role = "owner_admin" | "manager" | "qa_reviewer" | "agent";
+type Role = "owner_admin" | "agent";
 type Action = "ask";
 type JobStatus = "queued" | "running" | "completed" | "failed";
 
@@ -647,9 +647,9 @@ serve(async (req) => {
     }
 
     const role = await getMemberRole(supabase, user.id, body.company_id);
-    const allowedRoles: Role[] = ["owner_admin", "manager", "qa_reviewer"];
+    const allowedRoles: Role[] = ["owner_admin"];
     if (!allowedRoles.includes(role)) {
-      return json(403, { success: false, error: "Seu perfil nao pode usar o Copiloto do Gestor." });
+      return json(403, { success: false, error: "Somente owner_admin pode usar o Copiloto do Gestor." });
     }
 
     const companySettings = await getCompanySettings(supabase, body.company_id);

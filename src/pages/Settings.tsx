@@ -36,6 +36,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Input } from '../components/ui/input';
 import { supabase } from '../integrations/supabase/client';
 import { env } from '../config/env';
+import { getRoleBadgeLabel } from '../config/rbac';
 import type { AIProviderConfig, AIProviderKind, BillingInvoice, BillingSubscription, BlockedAnalysisCustomer, Company, CompanyInvite, CompanySettings, NotificationJobSummary } from '../types';
 import { cn, formatCurrency, formatDate, formatDateTime, formatSeconds } from '../lib/utils';
 import { areBrowserAlertsEnabled, requestBrowserAlertPermission, setBrowserAlertsEnabled } from '../lib/browserNotifications';
@@ -240,14 +241,6 @@ function formatBlockedPhone(value: string) {
     return `+55 ${digits.slice(2).replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')}`;
   }
   return digits;
-}
-
-function roleLabel(role: string) {
-  const labels: Record<string, string> = {
-    owner_admin: 'ADMIN',
-    agent: 'VISUALIZADOR',
-  };
-  return labels[role] ?? role;
 }
 
 type AIProviderOption = {
@@ -2113,7 +2106,7 @@ export default function Settings() {
                               </select>
                             ) : (
                               <span className="inline-flex rounded-full bg-muted px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-foreground">
-                                {roleLabel(row.role)}
+                                {getRoleBadgeLabel(row.role === 'owner_admin' ? 'owner_admin' : 'agent')}
                               </span>
                             )}
                           </div>

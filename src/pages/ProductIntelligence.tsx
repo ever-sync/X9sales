@@ -24,8 +24,9 @@ import { env } from '../config/env';
 import { supabase, clearStoredSupabaseSession, isInvalidRefreshTokenError } from '../integrations/supabase/client';
 import { useBlockedPhones } from '../hooks/useBlockedPhones';
 import { ProductIntelligenceStrategicPanel } from '../components/reports/ProductIntelligenceStrategicPanel';
+import { IntelligenceTabs } from '../components/layout/IntelligenceTabs';
 import { Button } from '../components/ui/button';
-import type { ProductIntelligenceRun } from '../types';
+import type { ProductIntelligenceRun, ProductIntelligenceStrategicReport } from '../types';
 
 type Tab = 'produto' | 'objecoes';
 
@@ -50,6 +51,246 @@ interface StartResponse {
   prompt_version?: string;
   error?: string;
 }
+
+const MOCK_PI_REPORTS: PIReport[] = [
+  {
+    conversation_id: 'mock-conv-001',
+    produto_citado: 'Plano Premium',
+    produto_interesse: 'Plano Premium',
+    produtos_comparados: ['Plano Basico'],
+    motivo_interesse: 'Quer automatizar follow-up sem aumentar equipe',
+    dificuldade_entendimento: 'alto',
+    barreiras_produto: ['Nao entendeu diferenca entre Basico e Premium'],
+    objecao_tratada: false,
+    oportunidade_perdida: true,
+  },
+  {
+    conversation_id: 'mock-conv-002',
+    produto_citado: 'Plano Premium',
+    produto_interesse: 'Plano Premium',
+    produtos_comparados: ['Plano Pro'],
+    motivo_interesse: 'Busca mais controle de funil',
+    dificuldade_entendimento: 'medio',
+    barreiras_produto: ['Preco percebido como alto sem demonstracao de ROI'],
+    objecao_tratada: true,
+    oportunidade_perdida: false,
+  },
+  {
+    conversation_id: 'mock-conv-003',
+    produto_citado: 'Consultoria de Implantacao',
+    produto_interesse: 'Consultoria de Implantacao',
+    produtos_comparados: ['Treinamento interno'],
+    motivo_interesse: 'Precisa colocar o time para rodar rapido',
+    dificuldade_entendimento: 'alto',
+    barreiras_produto: ['Escopo da implantacao nao ficou claro'],
+    objecao_tratada: false,
+    oportunidade_perdida: true,
+  },
+  {
+    conversation_id: 'mock-conv-004',
+    produto_citado: 'Plano Basico',
+    produto_interesse: 'Plano Basico',
+    produtos_comparados: [],
+    motivo_interesse: 'Quer comecar com investimento menor',
+    dificuldade_entendimento: 'baixo',
+    barreiras_produto: ['Sem integracao com CRM legado'],
+    objecao_tratada: true,
+    oportunidade_perdida: false,
+  },
+  {
+    conversation_id: 'mock-conv-005',
+    produto_citado: 'Plano Premium',
+    produto_interesse: 'Plano Premium',
+    produtos_comparados: ['Plano Basico'],
+    motivo_interesse: 'Quer escalar sem perder padrao de atendimento',
+    dificuldade_entendimento: 'alto',
+    barreiras_produto: ['Nao entendeu diferenca entre Basico e Premium'],
+    objecao_tratada: false,
+    oportunidade_perdida: true,
+  },
+  {
+    conversation_id: 'mock-conv-006',
+    produto_citado: 'Plano Pro',
+    produto_interesse: 'Plano Pro',
+    produtos_comparados: ['Plano Premium'],
+    motivo_interesse: 'Equipe comercial com 8 vendedores',
+    dificuldade_entendimento: 'medio',
+    barreiras_produto: ['Falta caso de uso para segmento da empresa'],
+    objecao_tratada: true,
+    oportunidade_perdida: false,
+  },
+];
+
+const MOCK_STRATEGIC_REPORT: ProductIntelligenceStrategicReport = {
+  resumo_executivo:
+    'O mercado demonstra interesse no Plano Premium, mas a conversao cai quando o valor percebido nao e conectado ao ROI em ate 30 dias. A principal alavanca agora e simplificar posicionamento e prova de resultado.',
+  percepcao_geral_produto: {
+    clareza: 'Media: clientes entendem o problema, mas confundem diferencas entre planos.',
+    valor_percebido: 'Alto quando ha simulacao de retorno; baixo quando a conversa fica tecnica.',
+    interesse_gerado: 'Consistente em operacoes com time comercial estruturado.',
+    principal_risco: 'Perda de deals por objecao de preco sem contextualizacao de valor.',
+    principal_oportunidade: 'Padronizar demo com casos de ROI por segmento.',
+  },
+  clientes_buscam: [
+    {
+      title: 'Automacao de follow-up',
+      summary: 'Recorrente em empresas que querem aumentar conversao sem contratar mais vendedores.',
+      frequency: 14,
+      impact: 'Pode elevar produtividade e taxa de fechamento no curto prazo.',
+      urgency: 'alta',
+      severity: 'high',
+      likely_cause: 'produto',
+      evidence_conversation_ids: ['mock-conv-001', 'mock-conv-005'],
+    },
+  ],
+  principais_dores: [
+    {
+      title: 'Baixa previsibilidade de pipeline',
+      summary: 'Lideres relatam dificuldade para priorizar oportunidades quentes.',
+      frequency: 11,
+      impact: 'Atraso de decisoes comerciais e perda de timing.',
+      urgency: 'alta',
+      severity: 'high',
+      likely_cause: 'expectativa',
+      evidence_conversation_ids: ['mock-conv-002'],
+    },
+  ],
+  duvidas_frequentes: [
+    {
+      title: 'Diferenca entre Basico, Pro e Premium',
+      summary: 'Duvida aparece mesmo em leads qualificados.',
+      frequency: 10,
+      impact: 'Aumenta ciclo comercial e gera comparacao por preco.',
+      urgency: 'media',
+      severity: 'medium',
+      likely_cause: 'comunicacao',
+      evidence_conversation_ids: ['mock-conv-001', 'mock-conv-003'],
+    },
+  ],
+  objecoes_frequentes: [
+    {
+      title: 'Preco alto para o momento',
+      summary: 'Objecao surge quando nao existe simulacao do custo de inacao.',
+      frequency: 9,
+      impact: 'Aumenta perdas no fundo do funil.',
+      urgency: 'alta',
+      severity: 'critical',
+      likely_cause: 'preco',
+      evidence_conversation_ids: ['mock-conv-001', 'mock-conv-005'],
+    },
+  ],
+  valor_percebido: [
+    {
+      title: 'ROI rapido quando bem implantado',
+      summary: 'Clientes que entendem onboarding reportam ganho percebido imediato.',
+      frequency: 7,
+      impact: 'Favorece expansao e upsell.',
+      urgency: 'media',
+      severity: 'medium',
+      likely_cause: 'oferta',
+      evidence_conversation_ids: ['mock-conv-004'],
+    },
+  ],
+  pontos_de_confusao: [
+    {
+      title: 'Escopo da implantacao',
+      summary: 'Nao fica claro o que esta incluso no servico inicial.',
+      frequency: 6,
+      impact: 'Gera inseguranca na tomada de decisao.',
+      urgency: 'media',
+      severity: 'medium',
+      likely_cause: 'oferta',
+      evidence_conversation_ids: ['mock-conv-003'],
+    },
+  ],
+  melhorias_de_produto: [
+    {
+      title: 'Checklist guiado de onboarding',
+      summary: 'Facilita ativacao nas primeiras duas semanas.',
+      frequency: 5,
+      impact: 'Reduz abandono inicial e tickets repetitivos.',
+      urgency: 'media',
+      severity: 'low',
+      likely_cause: 'produto',
+      evidence_conversation_ids: ['mock-conv-006'],
+    },
+  ],
+  melhorias_de_oferta_e_comunicacao: [
+    {
+      title: 'Reposicionar Premium por resultado',
+      summary: 'Trocar discurso de funcionalidades por metas de negocio.',
+      frequency: 8,
+      impact: 'Aumenta taxa de ganho em deals com objecao de preco.',
+      urgency: 'alta',
+      severity: 'high',
+      likely_cause: 'posicionamento',
+      evidence_conversation_ids: ['mock-conv-001', 'mock-conv-005'],
+    },
+  ],
+  perfis_de_cliente: [
+    {
+      profile: 'Gestor Comercial Estruturado',
+      what_they_seek: 'Escala operacional sem perder controle de funil.',
+      main_blockers: 'Receio de migracao e curva de aprendizagem da equipe.',
+      best_approach: 'Demo com playbook pronto e plano de implantacao em 15 dias.',
+      frequency: 12,
+    },
+  ],
+  sinais_estrategicos: [
+    {
+      title: 'Oferta vence quando demonstra impacto financeiro',
+      summary: 'Conversas com simulacao de ROI convertem melhor.',
+      frequency: 9,
+      impact: 'Indica necessidade de material comercial orientado a valor.',
+      urgency: 'alta',
+      severity: 'high',
+      likely_cause: 'comunicacao',
+      evidence_conversation_ids: ['mock-conv-002', 'mock-conv-004'],
+    },
+  ],
+  top_5_decisoes_recomendadas: [
+    {
+      title: 'Criar roteiro unico de comparacao entre planos',
+      why_now: 'Duvida de posicionamento esta presente no topo das conversas.',
+      expected_impact: 'Reducao de friccao e ciclo de venda mais curto.',
+      urgency: 'alta',
+      evidence_conversation_ids: ['mock-conv-001'],
+    },
+    {
+      title: 'Adicionar calculadora de ROI na etapa de proposta',
+      why_now: 'Objecao de preco continua derrubando deals quentes.',
+      expected_impact: 'Aumento da taxa de fechamento no Premium.',
+      urgency: 'alta',
+      evidence_conversation_ids: ['mock-conv-005'],
+    },
+    {
+      title: 'Padronizar narrativa de onboarding',
+      why_now: 'Escopo da implantacao gera inseguranca no fechamento.',
+      expected_impact: 'Menos perda por risco percebido.',
+      urgency: 'media',
+      evidence_conversation_ids: ['mock-conv-003'],
+    },
+    {
+      title: 'Treinar time para conduzir objecoes de valor',
+      why_now: 'Objecoes sao tratadas de forma reativa e sem prova concreta.',
+      expected_impact: 'Melhora da conversao em propostas avancadas.',
+      urgency: 'media',
+      evidence_conversation_ids: ['mock-conv-002'],
+    },
+    {
+      title: 'Segmentar discurso por maturidade comercial',
+      why_now: 'Perfis distintos recebem o mesmo argumento de venda.',
+      expected_impact: 'Maior aderencia de mensagem e ganho de relevancia.',
+      urgency: 'media',
+      evidence_conversation_ids: ['mock-conv-006'],
+    },
+  ],
+  totals: {
+    conversations_considered: 42,
+    analyzed_conversations: 36,
+    evidence_items: 28,
+  },
+};
 
 function countOcc(arr: (string | null)[]): Record<string, number> {
   return arr.reduce((acc, value) => {
@@ -305,6 +546,7 @@ export default function ProductIntelligence() {
   const [tab, setTab] = useState<Tab>('produto');
   const [periodStart, setPeriodStart] = useState(defaultPeriod.periodStart);
   const [periodEnd, setPeriodEnd] = useState(defaultPeriod.periodEnd);
+  const isLocalhostPreview = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
 
   const canRunAnalysis = role === 'owner_admin';
   const periodError = validatePeriod(periodStart, periodEnd);
@@ -355,8 +597,15 @@ export default function ProductIntelligence() {
     staleTime: 1000 * 60 * 5,
   });
 
+  const effectiveReports = useMemo(() => {
+    const data = rawReportsQuery.data ?? [];
+    if (data.length > 0) return data;
+    if (isLocalhostPreview) return MOCK_PI_REPORTS;
+    return [];
+  }, [isLocalhostPreview, rawReportsQuery.data]);
+
   const agg = useMemo(() => {
-    const rawReports = rawReportsQuery.data ?? [];
+    const rawReports = effectiveReports;
     const total = rawReports.length;
     if (total === 0) return null;
 
@@ -405,7 +654,7 @@ export default function ProductIntelligence() {
       highDiffTotal: highDiffReports.length,
       lostTotal: lostReports.length,
     };
-  }, [rawReportsQuery.data]);
+  }, [effectiveReports]);
 
   const redirectToLogin = (message?: string) => {
     toast.error(message || 'Sessao expirada. Faca login novamente.');
@@ -438,7 +687,7 @@ export default function ProductIntelligence() {
   });
 
   const strategicRun = strategicRunQuery.data;
-  const strategicReport = strategicRun?.report_json ?? null;
+  const strategicReport = strategicRun?.report_json ?? (isLocalhostPreview ? MOCK_STRATEGIC_REPORT : null);
   const analyzeButtonLabel = startAnalysisMutation.isPending
     ? 'Iniciando...'
     : strategicRun?.status === 'queued' || strategicRun?.status === 'running'
@@ -467,6 +716,32 @@ export default function ProductIntelligence() {
         <div className="flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/8 px-3 py-1">
           <Sparkles className="h-3.5 w-3.5 text-primary" />
           <span className="text-xs font-semibold text-primary">IA</span>
+        </div>
+      </div>
+
+      <IntelligenceTabs />
+
+      <div className="rounded-[22px] border border-border bg-card p-3 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Visao complementar</p>
+            <h2 className="text-sm font-semibold text-foreground">Abas de Produto</h2>
+          </div>
+          <div className="flex gap-1 rounded-2xl border border-border bg-muted/40 p-1">
+            {tabs.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setTab(item.id)}
+                className={cn(
+                  'rounded-xl px-4 py-1.5 text-sm font-medium transition-all',
+                  tab === item.id ? 'bg-card text-foreground shadow-sm ring-1 ring-primary/20' : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -512,7 +787,7 @@ export default function ProductIntelligence() {
         </div>
       </div>
 
-      <ProductIntelligenceStrategicPanel run={strategicRun ?? null} report={strategicReport} isLoading={strategicRunQuery.isLoading} />
+      <ProductIntelligenceStrategicPanel run={strategicRun ?? null} report={strategicReport} isLoading={isLocalhostPreview ? false : strategicRunQuery.isLoading} />
 
       <div className="grid gap-3 md:grid-cols-3">
         <Link to="/playbooks" className="rounded-2xl border border-primary/20 bg-primary/5 p-4 transition-colors hover:border-primary/40 hover:bg-primary/10">
@@ -533,18 +808,13 @@ export default function ProductIntelligence() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold text-foreground">Leitura complementar por conversa</h2>
-            <p className="text-sm text-muted-foreground">Apoio tatico a partir das extrações de produto ja existentes.</p>
-          </div>
-          <div className="flex gap-1 rounded-2xl border border-border bg-muted/40 p-1">
-            {tabs.map((item) => (
-              <button key={item.id} type="button" onClick={() => setTab(item.id)} className={cn('rounded-xl px-4 py-1.5 text-sm font-medium transition-all', tab === item.id ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
-                {item.label}
-              </button>
-            ))}
+            <p className="text-sm text-muted-foreground">
+              Apoio tatico a partir das extracoes de produto ja existentes ({tab === 'produto' ? 'aba Produto' : 'aba Objecoes'}).
+            </p>
           </div>
         </div>
 
-        {rawReportsQuery.isLoading ? (
+        {rawReportsQuery.isLoading && !isLocalhostPreview ? (
           <div className="flex items-center justify-center rounded-2xl border border-border bg-card p-12">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>

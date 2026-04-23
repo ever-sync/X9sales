@@ -1,3 +1,4 @@
+import { Suspense, lazy, type ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
@@ -8,25 +9,38 @@ import { MainLayout } from './components/layout/MainLayout';
 import { PermissionGate } from './components/auth/PermissionGate';
 
 import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import AgentDashboard from './pages/AgentDashboard';
-import Agents from './pages/Agents';
-import AgentDetail from './pages/AgentDetail';
-import Conversations from './pages/Conversations';
-import ConversationDetail from './pages/ConversationDetail';
-import Sales from './pages/Sales';
-import Playbooks from './pages/Playbooks';
-import Settings from './pages/Settings';
-import KnowledgeBase from './pages/KnowledgeBase';
-import RegisterBusiness from './pages/RegisterBusiness';
-import MarketingLanding from './pages/MarketingLanding';
-import Ranking from './pages/Ranking';
-import Relatorio from './pages/Relatorio';
-import Coach from './pages/Coach';
-import Templates from './pages/Templates';
-import AIInsights from './pages/AIInsights';
-import ProductIntelligence from './pages/ProductIntelligence';
-import CustomerIntelligence from './pages/CustomerIntelligence';
+
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const AgentDashboard = lazy(() => import('./pages/AgentDashboard'));
+const Agents = lazy(() => import('./pages/Agents'));
+const AgentDetail = lazy(() => import('./pages/AgentDetail'));
+const Conversations = lazy(() => import('./pages/Conversations'));
+const ConversationDetail = lazy(() => import('./pages/ConversationDetail'));
+const Sales = lazy(() => import('./pages/Sales'));
+const Playbooks = lazy(() => import('./pages/Playbooks'));
+const Settings = lazy(() => import('./pages/Settings'));
+const KnowledgeBase = lazy(() => import('./pages/KnowledgeBase'));
+const RegisterBusiness = lazy(() => import('./pages/RegisterBusiness'));
+const MarketingLanding = lazy(() => import('./pages/MarketingLanding'));
+const Ranking = lazy(() => import('./pages/Ranking'));
+const Relatorio = lazy(() => import('./pages/Relatorio'));
+const Coach = lazy(() => import('./pages/Coach'));
+const Templates = lazy(() => import('./pages/Templates'));
+const AIInsights = lazy(() => import('./pages/AIInsights'));
+const ProductIntelligence = lazy(() => import('./pages/ProductIntelligence'));
+const CustomerIntelligence = lazy(() => import('./pages/CustomerIntelligence'));
+
+function RouteLoading() {
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+    </div>
+  );
+}
+
+function LazyPage({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<RouteLoading />}>{children}</Suspense>;
+}
 
 function SetupScreen() {
   return (
@@ -76,14 +90,20 @@ const queryClient = new QueryClient({
 function RootDashboard() {
   const { role, isLoading } = useCompany();
   if (isLoading) {
+    return <RouteLoading />;
+  }
+  if (role === 'agent') {
     return (
-      <div className="flex h-64 items-center justify-center">
-        <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full" />
-      </div>
+      <LazyPage>
+        <AgentDashboard />
+      </LazyPage>
     );
   }
-  if (role === 'agent') return <AgentDashboard />;
-  return <Dashboard />;
+  return (
+    <LazyPage>
+      <Dashboard />
+    </LazyPage>
+  );
 }
 
 function ProtectedRoutes() {
@@ -100,7 +120,11 @@ function ProtectedRoutes() {
 
   if (!user) {
     if (location.pathname === '/') {
-      return <MarketingLanding />;
+      return (
+        <LazyPage>
+          <MarketingLanding />
+        </LazyPage>
+      );
     }
     const redirect = `${location.pathname}${location.search}${location.hash}`;
     return <Navigate to={`/login?redirect=${encodeURIComponent(redirect)}`} replace />;
@@ -115,7 +139,9 @@ function ProtectedRoutes() {
             path="coach"
             element={
               <PermissionGate permission="dashboard.view" fallback={<Navigate to="/" replace />}>
-                <Coach />
+                <LazyPage>
+                  <Coach />
+                </LazyPage>
               </PermissionGate>
             }
           />
@@ -123,7 +149,9 @@ function ProtectedRoutes() {
             path="templates"
             element={
               <PermissionGate permission="dashboard.view" fallback={<Navigate to="/" replace />}>
-                <Templates />
+                <LazyPage>
+                  <Templates />
+                </LazyPage>
               </PermissionGate>
             }
           />
@@ -131,7 +159,9 @@ function ProtectedRoutes() {
             path="agents"
             element={
               <PermissionGate permission="agents.view_team" fallback={<Navigate to="/" replace />}>
-                <Agents />
+                <LazyPage>
+                  <Agents />
+                </LazyPage>
               </PermissionGate>
             }
           />
@@ -139,7 +169,9 @@ function ProtectedRoutes() {
             path="agents/:id"
             element={
               <PermissionGate permission="agents.view_team" fallback={<Navigate to="/" replace />}>
-                <AgentDetail />
+                <LazyPage>
+                  <AgentDetail />
+                </LazyPage>
               </PermissionGate>
             }
           />
@@ -147,7 +179,9 @@ function ProtectedRoutes() {
             path="conversations"
             element={
               <PermissionGate permission="conversations.view_own" fallback={<Navigate to="/" replace />}>
-                <Conversations />
+                <LazyPage>
+                  <Conversations />
+                </LazyPage>
               </PermissionGate>
             }
           />
@@ -155,7 +189,9 @@ function ProtectedRoutes() {
             path="ranking"
             element={
               <PermissionGate permission="performance.view" fallback={<Navigate to="/" replace />}>
-                <Ranking />
+                <LazyPage>
+                  <Ranking />
+                </LazyPage>
               </PermissionGate>
             }
           />
@@ -163,7 +199,9 @@ function ProtectedRoutes() {
             path="conversations/:id"
             element={
               <PermissionGate permission="conversations.view_own" fallback={<Navigate to="/" replace />}>
-                <ConversationDetail />
+                <LazyPage>
+                  <ConversationDetail />
+                </LazyPage>
               </PermissionGate>
             }
           />
@@ -173,7 +211,9 @@ function ProtectedRoutes() {
             path="ai-insights"
             element={
               <PermissionGate permission="audit.view" fallback={<Navigate to="/" replace />}>
-                <AIInsights />
+                <LazyPage>
+                  <AIInsights />
+                </LazyPage>
               </PermissionGate>
             }
           />
@@ -181,7 +221,9 @@ function ProtectedRoutes() {
             path="relatorio"
             element={
               <PermissionGate permission="audit.view" fallback={<Navigate to="/" replace />}>
-                <Relatorio />
+                <LazyPage>
+                  <Relatorio />
+                </LazyPage>
               </PermissionGate>
             }
           />
@@ -189,7 +231,9 @@ function ProtectedRoutes() {
             path="sales"
             element={
               <PermissionGate permission="revenue.view_own" fallback={<Navigate to="/" replace />}>
-                <Sales />
+                <LazyPage>
+                  <Sales />
+                </LazyPage>
               </PermissionGate>
             }
           />
@@ -199,7 +243,9 @@ function ProtectedRoutes() {
             path="playbooks"
             element={
               <PermissionGate permission="playbooks.view" fallback={<Navigate to="/" replace />}>
-                <Playbooks />
+                <LazyPage>
+                  <Playbooks />
+                </LazyPage>
               </PermissionGate>
             }
           />
@@ -207,7 +253,9 @@ function ProtectedRoutes() {
             path="knowledge-base"
             element={
               <PermissionGate permission="settings.company" fallback={<Navigate to="/" replace />}>
-                <KnowledgeBase />
+                <LazyPage>
+                  <KnowledgeBase />
+                </LazyPage>
               </PermissionGate>
             }
           />
@@ -215,7 +263,9 @@ function ProtectedRoutes() {
             path="settings"
             element={
               <PermissionGate permission="settings.company" fallback={<Navigate to="/" replace />}>
-                <Settings />
+                <LazyPage>
+                  <Settings />
+                </LazyPage>
               </PermissionGate>
             }
           />
@@ -223,7 +273,9 @@ function ProtectedRoutes() {
             path="customer-intelligence"
             element={
               <PermissionGate permission="audit.view" fallback={<Navigate to="/" replace />}>
-                <CustomerIntelligence />
+                <LazyPage>
+                  <CustomerIntelligence />
+                </LazyPage>
               </PermissionGate>
             }
           />
@@ -231,11 +283,20 @@ function ProtectedRoutes() {
             path="product-intelligence"
             element={
               <PermissionGate permission="audit.view" fallback={<Navigate to="/" replace />}>
-                <ProductIntelligence />
+                <LazyPage>
+                  <ProductIntelligence />
+                </LazyPage>
               </PermissionGate>
             }
           />
-          <Route path="register-business" element={<RegisterBusiness />} />
+          <Route
+            path="register-business"
+            element={(
+              <LazyPage>
+                <RegisterBusiness />
+              </LazyPage>
+            )}
+          />
         </Route>
       </Routes>
     </CompanyProvider>

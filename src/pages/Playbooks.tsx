@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   DndContext,
@@ -229,34 +229,29 @@ export default function Playbooks() {
     enabled: !!companyId,
     staleTime: CACHE.STALE_TIME,
   });
-
-  useEffect(() => {
-    if (!selectedPlaybookId && playbooks && playbooks.length > 0) {
-      setSelectedPlaybookId(playbooks[0].id);
-    }
-  }, [playbooks, selectedPlaybookId]);
+  const resolvedSelectedPlaybookId = selectedPlaybookId || playbooks?.[0]?.id || '';
 
   const { data: rules } = useQuery<PlaybookRule[]>({
-    queryKey: ['playbook-rules', companyId, selectedPlaybookId],
+    queryKey: ['playbook-rules', companyId, resolvedSelectedPlaybookId],
     queryFn: async () => {
-      if (!companyId || !selectedPlaybookId) return [];
+      if (!companyId || !resolvedSelectedPlaybookId) return [];
       const { data, error } = await supabase
         .from('playbook_rules')
         .select('*')
         .eq('company_id', companyId)
-        .eq('playbook_id', selectedPlaybookId)
+        .eq('playbook_id', resolvedSelectedPlaybookId)
         .order('position', { ascending: true })
         .order('created_at', { ascending: true });
       if (error) throw error;
       return (data ?? []) as PlaybookRule[];
     },
-    enabled: !!companyId && !!selectedPlaybookId,
+    enabled: !!companyId && !!resolvedSelectedPlaybookId,
     staleTime: CACHE.STALE_TIME,
   });
 
   const selectedPlaybook = useMemo(
-    () => playbooks?.find((row) => row.id === selectedPlaybookId) ?? null,
-    [playbooks, selectedPlaybookId],
+    () => playbooks?.find((row) => row.id === resolvedSelectedPlaybookId) ?? null,
+    [playbooks, resolvedSelectedPlaybookId],
   );
 
   const filteredRules = useMemo(() => {
@@ -314,13 +309,13 @@ export default function Playbooks() {
 
   const createRuleMutation = useMutation({
     mutationFn: async () => {
-      if (!companyId || !selectedPlaybookId) throw new Error('Selecione um playbook.');
+      if (!companyId || !resolvedSelectedPlaybookId) throw new Error('Selecione um playbook.');
       if (!newRuleText.trim()) throw new Error('Informe o texto da regra.');
 
       const nextPosition = (rules?.length ?? 0) + 1;
       const { error } = await supabase.from('playbook_rules').insert({
         company_id: companyId,
-        playbook_id: selectedPlaybookId,
+        playbook_id: resolvedSelectedPlaybookId,
         rule_type: newRuleType,
         rule_text: newRuleText.trim(),
         weight: newRuleWeight,
@@ -335,7 +330,7 @@ export default function Playbooks() {
       setNewRuleType('abertura');
       setNewRuleWeight(10);
       setNewRuleRequired(false);
-      queryClient.invalidateQueries({ queryKey: ['playbook-rules', companyId, selectedPlaybookId] });
+      queryClient.invalidateQueries({ queryKey: ['playbook-rules', companyId, resolvedSelectedPlaybookId] });
       toast.success('Regra adicionada.');
     },
     onError: (error) => {
@@ -345,7 +340,7 @@ export default function Playbooks() {
 
   const updateRuleMutation = useMutation({
     mutationFn: async () => {
-      if (!companyId || !selectedPlaybookId || !editingRuleId) throw new Error('Selecione uma regra.');
+      if (!companyId || !resolvedSelectedPlaybookId || !editingRuleId) throw new Error('Selecione uma regra.');
       if (!editRuleText.trim()) throw new Error('Informe o texto da regra.');
 
       const { error } = await supabase
@@ -358,13 +353,13 @@ export default function Playbooks() {
         })
         .eq('id', editingRuleId)
         .eq('company_id', companyId)
-        .eq('playbook_id', selectedPlaybookId);
+        .eq('playbook_id', resolvedSelectedPlaybookId);
 
       if (error) throw error;
     },
     onSuccess: () => {
       setEditingRuleId(null);
-      queryClient.invalidateQueries({ queryKey: ['playbook-rules', companyId, selectedPlaybookId] });
+      queryClient.invalidateQueries({ queryKey: ['playbook-rules', companyId, resolvedSelectedPlaybookId] });
       toast.success('Regra atualizada.');
     },
     onError: (error) => {
@@ -374,18 +369,18 @@ export default function Playbooks() {
 
   const deleteRuleMutation = useMutation({
     mutationFn: async (ruleId: string) => {
-      if (!companyId || !selectedPlaybookId) throw new Error('Selecione um playbook.');
+      if (!companyId || !resolvedSelectedPlaybookId) throw new Error('Selecione um playbook.');
       const { error } = await supabase
         .from('playbook_rules')
         .delete()
         .eq('id', ruleId)
         .eq('company_id', companyId)
-        .eq('playbook_id', selectedPlaybookId);
+        .eq('playbook_id', resolvedSelectedPlaybookId);
       if (error) throw error;
     },
     onSuccess: () => {
       setRulePendingDelete(null);
-      queryClient.invalidateQueries({ queryKey: ['playbook-rules', companyId, selectedPlaybookId] });
+      queryClient.invalidateQueries({ queryKey: ['playbook-rules', companyId, resolvedSelectedPlaybookId] });
       toast.success('Regra excluida.');
     },
     onError: (error) => {
@@ -395,14 +390,14 @@ export default function Playbooks() {
 
   const reorderRulesMutation = useMutation({
     mutationFn: async (orderedRules: PlaybookRule[]) => {
-      if (!companyId || !selectedPlaybookId) throw new Error('Selecione um playbook.');
+      if (!companyId || !resolvedSelectedPlaybookId) throw new Error('Selecione um playbook.');
       const updates = orderedRules.map((rule, index) =>
         supabase
           .from('playbook_rules')
           .update({ position: index + 1 })
           .eq('id', rule.id)
           .eq('company_id', companyId)
-          .eq('playbook_id', selectedPlaybookId)
+          .eq('playbook_id', resolvedSelectedPlaybookId)
       );
 
       const results = await Promise.all(updates);
@@ -410,7 +405,7 @@ export default function Playbooks() {
       if (failed?.error) throw failed.error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['playbook-rules', companyId, selectedPlaybookId] });
+      queryClient.invalidateQueries({ queryKey: ['playbook-rules', companyId, resolvedSelectedPlaybookId] });
       toast.success('Ordem das regras atualizada.');
     },
     onError: (error) => {
@@ -420,11 +415,11 @@ export default function Playbooks() {
 
   const publishMutation = useMutation({
     mutationFn: async () => {
-      if (!companyId || !selectedPlaybookId) throw new Error('Selecione um playbook.');
+      if (!companyId || !resolvedSelectedPlaybookId) throw new Error('Selecione um playbook.');
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
       if (!token) throw new Error('Sessao expirada.');
-      await invokePublishPlaybook(token, companyId, selectedPlaybookId);
+      await invokePublishPlaybook(token, companyId, resolvedSelectedPlaybookId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['playbooks', companyId] });
@@ -475,7 +470,7 @@ export default function Playbooks() {
             <HelpCircle className="mr-2 h-4 w-4" />
             Como usar
           </Button>
-          {canManage && selectedPlaybookId && (
+          {canManage && resolvedSelectedPlaybookId && (
             <Button onClick={() => publishMutation.mutate()} disabled={publishMutation.isPending}>
               {publishMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Megaphone className="mr-2 h-4 w-4" />}
               Publicar selecionado
@@ -596,7 +591,7 @@ export default function Playbooks() {
                   onClick={() => setSelectedPlaybookId(playbook.id)}
                   className={cn(
                     'w-full rounded-xl border px-3 py-2 text-left text-sm transition-colors',
-                    playbook.id === selectedPlaybookId
+                    playbook.id === resolvedSelectedPlaybookId
                       ? 'border-primary/25 bg-accent'
                       : 'border-border hover:bg-muted',
                   )}
@@ -755,7 +750,7 @@ export default function Playbooks() {
                     <p className="text-xs text-muted-foreground">
                       {isRuleFilterActive
                         ? 'Limpe os filtros para habilitar o drag and drop de reordenacao.'
-                        : 'Arraste os cards pela alca \"Drag\" para reordenar as regras.'}
+                        : 'Arraste os cards pela alca "Drag" para reordenar as regras.'}
                     </p>
                   )}
                   <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleRuleDragEnd}>

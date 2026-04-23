@@ -7,7 +7,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-type Role = "owner_admin" | "manager" | "qa_reviewer" | "agent";
+type Role = "owner_admin" | "agent";
 
 interface PublishRequestBody {
   company_id?: string;
@@ -102,8 +102,8 @@ serve(async (req) => {
     if (!body.playbook_id) return json(400, { error: "Campo 'playbook_id' obrigatorio." });
 
     const role = await getMemberRole(supabase, user.id, body.company_id);
-    if (role !== "owner_admin" && role !== "manager") {
-      return json(403, { error: "Somente owner_admin e manager podem publicar playbook." });
+    if (role !== "owner_admin") {
+      return json(403, { error: "Somente owner_admin pode publicar playbook." });
     }
 
     const { data: playbook, error: playbookError } = await supabase

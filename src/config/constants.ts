@@ -1,12 +1,4 @@
-export const ROLES = {
-  OWNER_ADMIN: 'owner_admin',
-  AGENT: 'agent',
-} as const;
-
-export const ROLE_LEVELS: Record<string, number> = {
-  owner_admin: 90,
-  agent: 30,
-};
+export { APP_ROLES as ROLES, ROLE_LEVELS } from './rbac';
 
 export const CHANNELS = {
   WHATSAPP: 'whatsapp',

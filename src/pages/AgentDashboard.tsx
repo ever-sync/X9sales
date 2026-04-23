@@ -466,7 +466,7 @@ export default function AgentDashboard() {
         .select(`conversation_id, quality_score, agent_id, ${pillarKey}, conversations(customer_name)`)
         .eq('company_id', company.id)
         .not('conversation_id', 'is', null)
-        .gte(pillarKey, 90)
+        .gte(pillarKey, 9)
         .order(pillarKey, { ascending: false })
         .order('quality_score', { ascending: false })
         .limit(1);
@@ -931,7 +931,7 @@ export default function AgentDashboard() {
                   <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-1">PILAR PRIORITARIO</p>
                   <p className="text-base font-black">
                     {priorityLabel
-                      ? `${priorityLabel}${priorityScore != null ? ` (${priorityScore}/100)` : ''}`
+                      ? `${priorityLabel}${priorityScore != null ? ` (${priorityScore}/10)` : ''}`
                       : 'Aguardando analises'}
                   </p>
                 </div>
@@ -1019,7 +1019,7 @@ export default function AgentDashboard() {
                   <div className="rounded-2xl border border-emerald-500/15 bg-white dark:bg-slate-900 p-3">
                     <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Exemplo forte do time</p>
                     <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      {exampleCustomerName} atingiu {exampleScore}/100 em {priorityLabel.toLowerCase()}.
+                      {exampleCustomerName} atingiu {exampleScore}/10 em {priorityLabel.toLowerCase()}.
                     </p>
                     <Link
                       to={`/conversations/${exampleConversationId}`}
@@ -1190,4 +1190,3 @@ export default function AgentDashboard() {
     </div>
   );
 }
-

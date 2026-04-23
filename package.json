@@ -7,9 +7,13 @@
     "dev": "vite",
     "dev:testsprite": "vite --host 127.0.0.1 --port 4173",
     "build": "tsc -b && vite build",
+    "build:scanner": "npm --prefix scanner run build",
+    "ci": "npm run test:run && npm run build && npm run build:scanner",
     "lint": "eslint .",
     "preview": "vite preview",
-    "preview:testsprite": "vite preview --host 127.0.0.1 --port 4173"
+    "preview:testsprite": "vite preview --host 127.0.0.1 --port 4173",
+    "test": "vitest",
+    "test:run": "vitest run"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -52,6 +56,7 @@
     "tailwindcss": "^4.2.1",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.48.0",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "vitest": "^3.2.4"
   }
 }
