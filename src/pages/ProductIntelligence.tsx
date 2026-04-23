@@ -547,6 +547,8 @@ export default function ProductIntelligence() {
   const [periodStart, setPeriodStart] = useState(defaultPeriod.periodStart);
   const [periodEnd, setPeriodEnd] = useState(defaultPeriod.periodEnd);
   const isLocalhostPreview = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+  const isDemoCompany = !!companyId && (!env.VITE_DEMO_COMPANY_ID || env.VITE_DEMO_COMPANY_ID === companyId);
+  const shouldUseDemoData = isLocalhostPreview || (env.VITE_ENABLE_DEMO_DATA && isDemoCompany);
 
   const canRunAnalysis = role === 'owner_admin';
   const periodError = validatePeriod(periodStart, periodEnd);
@@ -600,9 +602,9 @@ export default function ProductIntelligence() {
   const effectiveReports = useMemo(() => {
     const data = rawReportsQuery.data ?? [];
     if (data.length > 0) return data;
-    if (isLocalhostPreview) return MOCK_PI_REPORTS;
+    if (shouldUseDemoData) return MOCK_PI_REPORTS;
     return [];
-  }, [isLocalhostPreview, rawReportsQuery.data]);
+  }, [rawReportsQuery.data, shouldUseDemoData]);
 
   const agg = useMemo(() => {
     const rawReports = effectiveReports;
@@ -687,7 +689,7 @@ export default function ProductIntelligence() {
   });
 
   const strategicRun = strategicRunQuery.data;
-  const strategicReport = strategicRun?.report_json ?? (isLocalhostPreview ? MOCK_STRATEGIC_REPORT : null);
+  const strategicReport = strategicRun?.report_json ?? (shouldUseDemoData ? MOCK_STRATEGIC_REPORT : null);
   const analyzeButtonLabel = startAnalysisMutation.isPending
     ? 'Iniciando...'
     : strategicRun?.status === 'queued' || strategicRun?.status === 'running'
@@ -787,7 +789,7 @@ export default function ProductIntelligence() {
         </div>
       </div>
 
-      <ProductIntelligenceStrategicPanel run={strategicRun ?? null} report={strategicReport} isLoading={isLocalhostPreview ? false : strategicRunQuery.isLoading} />
+      <ProductIntelligenceStrategicPanel run={strategicRun ?? null} report={strategicReport} isLoading={shouldUseDemoData ? false : strategicRunQuery.isLoading} />
 
       <div className="grid gap-3 md:grid-cols-3">
         <Link to="/playbooks" className="rounded-2xl border border-primary/20 bg-primary/5 p-4 transition-colors hover:border-primary/40 hover:bg-primary/10">
@@ -814,7 +816,7 @@ export default function ProductIntelligence() {
           </div>
         </div>
 
-        {rawReportsQuery.isLoading && !isLocalhostPreview ? (
+        {rawReportsQuery.isLoading && !shouldUseDemoData ? (
           <div className="flex items-center justify-center rounded-2xl border border-border bg-card p-12">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>

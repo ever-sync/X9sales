@@ -9,6 +9,7 @@ import {
 import { cn } from '../lib/utils';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../integrations/supabase/client';
+import { env } from '../config/env';
 import { EmptyState } from '../components/ui/EmptyState';
 import { IntelligenceTabs } from '../components/layout/IntelligenceTabs';
 
@@ -274,6 +275,8 @@ export default function CustomerIntelligence() {
   const [tab, setTab] = useState<Tab>('cliente');
   const { companyId } = useCompany();
   const isLocalhostPreview = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+  const isDemoCompany = !!companyId && (!env.VITE_DEMO_COMPANY_ID || env.VITE_DEMO_COMPANY_ID === companyId);
+  const shouldUseDemoData = isLocalhostPreview || (env.VITE_ENABLE_DEMO_DATA && isDemoCompany);
 
   const { data: rawReports = [], isLoading } = useQuery<CIReport[]>({
     queryKey: ['customer-intelligence', companyId],
@@ -295,9 +298,9 @@ export default function CustomerIntelligence() {
 
   const effectiveReports = useMemo(() => {
     if (rawReports.length > 0) return rawReports;
-    if (isLocalhostPreview) return MOCK_CI_REPORTS;
+    if (shouldUseDemoData) return MOCK_CI_REPORTS;
     return [];
-  }, [isLocalhostPreview, rawReports]);
+  }, [rawReports, shouldUseDemoData]);
 
   const agg = useMemo(() => {
     const total = effectiveReports.length;
@@ -349,7 +352,7 @@ export default function CustomerIntelligence() {
     { id: 'ciclo', label: 'Ciclo de Decisao' },
   ];
 
-  if (isLoading && !isLocalhostPreview) {
+  if (isLoading && !shouldUseDemoData) {
     return (
       <div className="flex items-center justify-center p-16">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
