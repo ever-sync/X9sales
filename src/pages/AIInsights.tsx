@@ -1032,59 +1032,21 @@ export default function AIInsights() {
   return (
     <div className="space-y-6">
       <div className="rounded-3xl border border-border bg-card p-5 md:p-6">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="flex flex-col gap-4">
           <div className="min-w-0">
-            <div className="inline-flex items-center gap-2 rounded-full border border-primary/15 bg-accent px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-primary">
-              <Brain className="h-3.5 w-3.5" />
-              AI Insights
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10">
+                <Brain className="h-5 w-5 text-primary" />
+              </div>
+              <h2 className="text-2xl font-bold text-foreground md:text-3xl">Qualidade de atendimento com filtros reais</h2>
             </div>
-            <h2 className="mt-4 text-2xl font-bold text-foreground md:text-3xl">Qualidade de atendimento com filtros reais</h2>
             <p className="mt-2 max-w-3xl text-sm text-muted-foreground md:text-base">
               Leia a operacao por periodo, atendente, tag e necessidade de coaching. Os agregados abaixo nao dependem mais da lista limitada da tela.
             </p>
             <div className="mt-5">
               <IntelligenceTabs />
             </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Link to="/playbooks" className="rounded-full border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:border-primary/40 hover:bg-primary/10">
-                Ajustar playbooks
-              </Link>
-              <Link to="/conversations" className="rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:border-primary/30 hover:bg-primary/5">
-                Revisar conversas
-              </Link>
-              <Link to="/alerts" className="rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:border-primary/30 hover:bg-primary/5">
-                Ver alertas abertos
-              </Link>
-            </div>
           </div>
-
-          {canRunManualAnalysis && (
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                className="shrink-0"
-                onClick={() => {
-                  downloadCsv('ai-insights.csv', reviewItems.map((item) => ({
-                    cliente: item.customer_name ?? item.customer_phone ?? 'Sem nome',
-                    atendente: item.agent_name,
-                    score: item.quality_score,
-                    coaching: item.needs_coaching,
-                    canal: item.channel ? channelLabel(item.channel) : '--',
-                    analisada_em: item.analyzed_at,
-                  })));
-                }}
-              >
-                Exportar CSV
-              </Button>
-              <Button
-                className="shrink-0 border border-primary/40 bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
-                onClick={openModal}
-              >
-                <PlayCircle className="mr-2 h-4 w-4" />
-                Atualizar analise manual
-              </Button>
-            </div>
-          )}
         </div>
 
         <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
