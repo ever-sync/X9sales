@@ -4,13 +4,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   CheckCircle2,
+  Eye,
+  FileText,
+  X,
   XCircle,
 } from 'lucide-react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../integrations/supabase/client';
 import type { NotificationJobSummary } from '../types';
-import { cn } from '../lib/utils';
-import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Switch } from '../components/ui/switch';
 
@@ -21,11 +22,11 @@ type AgentRow = {
   is_active: boolean;
 };
 
-type CoachHistoryGroup = {
-  agentId: string;
+type CoachHistoryRow = {
+  job: NotificationJobSummary;
   agentName: string;
   phone: string | null;
-  jobs: NotificationJobSummary[];
+  timestamp: string | null;
 };
 
 function formatLocalTime(timezone?: string) {
@@ -94,20 +95,6 @@ function renderCoachMessage(job: NotificationJobSummary, fallbackName: string) {
   return `Bom dia, ${agentName}\nIdeias de melhoria:\n${suggestions.join('\n') || 'Revise as conversas com menor score de qualidade.'}`;
 }
 
-function extractTheme(job: NotificationJobSummary) {
-  const payload = asPayload(job.payload);
-  return typeof payload.tema_do_dia === 'string' && payload.tema_do_dia.trim().length > 0
-    ? payload.tema_do_dia.trim()
-    : null;
-}
-
-function extractError(job: NotificationJobSummary) {
-  const payload = asPayload(job.payload);
-  return typeof payload.erro_atacado === 'string' && payload.erro_atacado.trim().length > 0
-    ? payload.erro_atacado.trim()
-    : null;
-}
-
 function jobTone(status: NotificationJobSummary['status']) {
   if (status === 'sent') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
   if (status === 'failed') return 'border-rose-200 bg-rose-50 text-rose-700';
@@ -122,12 +109,12 @@ function jobLabel(status: NotificationJobSummary['status']) {
   return 'Ignorado';
 }
 
-export default function Coach() {
+export default function Coach({ embedded: _embedded = false }: { embedded?: boolean }) {
   const { company, role } = useCompany();
   const queryClient = useQueryClient();
   const canManageCoach = role === 'owner_admin';
   const [coachPreference, setCoachPreference] = useState<{ companyId: string | null; enabled: boolean } | null>(null);
-  const [referenceNow] = useState(() => Date.now());
+  const [selectedRow, setSelectedRow] = useState<CoachHistoryRow | null>(null);
   const coachEnabled = coachPreference && coachPreference.companyId === company?.id
     ? coachPreference.enabled
     : !!company?.settings.agent_morning_improvement_ideas;
@@ -145,25 +132,6 @@ export default function Coach() {
 
       if (error) throw error;
       return (data ?? []) as AgentRow[];
-    },
-    enabled: !!company,
-    staleTime: 60 * 1000,
-  });
-
-  const analysisCountQuery = useQuery({
-    queryKey: ['coach-analyses-7d', company?.id],
-    queryFn: async () => {
-      if (!company) return 0;
-
-      const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-      const { count, error } = await supabase
-        .from('ai_conversation_analysis')
-        .select('id', { count: 'exact', head: true })
-        .eq('company_id', company.id)
-        .gte('analyzed_at', since);
-
-      if (error) throw error;
-      return count ?? 0;
     },
     enabled: !!company,
     staleTime: 60 * 1000,
@@ -219,54 +187,39 @@ export default function Coach() {
   });
 
   const allAgents = useMemo(() => agentsQuery.data ?? [], [agentsQuery.data]);
-  const activeAgents = allAgents.filter((agent) => agent.is_active);
-  const agentsWithPhone = activeAgents.filter((agent) => !!agent.phone?.trim()).length;
-  const agentsWithoutPhone = Math.max(activeAgents.length - agentsWithPhone, 0);
-
   const recentCoachJobs = useMemo(() => {
-    const weekWindow = referenceNow - 7 * 24 * 60 * 60 * 1000;
+    const weekWindow = Date.now() - 7 * 24 * 60 * 60 * 1000;
     return (coachJobsQuery.data ?? []).filter((job) => {
       const timestamp = Date.parse(job.created_at ?? job.scheduled_for);
       return Number.isFinite(timestamp) && timestamp >= weekWindow;
     });
-  }, [coachJobsQuery.data, referenceNow]);
+  }, [coachJobsQuery.data]);
   const sentJobs = recentCoachJobs.filter((job) => job.status === 'sent').length;
   const pendingJobs = recentCoachJobs.filter((job) => job.status === 'pending').length;
   const failedJobs = recentCoachJobs.filter((job) => job.status === 'failed').length;
 
-  const historyByAgent = useMemo<CoachHistoryGroup[]>(() => {
+  const timezone = company?.settings.timezone ?? 'America/Sao_Paulo';
+  const historyRows = useMemo<CoachHistoryRow[]>(() => {
     const jobs = coachJobsQuery.data ?? [];
     const agentMap = new Map(allAgents.map((agent) => [agent.id, agent]));
-    const grouped = new Map<string, CoachHistoryGroup>();
 
-    for (const job of jobs) {
-      const agentId = job.target_agent_id ?? 'unknown';
-      const agent = job.target_agent_id ? agentMap.get(job.target_agent_id) : null;
-      const payload = asPayload(job.payload);
-      const fallbackName = typeof payload.agent_name === 'string' && payload.agent_name.trim().length > 0
-        ? payload.agent_name.trim()
-        : 'Atendente sem vinculo';
-
-      const currentGroup = grouped.get(agentId) ?? {
-        agentId,
-        agentName: agent?.name ?? fallbackName,
-        phone: agent?.phone ?? null,
-        jobs: [],
-      };
-
-      currentGroup.jobs.push(job);
-      grouped.set(agentId, currentGroup);
-    }
-
-    return Array.from(grouped.values()).sort((left, right) => {
-      const leftDate = Date.parse(left.jobs[0]?.processed_at ?? left.jobs[0]?.scheduled_for ?? left.jobs[0]?.created_at ?? '0');
-      const rightDate = Date.parse(right.jobs[0]?.processed_at ?? right.jobs[0]?.scheduled_for ?? right.jobs[0]?.created_at ?? '0');
-      return rightDate - leftDate;
-    });
+    return jobs
+      .map((job) => {
+        const agent = job.target_agent_id ? agentMap.get(job.target_agent_id) : null;
+        const payload = asPayload(job.payload);
+        const fallbackName = typeof payload.agent_name === 'string' && payload.agent_name.trim().length > 0
+          ? payload.agent_name.trim()
+          : 'Atendente sem vinculo';
+        const timestamp = job.processed_at ?? job.scheduled_for ?? job.created_at ?? null;
+        return {
+          job,
+          agentName: agent?.name ?? fallbackName,
+          phone: agent?.phone ?? null,
+          timestamp,
+        };
+      })
+      .sort((a, b) => Date.parse(b.timestamp ?? '0') - Date.parse(a.timestamp ?? '0'));
   }, [allAgents, coachJobsQuery.data]);
-
-  const timezone = company?.settings.timezone ?? 'America/Sao_Paulo';
-  const localNow = formatLocalTime(timezone);
 
   const handleCoachToggle = (enabled: boolean) => {
     if (!canManageCoach || updateCoachMutation.isPending) return;
@@ -275,55 +228,10 @@ export default function Coach() {
 
   return (
     <div className="space-y-6">
-      <section className="overflow-hidden rounded-[2rem] border border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(220,254,27,0.22),_transparent_28%),linear-gradient(135deg,_#0b1020_0%,_#121a30_40%,_#1b2740_100%)] text-white shadow-[0_32px_90px_rgba(15,23,42,0.24)]">
-        <div className="grid gap-8 px-6 py-7 lg:grid-cols-[1.4fr_0.8fr] lg:px-8 lg:py-8">
-          <div className="space-y-5">
-            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-white/70">
-              <span className="rounded-full border border-white/15 bg-white/8 px-3 py-1">Coach IA</span>
-              <span className="rounded-full border border-lime-300/25 bg-lime-300/15 px-3 py-1 text-lime-200">Mensagem diaria as 08:00</span>
-            </div>
-
-            <div className="space-y-3">
-              <h1 className="max-w-3xl text-3xl font-semibold tracking-tight sm:text-4xl">
-                O painel do coach matinal para acompanhar o vendedor antes da operacao abrir.
-              </h1>
-              <p className="max-w-3xl text-sm leading-6 text-white/72 sm:text-base">
-                Aqui fica o mapa do Coach IA: onde ligamos a rotina, como o fluxo diario deve rodar e o historico de mensagens que
-                cada atendente ja recebeu.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-3">
-              <Button asChild className="rounded-full px-5">
-                <Link to="/settings">Abrir configuracoes</Link>
-              </Button>
-              <Button asChild variant="outline" className="rounded-full border-white/20 bg-white/5 px-5 text-white hover:bg-white/10 hover:text-white">
-                <Link to="/relatorio?tab=ai">Abrir relatorio de IA</Link>
-              </Button>
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-            <div className="rounded-3xl border border-white/12 bg-white/8 p-5 backdrop-blur">
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/55">Empresa ativa</p>
-              <p className="mt-2 text-2xl font-semibold">{company?.name ?? 'Workspace'}</p>
-              <p className="mt-2 text-sm text-white/70">
-                Role atual: {role === 'owner_admin' ? 'Gestor' : 'Atendente'}
-              </p>
-            </div>
-            <div className="rounded-3xl border border-white/12 bg-white/8 p-5 backdrop-blur">
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/55">Horario local</p>
-              <p className="mt-2 text-2xl font-semibold">{localNow}</p>
-              <p className="mt-2 text-sm text-white/70">{timezone}</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-[1.1fr_0.9fr_1fr_1fr_1fr]">
+      <section className="grid gap-4 md:grid-cols-2">
         <Card className="rounded-[1.5rem] border-slate-200 shadow-sm">
           <CardHeader className="pb-3">
-            <CardDescription>Onde ligamos o coach</CardDescription>
+            <CardDescription>Configuracoes</CardDescription>
             <CardTitle className="text-2xl font-semibold">Controle do Coach IA</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -342,59 +250,39 @@ export default function Coach() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className={cn('rounded-full px-3 py-1 font-semibold', coachEnabled ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700')}>
+              <span className={`rounded-full px-3 py-1 font-semibold ${coachEnabled ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
                 {coachEnabled ? 'Coach ligado' : 'Coach desligado'}
               </span>
               <span className="rounded-full bg-slate-100 px-3 py-1 font-semibold text-slate-700">
                 {canManageCoach ? 'Edicao liberada para gestor' : 'Somente leitura para atendente'}
               </span>
             </div>
-
-            <p className="text-sm leading-6 text-muted-foreground">
-              Se preferir, o mesmo controle continua disponivel em Configuracoes. Aqui ele vira o centro operacional do Coach IA.
-            </p>
           </CardContent>
         </Card>
 
         <Card className="rounded-[1.5rem] border-slate-200 shadow-sm">
           <CardHeader className="pb-3">
-            <CardDescription>Objetivo diario</CardDescription>
-            <CardTitle className="text-3xl font-semibold">08:00</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">Sempre no horario local da empresa, nunca preso ao timezone do servidor.</p>
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-[1.5rem] border-slate-200 shadow-sm">
-          <CardHeader className="pb-3">
-            <CardDescription>Agentes com telefone</CardDescription>
-            <CardTitle className="text-3xl font-semibold">{agentsWithPhone}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              {activeAgents.length} ativos na empresa, {agentsWithoutPhone} sem numero pronto para disparo.
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-[1.5rem] border-slate-200 shadow-sm">
-          <CardHeader className="pb-3">
-            <CardDescription>Analises IA em 7 dias</CardDescription>
-            <CardTitle className="text-3xl font-semibold">{analysisCountQuery.data ?? 0}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">Esse e o volume recente que ja pode alimentar o resumo do coach.</p>
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-[1.5rem] border-slate-200 shadow-sm">
-          <CardHeader className="pb-3">
-            <CardDescription>Jobs matinais em 7 dias</CardDescription>
+            <CardDescription>Resumo rapido</CardDescription>
             <CardTitle className="text-3xl font-semibold">{recentCoachJobs.length}</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground">Enviados {sentJobs}, pendentes {pendingJobs}, falhos {failedJobs}.</p>
+            <p className="text-sm text-muted-foreground">Enviados {sentJobs}, pendentes {pendingJobs}, falhos {failedJobs}. Hora local: {formatLocalTime(timezone)}.</p>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-[1.5rem] border-slate-200 shadow-sm md:col-span-2">
+          <CardHeader className="pb-3">
+            <CardDescription>Templates</CardDescription>
+            <CardTitle className="text-xl font-semibold">Modelos de mensagem do coach</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Link
+              to="/templates"
+              className="inline-flex h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-foreground hover:bg-slate-50"
+            >
+              <FileText className="h-4 w-4" />
+              Abrir templates
+            </Link>
           </CardContent>
         </Card>
       </section>
@@ -402,111 +290,104 @@ export default function Coach() {
       <section>
         <Card className="rounded-[1.75rem] border-slate-200 shadow-sm">
           <CardHeader>
-            <CardDescription>Historico do coach</CardDescription>
-            <CardTitle className="text-2xl">Mensagens enviadas para cada atendente</CardTitle>
+            <CardDescription>Historico de envio</CardDescription>
+            <CardTitle className="text-2xl">Lista de mensagens do coach</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {historyByAgent.length === 0 ? (
+            {historyRows.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
                 <p className="text-base font-semibold text-foreground">Nenhum historico encontrado.</p>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Assim que os jobs do coach forem gerados, esta tela lista mensagem, horario e status por atendente.
-                </p>
+                <p className="mt-2 text-sm text-muted-foreground">Assim que os jobs forem gerados, os envios aparecem aqui.</p>
               </div>
             ) : (
-              historyByAgent.map((group) => {
-                const sentCount = group.jobs.filter((job) => job.status === 'sent').length;
-                const failedCount = group.jobs.filter((job) => job.status === 'failed').length;
-                const pendingCount = group.jobs.filter((job) => job.status === 'pending').length;
-
-                return (
-                  <div key={group.agentId} className="rounded-[1.5rem] border border-slate-200 p-5">
-                    <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 md:flex-row md:items-center md:justify-between">
-                      <div>
-                        <h3 className="text-lg font-semibold text-foreground">{group.agentName}</h3>
-                        <p className="mt-1 text-sm text-muted-foreground">{formatPhone(group.phone)}</p>
-                      </div>
-
-                      <div className="flex flex-wrap gap-2 text-xs">
-                        <span className="rounded-full bg-emerald-50 px-3 py-1 font-semibold text-emerald-700">
-                          {sentCount} enviados
-                        </span>
-                        <span className="rounded-full bg-amber-50 px-3 py-1 font-semibold text-amber-700">
-                          {pendingCount} pendentes
-                        </span>
-                        <span className="rounded-full bg-rose-50 px-3 py-1 font-semibold text-rose-700">
-                          {failedCount} falhos
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 space-y-3">
-                      {group.jobs.slice(0, 4).map((job) => {
-                        const message = renderCoachMessage(job, group.agentName);
-                        const theme = extractTheme(job);
-                        const errorLabel = extractError(job);
-                        const timestamp = job.processed_at ?? job.scheduled_for ?? job.created_at;
-
-                        return (
-                          <div key={job.id} className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                              <div className="flex flex-wrap items-center gap-2 text-xs">
-                                <span className={`rounded-full border px-3 py-1 font-semibold ${jobTone(job.status)}`}>
-                                  {jobLabel(job.status)}
-                                </span>
-                                <span className="rounded-full bg-white px-3 py-1 font-semibold text-slate-700">
-                                  {job.channel === 'whatsapp' ? 'WhatsApp' : 'Notificacao'}
-                                </span>
-                              </div>
-
-                              <p className="text-xs font-medium text-muted-foreground">
-                                {formatDateTime(timestamp, timezone)}
-                              </p>
-                            </div>
-
-                            {(theme || errorLabel) && (
-                              <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                                {theme && (
-                                  <span className="rounded-full bg-primary/12 px-3 py-1 font-semibold text-primary">
-                                    Tema: {theme}
-                                  </span>
-                                )}
-                                {errorLabel && (
-                                  <span className="rounded-full bg-slate-200 px-3 py-1 font-semibold text-slate-700">
-                                    Erro atacado: {errorLabel}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-
-                            <div className="mt-3 rounded-2xl bg-white p-4">
-                              <pre className="whitespace-pre-wrap font-sans text-sm leading-6 text-foreground">{message}</pre>
-                            </div>
-
-                            {job.status === 'sent' && (
-                              <div className="mt-3 flex items-center gap-2 text-xs font-medium text-emerald-700">
-                                <CheckCircle2 className="h-4 w-4" />
-                                Mensagem registrada como enviada.
-                              </div>
-                            )}
-
-                            {job.status === 'failed' && (
-                              <div className="mt-3 flex items-center gap-2 text-xs font-medium text-rose-700">
-                                <XCircle className="h-4 w-4" />
-                                {job.error_message || 'Falha de entrega sem detalhe retornado.'}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })
+              <div className="overflow-hidden rounded-2xl border border-slate-200">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-left">
+                    <tr>
+                      <th className="px-4 py-3 font-semibold text-slate-600">Atendente</th>
+                      <th className="px-4 py-3 font-semibold text-slate-600">Telefone</th>
+                      <th className="px-4 py-3 font-semibold text-slate-600">Canal</th>
+                      <th className="px-4 py-3 font-semibold text-slate-600">Status</th>
+                      <th className="px-4 py-3 font-semibold text-slate-600">Data</th>
+                      <th className="px-4 py-3 text-right font-semibold text-slate-600">Ver</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historyRows.map((row) => (
+                      <tr key={row.job.id} className="border-t border-slate-200">
+                        <td className="px-4 py-3 text-foreground">{row.agentName}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{formatPhone(row.phone)}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{row.job.channel === 'whatsapp' ? 'WhatsApp' : 'Notificacao'}</td>
+                        <td className="px-4 py-3">
+                          <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${jobTone(row.job.status)}`}>
+                            {jobLabel(row.job.status)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground">{formatDateTime(row.timestamp, timezone)}</td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedRow(row)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                            title="Ver mensagem"
+                            aria-label="Ver mensagem"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </CardContent>
         </Card>
       </section>
+
+      {selectedRow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <div>
+                <p className="text-sm font-semibold text-foreground">{selectedRow.agentName}</p>
+                <p className="text-xs text-muted-foreground">{formatDateTime(selectedRow.timestamp, timezone)}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedRow(null)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50"
+                aria-label="Fechar"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-3 px-5 py-4">
+              <div className="flex flex-wrap gap-2 text-xs">
+                <span className={`rounded-full border px-3 py-1 font-semibold ${jobTone(selectedRow.job.status)}`}>{jobLabel(selectedRow.job.status)}</span>
+                <span className="rounded-full bg-slate-100 px-3 py-1 font-semibold text-slate-700">{selectedRow.job.channel === 'whatsapp' ? 'WhatsApp' : 'Notificacao'}</span>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-4">
+                <pre className="whitespace-pre-wrap font-sans text-sm leading-6 text-foreground">
+                  {renderCoachMessage(selectedRow.job, selectedRow.agentName)}
+                </pre>
+              </div>
+              {selectedRow.job.status === 'sent' && (
+                <div className="flex items-center gap-2 text-xs font-medium text-emerald-700">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Mensagem registrada como enviada.
+                </div>
+              )}
+              {selectedRow.job.status === 'failed' && (
+                <div className="flex items-center gap-2 text-xs font-medium text-rose-700">
+                  <XCircle className="h-4 w-4" />
+                  {selectedRow.job.error_message || 'Falha de entrega sem detalhe retornado.'}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -40,6 +40,7 @@ import { getRoleBadgeLabel } from '../config/rbac';
 import type { AIProviderConfig, AIProviderKind, BillingInvoice, BillingSubscription, BlockedAnalysisCustomer, Company, CompanyInvite, CompanySettings, NotificationJobSummary } from '../types';
 import { cn, formatCurrency, formatDate, formatDateTime, formatSeconds } from '../lib/utils';
 import { areBrowserAlertsEnabled, requestBrowserAlertPermission, setBrowserAlertsEnabled } from '../lib/browserNotifications';
+import Coach from './Coach';
 
 function InfoCard({
   title,
@@ -161,7 +162,7 @@ const weekdayLabels: Record<string, string> = {
   sunday: 'Domingo',
 };
 
-const settingsTabs = ['account', 'company', 'billing', 'notifications', 'blocking', 'users', 'integrations'] as const;
+const settingsTabs = ['account', 'company', 'billing', 'notifications', 'blocking', 'users', 'coach', 'integrations'] as const;
 type SettingsTab = (typeof settingsTabs)[number];
 
 function resolveSettingsTab(value: string | null): SettingsTab {
@@ -1150,6 +1151,9 @@ export default function Settings() {
               Usuarios
             </TabsTrigger>
           )}
+          <TabsTrigger value="coach" className="rounded-xl px-4 py-2.5">
+            Coach
+          </TabsTrigger>
           <TabsTrigger value="integrations" className="rounded-xl px-4 py-2.5">
             Integracoes
           </TabsTrigger>
@@ -2189,6 +2193,10 @@ export default function Settings() {
             </div>
           </TabsContent>
         )}
+
+        <TabsContent value="coach" className="mt-0">
+          <Coach embedded />
+        </TabsContent>
 
         <TabsContent value="integrations" className="mt-0">
           <IntegrationsTab

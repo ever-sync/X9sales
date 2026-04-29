@@ -1,17 +1,13 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
-  Sparkles,
   FileText,
   Users,
-  MessageSquare,
   Settings,
   BookOpen,
-  HandCoins,
   BookCheck,
   ChevronsUpDown,
   Building2,
-  Trophy,
   X,
   PanelLeftClose,
   PanelLeftOpen,
@@ -47,18 +43,14 @@ const navGroups: NavGroup[] = [
     label: 'PRINCIPAL',
     items: [
       { to: '/', icon: LayoutDashboard, label: 'Dashboard', permission: 'dashboard.view' },
-      { to: '/coach', icon: Sparkles, label: 'Coach', permission: 'dashboard.view' },
-      { to: '/sales', icon: HandCoins, label: 'Vendas', permission: 'revenue.view_own' },
-      { to: '/ranking', icon: Trophy, label: 'Ranking', permission: 'performance.view' },
-      { to: '/conversations', icon: MessageSquare, label: 'Conversas', permission: 'conversations.view_own' },
     ],
   },
   {
     label: 'GESTAO',
     items: [
       { to: '/agents', icon: Users, label: 'Atendentes', permission: 'agents.view_team' },
+      { to: '/ai-insights', icon: Brain, label: 'IA X9', permission: 'audit.view' },
       { to: '/relatorio', icon: BookOpen, label: 'Relatorio', permission: 'audit.view' },
-      { to: '/ai-insights', icon: Brain, label: 'Analise com IA', permission: 'audit.view' },
     ],
   },
   {
@@ -110,7 +102,7 @@ export function Sidebar({
         {/* header: logo + close/collapse */}
         <div className={cn(
           'flex border-b border-white/6 px-4 py-5',
-          collapsed ? 'flex-col items-center gap-3' : 'items-center justify-between gap-3',
+          collapsed ? 'flex-col items-center gap-3' : 'items-center justify-center gap-3',
         )}>
           <img
             src={collapsed ? collapsedLogo : siteLogo}

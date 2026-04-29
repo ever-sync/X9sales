@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
-import { Search, Bell, LayoutGrid, ChevronDown, Settings as SettingsIcon, LogOut, PanelLeft } from 'lucide-react';
+import { Search, Bell, ChevronDown, Settings as SettingsIcon, LogOut, PanelLeft, Trophy, DollarSign } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../../integrations/supabase/client';
@@ -21,7 +21,6 @@ export function Header({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const { user, signOut } = useAuth();
   const { company, companyId } = useCompany();
   const { role } = usePermissions();
-
   const { data: openAlertsCount = 0 } = useQuery<number>({
     queryKey: ['alerts-open-count', companyId],
     queryFn: async () => {
@@ -71,9 +70,22 @@ export function Header({ onOpenSidebar }: { onOpenSidebar: () => void }) {
       </div>
 
       <div className="flex items-center gap-1.5 sm:gap-2">
-        <button className="hidden h-10 w-10 items-center justify-center rounded-2xl border border-transparent text-muted-foreground transition-colors hover:bg-accent hover:text-secondary md:flex">
-          <LayoutGrid className="h-4.5 w-4.5" />
-        </button>
+        <Link
+          to="/sales"
+          className="hidden h-10 items-center justify-center gap-1.5 rounded-2xl border border-transparent px-3 text-muted-foreground transition-colors hover:bg-accent hover:text-secondary md:flex"
+          title="Vendas"
+        >
+          <DollarSign className="h-4.5 w-4.5" />
+          <span className="text-xs font-semibold">Vendas</span>
+        </Link>
+
+        <Link
+          to="/ranking"
+          className="hidden h-10 w-10 items-center justify-center rounded-2xl border border-transparent text-muted-foreground transition-colors hover:bg-accent hover:text-secondary md:flex"
+          title="Ranking"
+        >
+          <Trophy className="h-4.5 w-4.5" />
+        </Link>
 
         <Link
           to="/alerts"

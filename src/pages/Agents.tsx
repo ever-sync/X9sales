@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
-import { AlertTriangle, ArrowRight, Brain, Camera, FilterX, Loader2, MapPin, MessageSquare, Pencil, Plus, Search, Store, User, X } from 'lucide-react';
+import { AlertTriangle, Brain, Eye, MapPin, Pencil, Plus, Store, Trash2, User, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../integrations/supabase/client';
 import { useCompany } from '../contexts/CompanyContext';
@@ -11,7 +11,6 @@ import { CACHE } from '../config/constants';
 import { invokeSyncAgentAvatars } from '../lib/agentAvatarSync';
 import { cn } from '../lib/utils';
 
-const AVATAR_COLORS = ['#7C3AED', '#2563EB', '#059669', '#D97706', '#DC2626', '#0891B2', '#DB2777', '#EA580C'];
 type AgentForm = { name: string; email: string; phone: string; storeId: string; external_id: string; password?: string };
 const emptyForm: AgentForm = { name: '', email: '', phone: '', storeId: '', external_id: '', password: '' };
 type AgentLiveStats = {
@@ -35,14 +34,6 @@ type AgentManagerSnapshot = Pick<
   | 'structured_analysis'
 >;
 
-function agentColor(name: string) {
-  let hash = 0;
-  for (let i = 0; i < name.length; i += 1) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
-}
-function isUUID(value: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
-}
 function qualityColor(score: number) {
   if (score >= 80) return 'text-green-600';
   if (score >= 60) return 'text-amber-600';
@@ -68,7 +59,6 @@ function alertMeta(score: number) {
 
 function AgentAvatar({ agent, className }: { agent: Agent; className: string }) {
   const [imageError, setImageError] = useState(false);
-  const color = agentColor(agent.name);
   const initials = agent.name.split(' ').map((chunk) => chunk[0]).slice(0, 2).join('').toUpperCase();
 
   if (agent.avatar_url && !imageError) {
@@ -84,20 +74,13 @@ function AgentAvatar({ agent, className }: { agent: Agent; className: string }) 
 
   return (
     <div
-      className={cn('flex items-center justify-center font-bold text-white shadow-sm', className)}
-      style={{ backgroundColor: color }}
+      className={cn('flex items-center justify-center font-bold text-foreground shadow-sm', className)}
+      style={{ backgroundColor: '#e8e8e8' }}
     >
       {initials || <User className="h-6 w-6" />}
     </div>
   );
 }
-function formatSecondsCompact(seconds: number | null | undefined) {
-  if (seconds == null) return '—';
-  if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
-  return `${(seconds / 3600).toFixed(1)} h`;
-}
-
 function managementTone(label?: ReturnType<typeof alertMeta>['label']) {
   if (label === 'Vermelho') return 'border-red-200 bg-red-50/80';
   if (label === 'Laranja') return 'border-orange-200 bg-orange-50/80';
@@ -120,7 +103,6 @@ export default function Agents() {
   const [formError, setFormError] = useState<string | null>(null);
   const [storeName, setStoreName] = useState('');
   const [storeError, setStoreError] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
   const [storeFilter, setStoreFilter] = useState('');
 
   const { data: agents = [], isLoading } = useQuery<Agent[]>({
@@ -338,13 +320,11 @@ export default function Agents() {
   const rankingMap = useMemo(() => new Map(rankingData.map((item) => [item.agent_id, item])), [rankingData]);
   const liveStatsMap = useMemo(() => new Map(liveStats.map((item) => [item.agent_id, item])), [liveStats]);
   const filteredAgents = useMemo(() => {
-    const q = search.trim().toLowerCase();
     return agents.filter((agent) => {
       if (storeFilter && agent.store?.name !== storeFilter) return false;
-      if (!q) return true;
-      return [agent.name, agent.email, agent.phone, agent.external_id, agent.store?.name].filter(Boolean).join(' ').toLowerCase().includes(q);
+      return true;
     });
-  }, [agents, search, storeFilter]);
+  }, [agents, storeFilter]);
   const summary = useMemo(() => {
     const totalAgents = agents.length;
     const activeStores = new Set(agents.map((agent) => agent.store?.name).filter(Boolean)).size;
@@ -362,7 +342,6 @@ export default function Agents() {
     const criticalAgents = Object.values(managerSnapshots).filter((item) => item.alert.label === 'Vermelho' || item.alert.label === 'Laranja').length;
     return { totalAgents, activeStores, totalAlerts, avgQuality, criticalAgents };
   }, [agents, liveStatsMap, managerSnapshots, rankingMap]);
-  const hasActiveFilters = Boolean(search.trim() || storeFilter);
   const missingAvatarCount = useMemo(
     () => agents.filter((agent) => !agent.avatar_url).length,
     [agents],
@@ -453,6 +432,27 @@ export default function Agents() {
     onError: (error: Error) => setStoreError(error.message),
   });
 
+  const deactivateAgent = useMutation({
+    mutationFn: async (agentId: string) => {
+      if (!companyId) throw new Error('Empresa não encontrada');
+      const { error } = await supabase
+        .from('agents')
+        .update({ is_active: false })
+        .eq('id', agentId)
+        .eq('company_id', companyId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agents', companyId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-ranking', companyId] });
+      queryClient.invalidateQueries({ queryKey: ['agents-live-stats', companyId] });
+      toast.success('Vendedor removido com sucesso.');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Não foi possível remover o vendedor.');
+    },
+  });
+
   const syncAgentAvatars = useMutation({
     mutationFn: async (_options?: { silent?: boolean }) => {
       if (!companyId) throw new Error('Empresa nao encontrada');
@@ -515,9 +515,23 @@ export default function Agents() {
             <div className="max-w-2xl">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Gestão de equipe</p>
               <h2 className="mt-3 text-3xl font-bold tracking-[-0.03em] text-foreground">Atendentes</h2>
-              <p className="mt-2 text-sm text-muted-foreground">Organize a equipe, acompanhe qualidade operacional e mantenha cada vendedor conectado à sua loja.</p>
             </div>
-            {canManageAgents && <div className="flex flex-wrap items-center gap-2"><button type="button" onClick={() => setShowStoreModal(true)} className="inline-flex h-11 items-center gap-2 rounded-full border border-border bg-white px-4 text-sm font-semibold text-foreground shadow-sm hover:bg-muted"><Store className="h-4 w-4" />Cadastrar loja</button><button type="button" onClick={openCreateModal} className="inline-flex h-11 items-center gap-2 rounded-full bg-primary px-5 text-sm font-bold text-black shadow-sm hover:bg-primary/90"><Plus className="h-4 w-4" />Novo Atendente</button></div>}
+            {canManageAgents && (
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={storeFilter}
+                  onChange={(event) => setStoreFilter(event.target.value)}
+                  className="h-11 min-w-[210px] rounded-full border border-border bg-white px-4 text-sm text-foreground outline-none transition-colors focus:border-primary"
+                >
+                  <option value="">Todas as lojas</option>
+                  {stores.map((store) => (
+                    <option key={store.id} value={store.name}>{store.name}</option>
+                  ))}
+                </select>
+                <button type="button" onClick={() => setShowStoreModal(true)} className="inline-flex h-11 items-center gap-2 rounded-full border border-border bg-white px-4 text-sm font-semibold text-foreground shadow-sm hover:bg-muted"><Store className="h-4 w-4" />Cadastrar loja</button>
+                <button type="button" onClick={openCreateModal} className="inline-flex h-11 items-center gap-2 rounded-full bg-primary px-5 text-sm font-bold text-black shadow-sm hover:bg-primary/90"><Plus className="h-4 w-4" />Novo Atendente</button>
+              </div>
+            )}
           </div>
           <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             <SummaryCard icon={<User className="h-5 w-5" />} tone="primary" label="Equipe ativa" value={String(summary.totalAgents)} />
@@ -529,55 +543,6 @@ export default function Agents() {
         </div>
       </section>
 
-      {canManageAgents && (
-        <section className="rounded-[24px] border border-border bg-card px-5 py-4 shadow-sm">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Fotos da equipe</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {missingAvatarCount > 0 ? `${missingAvatarCount} vendedor(es) ainda sem foto sincronizada da UazAPI.` : 'Todas as fotos disponiveis ja foram sincronizadas.'}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => syncAgentAvatars.mutate(undefined)}
-              disabled={syncAgentAvatars.isPending}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-border bg-white px-4 text-sm font-semibold text-foreground shadow-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {syncAgentAvatars.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-              Sincronizar fotos
-            </button>
-          </div>
-        </section>
-      )}
-
-      <section className="rounded-[28px] border border-border bg-card p-5 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Busca e organização</p>
-            <h3 className="mt-2 text-lg font-semibold text-foreground">{filteredAgents.length} atendentes visíveis</h3>
-            <p className="mt-1 text-sm text-muted-foreground">Filtre a operação por loja ou encontre um vendedor específico mais rápido.</p>
-          </div>
-          {hasActiveFilters && (
-            <button
-              type="button"
-              onClick={() => {
-                setSearch('');
-                setStoreFilter('');
-              }}
-              className="inline-flex h-11 items-center gap-2 rounded-full border border-border bg-background px-4 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
-            >
-              <FilterX className="h-4 w-4" />
-              Limpar filtros
-            </button>
-          )}
-        </div>
-        <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(240px,0.8fr)]">
-          <label className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input type="text" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por nome, email, telefone, loja ou ID" className="h-12 w-full rounded-2xl border border-border bg-background pl-10 pr-4 text-sm text-foreground outline-none transition-colors focus:border-primary" /></label>
-          <select value={storeFilter} onChange={(event) => setStoreFilter(event.target.value)} className="h-12 rounded-2xl border border-border bg-background px-4 text-sm text-foreground outline-none transition-colors focus:border-primary"><option value="">Todas as lojas</option>{stores.map((store) => <option key={store.id} value={store.name}>{store.name}</option>)}</select>
-        </div>
-      </section>
-
       {isLoading ? <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">{[...Array(6)].map((_, index) => <div key={index} className="rounded-[30px] border border-border bg-card p-6 shadow-sm animate-pulse"><div className="flex items-start justify-between gap-4"><div className="flex items-start gap-4"><div className="h-[72px] w-[72px] rounded-[24px] bg-muted" /><div className="space-y-2"><div className="h-5 w-36 rounded bg-muted" /><div className="h-3 w-24 rounded bg-muted" /><div className="h-3 w-28 rounded bg-muted" /></div></div><div className="h-10 w-10 rounded-full bg-muted" /></div><div className="mt-6 grid grid-cols-2 gap-3"><div className="h-20 rounded-2xl bg-muted" /><div className="h-20 rounded-2xl bg-muted" /><div className="h-20 rounded-2xl bg-muted" /><div className="h-20 rounded-2xl bg-muted" /></div><div className="mt-4 h-24 rounded-[22px] bg-muted" /></div>)}</div> : filteredAgents.length === 0 ? (
         <div className="rounded-[28px] border border-border bg-card p-12 text-center shadow-sm">
           <User className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
@@ -585,62 +550,74 @@ export default function Agents() {
           {canManageAgents && <button type="button" onClick={openCreateModal} className="text-sm font-medium text-primary hover:underline">Criar primeiro atendente</button>}
         </div>
       ) : <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">{filteredAgents.map((agent) => {
-        const ranking = rankingMap.get(agent.id);
-        const live = liveStatsMap.get(agent.id);
         const managerSnapshot = managerSnapshots[agent.id];
-        const totalConversations = ranking?.total_conversations ?? live?.total_conversations ?? 0;
-        const avgQuality = ranking?.avg_ai_quality_score ?? live?.avg_ai_quality_score ?? null;
-        const openAlerts = ranking?.open_alerts ?? live?.open_alerts ?? 0;
-        const avgFirstResponse = ranking?.avg_first_response_sec ?? live?.avg_first_response_sec ?? null;
         return (
           <Link key={agent.id} to={`/agents/${agent.id}`} className="group relative overflow-hidden rounded-[30px] border border-border bg-card p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-lg">
             <div className="absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,#d3fe18_0%,#b7f200_45%,rgba(211,254,24,0.05)_100%)]" />
-            {canManageAgents && <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); openEditModal(agent); }} className="absolute right-5 top-5 inline-flex items-center gap-1 rounded-full border border-border bg-background/95 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted"><Pencil className="h-3.5 w-3.5" />Editar</button>}
-            <div className="flex items-start gap-4 pr-20">
-              <div className="relative shrink-0"><AgentAvatar agent={agent} className="h-[72px] w-[72px] rounded-[24px] border border-border object-cover" /><span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-background bg-green-500" /></div>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2"><p className="truncate text-[24px] font-semibold leading-tight tracking-[-0.03em] text-foreground transition-colors group-hover:text-primary">{agent.name}</p><span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700">Ativo</span>{managerSnapshot && <span className={cn('inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em]', managerSnapshot.alert.className)}>{managerSnapshot.alert.label}</span>}</div>
-                <div className="mt-3 flex flex-wrap items-center gap-2">{agent.store?.name && <p className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">{agent.store.name}</p>}<p className="inline-flex rounded-full bg-muted px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">ID {agent.external_id && !isUUID(agent.external_id) ? agent.external_id : agent.id.slice(0, 8)}</p></div>
-                <div className="mt-3 space-y-1.5">{agent.email ? <p className="truncate text-sm text-muted-foreground">{agent.email}</p> : agent.phone ? <p className="text-sm text-muted-foreground">{agent.phone}</p> : <p className="text-sm text-muted-foreground">Sem contato principal informado</p>}{agent.email && agent.phone && <p className="text-sm text-muted-foreground">{agent.phone}</p>}</div>
+            {canManageAgents && (
+              <div className="absolute right-5 top-5 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    navigate(`/agents/${agent.id}`);
+                  }}
+                  className="inline-flex h-8 items-center gap-1 rounded-full px-3 text-xs font-semibold text-black"
+                  style={{ backgroundColor: '#DBF91D' }}
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                  Ver
+                </button>
+                <button
+                  type="button"
+                  onClick={(event) => { event.preventDefault(); event.stopPropagation(); openEditModal(agent); }}
+                  className="inline-flex h-8 items-center gap-1 rounded-full border border-border bg-background/95 px-3 text-xs font-semibold text-foreground hover:bg-muted"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  Editar
+                </button>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (!window.confirm(`Remover ${agent.name}?`)) return;
+                    deactivateAgent.mutate(agent.id);
+                  }}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={deactivateAgent.isPending}
+                  title="Remover vendedor"
+                  aria-label="Remover vendedor"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
               </div>
-              <ArrowRight className="mt-2 h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
-            </div>
-            <div className="mt-6 grid grid-cols-2 gap-3 border-t border-border/80 pt-5">
-              <MetricMini icon={<MessageSquare className="h-3.5 w-3.5" />} label="Conversas" value={String(totalConversations)} />
-              <MetricMini icon={<Brain className="h-3.5 w-3.5" />} label="Qualidade" value={avgQuality != null ? String(Math.round(avgQuality)) : '—'} valueClass={avgQuality != null ? qualityColor(avgQuality) : 'text-muted-foreground'} />
-              <MetricMini icon={<AlertTriangle className="h-3.5 w-3.5" />} label="Alertas" value={String(openAlerts)} valueClass={openAlerts > 0 ? 'text-red-600' : 'text-emerald-600'} />
-              <MetricMini icon={<ArrowRight className="h-3.5 w-3.5" />} label="1ª resposta" value={formatSecondsCompact(avgFirstResponse)} />
-            </div>
-            <div className="mt-3">
-              <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{managerSnapshot ? 'Status de gestão' : 'Status operacional'}</p>
-                {managerSnapshot ? (
-                  <div className="mt-1 space-y-1">
-                    <p
-                      className={cn(
-                        'text-sm font-semibold',
-                        managerSnapshot.alert.label === 'Vermelho'
-                          ? 'text-red-600'
-                          : managerSnapshot.alert.label === 'Laranja'
-                            ? 'text-orange-600'
-                            : managerSnapshot.alert.label === 'Amarelo'
-                              ? 'text-amber-600'
-                              : 'text-emerald-600',
-                      )}
-                    >
-                      {managerSnapshot.alert.short}
-                    </p>
-                    <p className="text-xs font-medium text-muted-foreground">Nota {managerSnapshot.finalScore.toFixed(1)}/10</p>
-                  </div>
-                ) : (
-                  <p className={cn('mt-1 text-sm font-semibold', openAlerts > 0 ? 'text-amber-600' : 'text-emerald-600')}>{openAlerts > 0 ? 'Exige atenção' : 'Operação saudável'}</p>
-                )}
+            )}
+            <div className="flex items-start gap-4 pr-20">
+              <div className="shrink-0"><AgentAvatar agent={agent} className="h-[72px] w-[72px] rounded-[24px] border border-border object-cover" /></div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2"><p className="truncate text-[24px] font-semibold leading-tight tracking-[-0.03em] text-foreground transition-colors group-hover:text-primary">{agent.name}</p></div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">{agent.store?.name && <p className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">{agent.store.name}</p>}</div>
               </div>
             </div>
             {managerSnapshot && (
               <div className={cn('mt-4 rounded-[22px] border px-4 py-4', managementTone(managerSnapshot.alert.label))}>
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-secondary">Leitura do gestor</p>
+                  <p
+                    className={cn(
+                      'text-[10px] font-semibold uppercase tracking-[0.16em]',
+                      managerSnapshot.alert.label === 'Vermelho'
+                        ? 'text-red-600'
+                        : managerSnapshot.alert.label === 'Laranja'
+                          ? 'text-orange-600'
+                          : managerSnapshot.alert.label === 'Amarelo'
+                            ? 'text-amber-600'
+                            : 'text-emerald-600',
+                    )}
+                  >
+                    {managerSnapshot.alert.short}
+                  </p>
                   <div className="flex items-center gap-3 text-xs font-semibold text-muted-foreground">
                     <span>{managerSnapshot.passiveRate}% passivo</span>
                     <span>{managerSnapshot.opportunityLosses} perdas</span>
@@ -648,10 +625,9 @@ export default function Agents() {
                   </div>
                 </div>
                 <p className="mt-2 text-sm font-semibold leading-6 text-foreground">{managerSnapshot.verdict}</p>
-                <div className="mt-3 flex items-center justify-between gap-3 text-xs">
-                  <span className="text-muted-foreground">Diagnóstico resumido visível para gestão</span>
-                  <span className="font-semibold text-secondary">Abrir diagnóstico</span>
-                </div>
+                {!managerSnapshot.verdict && (
+                  <p className="mt-2 text-sm font-semibold leading-6 text-foreground">Diagnóstico resumido visível para gestão.</p>
+                )}
               </div>
             )}
           </Link>
@@ -674,8 +650,4 @@ function SummaryCard({ icon, tone, label, value }: { icon: React.ReactNode; tone
     violet: 'bg-secondary/10 text-secondary',
   } as const;
   return <div className="rounded-[24px] border border-white/80 bg-white/85 p-4 shadow-sm backdrop-blur"><div className="flex items-center gap-3"><div className={cn('flex h-11 w-11 items-center justify-center rounded-2xl', toneMap[tone])}>{icon}</div><div><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{label}</p><p className="mt-1 text-2xl font-bold text-foreground">{value}</p></div></div></div>;
-}
-
-function MetricMini({ icon, label, value, valueClass }: { icon: React.ReactNode; label: string; value: string; valueClass?: string }) {
-  return <div className="rounded-2xl bg-muted/35 px-3 py-3"><div className="flex items-center gap-2 text-muted-foreground">{icon}<p className="text-[10px] font-semibold uppercase tracking-[0.14em]">{label}</p></div><p className={cn('mt-2 text-lg font-bold text-foreground', valueClass)}>{value}</p></div>;
 }

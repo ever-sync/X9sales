@@ -734,20 +734,20 @@ export default function Dashboard() {
 
       <SetupChecklist />
 
-      <Tabs defaultValue="sales" className="space-y-6">
+      <Tabs defaultValue="service" className="space-y-6">
         <div className="flex justify-center">
           <TabsList className="h-14 rounded-full border border-border/70 bg-card p-1 shadow-sm">
-            <TabsTrigger
-              value="sales"
-              className="rounded-full px-8 py-2.5 text-sm font-bold text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-            >
-              Painel de vendas
-            </TabsTrigger>
             <TabsTrigger
               value="service"
               className="rounded-full px-8 py-2.5 text-sm font-bold text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
             >
               Painel de atendimento
+            </TabsTrigger>
+            <TabsTrigger
+              value="sales"
+              className="rounded-full px-8 py-2.5 text-sm font-bold text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+            >
+              Painel de vendas
             </TabsTrigger>
           </TabsList>
         </div>

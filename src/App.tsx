@@ -24,7 +24,6 @@ const RegisterBusiness = lazy(() => import('./pages/RegisterBusiness'));
 const MarketingLanding = lazy(() => import('./pages/MarketingLanding'));
 const Ranking = lazy(() => import('./pages/Ranking'));
 const Relatorio = lazy(() => import('./pages/Relatorio'));
-const Coach = lazy(() => import('./pages/Coach'));
 const Templates = lazy(() => import('./pages/Templates'));
 const AIInsights = lazy(() => import('./pages/AIInsights'));
 const ProductIntelligence = lazy(() => import('./pages/ProductIntelligence'));
@@ -135,16 +134,7 @@ function ProtectedRoutes() {
       <Routes>
         <Route element={<MainLayout />}>
           <Route index element={<RootDashboard />} />
-          <Route
-            path="coach"
-            element={
-              <PermissionGate permission="dashboard.view" fallback={<Navigate to="/" replace />}>
-                <LazyPage>
-                  <Coach />
-                </LazyPage>
-              </PermissionGate>
-            }
-          />
+          <Route path="coach" element={<Navigate to="/settings?tab=coach" replace />} />
           <Route
             path="templates"
             element={
