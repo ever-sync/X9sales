@@ -4,7 +4,7 @@
 
 Notas importantes:
 
-- Autenticação: todas as requisições precisam do header `Authorization: Bearer <sua-api-key>`.
+- Autenticação: todas as requisições precisam do header `Authorization: Bearer <abc_dev_fseqFgtuHJWcratAgT4wjgbb>`.
 - Valores monetários são sempre em **centavos** (ex.: `10000` = R$ 100,00).
 - Respostas seguem o envelope `{ "data": {...}, "success": true, "error": null }`.
 - Produtos precisam existir antes de criar Checkouts; use `externalId` como referência ao seu catálogo.

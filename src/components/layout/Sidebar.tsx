@@ -1,7 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
-  FileText,
   Users,
   Settings,
   BookOpen,
@@ -58,7 +57,6 @@ const navGroups: NavGroup[] = [
     items: [
       { to: '/playbooks', icon: BookCheck, label: 'Playbooks', permission: 'playbooks.view' },
       { to: '/knowledge-base', icon: BookOpen, label: 'Base de Conhecimento', permission: 'settings.company' },
-      { to: '/templates', icon: FileText, label: 'Templates', permission: 'settings.company' },
       { to: '/settings', icon: Settings, label: 'Configuracoes', permission: 'settings.company' },
     ],
   },
