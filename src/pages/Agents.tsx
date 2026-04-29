@@ -34,12 +34,6 @@ type AgentManagerSnapshot = Pick<
   | 'structured_analysis'
 >;
 
-function qualityColor(score: number) {
-  if (score >= 80) return 'text-green-600';
-  if (score >= 60) return 'text-amber-600';
-  return 'text-red-600';
-}
-
 function avgNullable(values: Array<number | null | undefined>) {
   const valid = values.filter((value): value is number => value != null);
   if (valid.length === 0) return null;
@@ -597,7 +591,7 @@ export default function Agents() {
             <div className="flex items-start gap-4 pr-20">
               <div className="shrink-0"><AgentAvatar agent={agent} className="h-[72px] w-[72px] rounded-[24px] border border-border object-cover" /></div>
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2"><p className="truncate text-[24px] font-semibold leading-tight tracking-[-0.03em] text-foreground transition-colors group-hover:text-primary">{agent.name}</p></div>
+                <div className="flex flex-wrap items-center gap-2"><p className="truncate text-[24px] font-semibold leading-tight tracking-[-0.03em] text-foreground transition-colors group-hover:text-secondary">{agent.name}</p></div>
                 <div className="mt-3 flex flex-wrap items-center gap-2">{agent.store?.name && <p className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">{agent.store.name}</p>}</div>
               </div>
             </div>

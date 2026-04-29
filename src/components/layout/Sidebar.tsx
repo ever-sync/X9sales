@@ -9,9 +9,9 @@ import {
   ChevronsUpDown,
   Building2,
   X,
-  PanelLeftClose,
-  PanelLeftOpen,
   Brain,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -94,7 +94,7 @@ export function Sidebar({
 
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex h-screen flex-col border-r border-white/6 bg-black text-white shadow-[0_24px_80px_rgba(0,0,0,0.35)] transition-all duration-300 lg:static lg:z-auto lg:shadow-none lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 flex h-screen flex-col border-r border-white/6 bg-black text-white shadow-[0_24px_80px_rgba(0,0,0,0.35)] transition-all duration-300 rounded-r-[22px] lg:static lg:z-auto lg:shadow-none lg:translate-x-0',
           isOpen ? 'translate-x-0' : '-translate-x-full',
           collapsed ? 'w-[68px]' : 'w-[272px]',
         )}
@@ -127,14 +127,11 @@ export function Sidebar({
           <button
             type="button"
             onClick={onToggleCollapse}
-            className="hidden h-9 w-9 items-center justify-center rounded-2xl border border-white/10 text-white/60 transition-colors hover:bg-white/5 hover:text-white lg:flex"
+            className="ml-2 hidden h-9 w-9 items-center justify-center rounded-2xl border border-white/10 text-white/60 transition-colors hover:bg-white/5 hover:text-white lg:flex"
             aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}
             title={collapsed ? 'Expandir menu' : 'Recolher menu'}
           >
-            {collapsed
-              ? <PanelLeftOpen className="h-4 w-4" />
-              : <PanelLeftClose className="h-4 w-4" />
-            }
+            {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </button>
         </div>
 

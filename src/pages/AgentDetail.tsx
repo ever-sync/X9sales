@@ -1,10 +1,10 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../integrations/supabase/client';
 import { useCompany } from '../contexts/CompanyContext';
 import { usePermissions } from '../hooks/usePermissions';
-import type { Agent, AgentBadge, AgentDailyMetrics, AIConversationAnalysis } from '../types';
+import type { Agent, AgentBadge, AgentDailyMetrics, AIConversationAnalysis, AIInsightsSummary } from '../types';
 import { useConversations } from '../hooks/useConversations';
 import { useBlockedPhones } from '../hooks/useBlockedPhones';
 import { getPercentDelta, usePeriodComparison } from '../hooks/usePeriodComparison';
@@ -13,7 +13,7 @@ import { MetricCard } from '../components/dashboard/MetricCard';
 import { BadgePill } from '../components/gamification/BadgePill';
 import { invokeSyncAgentAvatars } from '../lib/agentAvatarSync';
 import { formatSeconds, formatPercent, formatCurrency, formatDateTime, channelLabel, cn, stripAgentPrefix } from '../lib/utils';
-import { ArrowLeft, User, Clock, CheckCircle, MessageSquare, TrendingUp, Brain, BookOpen, Copy, Check, Link2, Camera, Loader2 } from 'lucide-react';
+import { ArrowLeft, User, Clock, CheckCircle, MessageSquare, TrendingUp, Brain, BookOpen, Camera, Loader2, Pencil, MessageCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 function ScoreBar({ value, max = 10 }: { value: number | null; max?: number }) {
@@ -26,44 +26,6 @@ function ScoreBar({ value, max = 10 }: { value: number | null; max?: number }) {
         <div className={cn('h-1.5 rounded-full', color)} style={{ width: `${pct}%` }} />
       </div>
       <span className="text-xs text-muted-foreground w-4 text-right">{value}</span>
-    </div>
-  );
-}
-
-function WebhookCard({ webhookUrl }: { webhookUrl: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(webhookUrl).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }, [webhookUrl]);
-
-  return (
-    <div className="bg-card rounded-2xl border border-primary/20 p-6">
-      <div className="flex items-center gap-2 mb-3">
-        <Link2 className="h-5 w-5 text-primary" />
-        <h3 className="text-base font-semibold text-foreground">Integração UazAPI</h3>
-      </div>
-      <p className="text-sm text-muted-foreground mb-3">
-        Cole esta URL no campo <span className="font-mono bg-muted px-1 rounded">Webhook URL</span> da instância deste atendente no UazAPI.
-      </p>
-      <div className="flex items-center gap-2 bg-muted border border-border rounded-xl px-3 py-2">
-        <span className="flex-1 text-xs font-mono text-foreground break-all select-all">{webhookUrl}</span>
-        <button
-          type="button"
-          onClick={handleCopy}
-          aria-label="Copiar URL"
-          className="shrink-0 p-1.5 hover:bg-secondary rounded-lg transition-colors"
-        >
-          {copied
-            ? <Check className="h-4 w-4 text-primary" />
-            : <Copy className="h-4 w-4 text-muted-foreground" />
-          }
-        </button>
-      </div>
-      {copied && <p className="text-xs text-primary mt-1">URL copiada!</p>}
     </div>
   );
 }
@@ -93,26 +55,11 @@ function alertLevelFromScore(score: number) {
   return { label: 'Vermelho', className: 'border-red-200 bg-red-50 text-red-700' };
 }
 
-function ManagerStat({ label, value, tone = 'neutral' }: { label: string; value: string; tone?: 'neutral' | 'purple' | 'danger' | 'lime' }) {
-  return (
-    <div className="rounded-2xl border border-border bg-white p-4">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
-      <p className={cn(
-        'mt-2 text-2xl font-bold tracking-[-0.04em]',
-        tone === 'purple' && 'text-secondary',
-        tone === 'danger' && 'text-red-600',
-        tone === 'lime' && 'text-foreground',
-        tone === 'neutral' && 'text-foreground',
-      )}>
-        {value}
-      </p>
-    </div>
-  );
-}
-
 export default function AgentDetail() {
+  const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
-  const { companyId } = useCompany();
+  const { companyId, company } = useCompany();
+  const timezone = company?.settings?.timezone || 'UTC';
   const { can } = usePermissions();
   const queryClient = useQueryClient();
   const { isBlockedPhone } = useBlockedPhones();
@@ -200,6 +147,67 @@ export default function AgentDetail() {
     staleTime: CACHE.STALE_TIME,
   });
 
+  const previousPeriodEnd = (() => {
+    const date = new Date(periodStart);
+    date.setDate(date.getDate() - 1);
+    return date.toISOString().split('T')[0];
+  })();
+  const previousPeriodStart = (() => {
+    const date = new Date(previousPeriodEnd);
+    date.setDate(date.getDate() - 29);
+    return date.toISOString().split('T')[0];
+  })();
+
+  const { data: previousAgentSummary } = useQuery<AIInsightsSummary>({
+    queryKey: ['agent-ai-summary-previous', companyId, id, previousPeriodStart, previousPeriodEnd, timezone],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_ai_insights_summary', {
+        p_company_id: companyId,
+        p_agent_id: id,
+        p_period_start: previousPeriodStart,
+        p_period_end: previousPeriodEnd,
+        p_timezone: timezone,
+        p_tag: null,
+        p_needs_coaching: null,
+      });
+      if (error) throw error;
+      return ((Array.isArray(data) ? data[0] : data) ?? {
+        analyses_total: 0,
+        avg_score: null,
+        lowest_score: null,
+        coaching_count: 0,
+        coaching_rate: 0,
+      }) as AIInsightsSummary;
+    },
+    enabled: !!companyId && !!id,
+    staleTime: CACHE.STALE_TIME,
+  });
+
+  const { data: teamSummary } = useQuery<AIInsightsSummary>({
+    queryKey: ['agent-ai-summary-team', companyId, periodStart, periodEnd, timezone],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_ai_insights_summary', {
+        p_company_id: companyId,
+        p_agent_id: null,
+        p_period_start: periodStart,
+        p_period_end: periodEnd,
+        p_timezone: timezone,
+        p_tag: null,
+        p_needs_coaching: null,
+      });
+      if (error) throw error;
+      return ((Array.isArray(data) ? data[0] : data) ?? {
+        analyses_total: 0,
+        avg_score: null,
+        lowest_score: null,
+        coaching_count: 0,
+        coaching_rate: 0,
+      }) as AIInsightsSummary;
+    },
+    enabled: !!companyId,
+    staleTime: CACHE.STALE_TIME,
+  });
+
   const { data: badges = [] } = useQuery<AgentBadge[]>({
     queryKey: ['agent-badges', companyId, id],
     queryFn: async () => {
@@ -216,6 +224,60 @@ export default function AgentDetail() {
   });
 
   const { data: conversationsData } = useConversations({ agentId: id, pageSize: 10 });
+  const { data: leadTransferCandidates = [], isLoading: isLoadingLeadTransfers, error: leadTransferError } = useQuery<Array<{
+    id: string;
+    status: string;
+    started_at: string | null;
+    customer_name: string;
+    customer_phone: string;
+    first_response_time_sec: number;
+    sla_sec: number;
+    excess_sec: number;
+  }>>({
+    queryKey: ['agent-lead-transfers', companyId, id, company?.settings?.sla_first_response_sec],
+    queryFn: async () => {
+      if (!companyId || !id) return [];
+      const slaSec = company?.settings?.sla_first_response_sec ?? 0;
+      if (slaSec <= 0) return [];
+
+      const since = new Date();
+      since.setDate(since.getDate() - 30);
+
+      const { data, error } = await supabase
+        .from('conversations')
+        .select('id, status, started_at, customer:customers(name, phone), metrics:metrics_conversation(first_response_time_sec)')
+        .eq('company_id', companyId)
+        .eq('agent_id', id)
+        .gte('started_at', since.toISOString())
+        .order('started_at', { ascending: false })
+        .limit(300);
+
+      if (error) throw error;
+
+      return ((data ?? []) as any[])
+        .map((row) => {
+          const customer = Array.isArray(row.customer) ? (row.customer[0] ?? null) : row.customer;
+          const metrics = Array.isArray(row.metrics) ? (row.metrics[0] ?? null) : row.metrics;
+          const firstResponse = Number(metrics?.first_response_time_sec ?? 0);
+          return {
+            id: row.id as string,
+            status: row.status as string,
+            started_at: row.started_at as string | null,
+            customer_name: String(customer?.name ?? 'Cliente sem nome'),
+            customer_phone: String(customer?.phone ?? ''),
+            first_response_time_sec: firstResponse,
+            sla_sec: slaSec,
+            excess_sec: Math.max(firstResponse - slaSec, 0),
+          };
+        })
+        .filter((item) =>
+          item.first_response_time_sec > item.sla_sec &&
+          !isBlockedPhone(item.customer_phone),
+        );
+    },
+    enabled: !!companyId && !!id && !!company?.settings?.sla_first_response_sec,
+    staleTime: CACHE.STALE_TIME,
+  });
 
   // Aggregate metrics
   const totalConv = metrics?.reduce((s, m) => s + m.conversations_total, 0) ?? 0;
@@ -511,6 +573,45 @@ export default function AgentDetail() {
   const [erroredAvatarUrl, setErroredAvatarUrl] = useState<string | null>(null);
   const avatarError = !!agent?.avatar_url && erroredAvatarUrl === agent.avatar_url;
 
+  const [showAllStats, setShowAllStats] = useState(false);
+  const [showAllCompetencies, setShowAllCompetencies] = useState(false);
+
+  const conversationCustomerMap = useMemo(() => {
+    const map = new Map<string, { name?: string; phone?: string }>();
+    for (const analysis of aiAnalyses ?? []) {
+      const conv = analysis.conversation as any;
+      if (analysis.conversation_id && conv?.customer) {
+        map.set(analysis.conversation_id, conv.customer);
+      }
+    }
+    return map;
+  }, [aiAnalyses]);
+
+  const rankedKpis = useMemo(() => {
+    const stats = [
+      { label: 'Tentativa de fechamento', value: managerDiagnostics.closeAttemptRate, lowerIsWorse: true, benchmark: 60 },
+      { label: 'Follow-up estimado', value: managerDiagnostics.followUpRate, lowerIsWorse: true, benchmark: 60 },
+      { label: 'Diagnóstico real', value: managerDiagnostics.diagnosisRate, lowerIsWorse: true, benchmark: 60 },
+      { label: 'Abandono estimado', value: managerDiagnostics.abandonmentRate, lowerIsWorse: false, benchmark: 30 },
+      { label: 'Objeção mal tratada', value: managerDiagnostics.weakObjectionRate, lowerIsWorse: false, benchmark: 40 },
+      { label: 'Resposta passiva', value: managerDiagnostics.passiveResponseRate, lowerIsWorse: false, benchmark: 40 },
+    ];
+    return stats
+      .map((stat) => ({
+        ...stat,
+        severity: stat.lowerIsWorse ? Math.max(0, stat.benchmark - stat.value) : Math.max(0, stat.value - stat.benchmark),
+        note: stat.lowerIsWorse
+          ? `Esperado >${stat.benchmark}% · está em ${Math.round(stat.value)}%`
+          : `Esperado <${stat.benchmark}% · está em ${Math.round(stat.value)}%`,
+      }))
+      .sort((a, b) => b.severity - a.severity);
+  }, [managerDiagnostics]);
+
+  const sortedScorecard = useMemo(
+    () => [...managerDiagnostics.scorecard].sort((a, b) => b.value - a.value),
+    [managerDiagnostics.scorecard],
+  );
+
   useEffect(() => {
     avatarAutoSyncTriggered.current = false;
   }, [companyId, id]);
@@ -524,6 +625,17 @@ export default function AgentDetail() {
     syncAgentAvatars.mutate({ silent: true });
   }, [agent, canManageAgents, companyId, syncAgentAvatars]);
 
+  const [activeTab, setActiveTab] = useState<'overview' | 'ai' | 'diagnostics' | 'metrics' | 'leads' | 'action'>('overview');
+
+  const tabs = [
+    { id: 'overview' as const, label: 'Visão Geral' },
+    { id: 'ai' as const, label: 'Análise' },
+    { id: 'diagnostics' as const, label: 'Diagnóstico' },
+    { id: 'metrics' as const, label: 'Métricas Diárias' },
+    { id: 'leads' as const, label: 'Leads' },
+    { id: 'action' as const, label: 'Plano de ação' },
+  ];
+
   if (!agent) {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground">
@@ -532,144 +644,226 @@ export default function AgentDetail() {
     );
   }
 
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  const whatsappWebhookUrl = (supabaseUrl && companyId && agent.external_id)
+    ? `${supabaseUrl}/functions/v1/uazapi-webhook?company_id=${companyId}&agent_id=${agent.external_id}`
+    : null;
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Link
-          to="/agents"
-          className="p-2 hover:bg-muted rounded-lg transition-colors"
-        >
-          <ArrowLeft className="h-5 w-5 text-muted-foreground" />
-        </Link>
-        <div className="flex items-center gap-3">
-          {agent.avatar_url && !avatarError ? (
-            <img
-              src={agent.avatar_url}
-              alt={agent.name}
-              className="h-12 w-12 rounded-full object-cover"
-              onError={() => setErroredAvatarUrl(agent.avatar_url ?? null)}
-            />
-          ) : (
-            <div className="h-12 w-12 bg-accent rounded-full flex items-center justify-center">
-              <User className="h-6 w-6 text-primary" />
-            </div>
-          )}
-          <div>
-            <h2 className="text-2xl font-bold text-foreground">{agent.name}</h2>
-            {agent.email && <p className="text-muted-foreground">{agent.email}</p>}
-            {agent.store?.name && <p className="text-sm text-muted-foreground mt-1">Loja: {agent.store.name}</p>}
-            {canManageAgents && (
-              <button
-                type="button"
-                onClick={() => syncAgentAvatars.mutate(undefined)}
-                disabled={syncAgentAvatars.isPending}
-                className="mt-3 inline-flex h-10 items-center gap-2 rounded-full border border-border bg-white px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {syncAgentAvatars.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-                {agent.avatar_url ? 'Atualizar foto pela UazAPI' : 'Buscar foto na UazAPI'}
-              </button>
-            )}
-            {badges.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {badges.map((badge) => (
-                  <BadgePill key={badge.badge_key} badge={badge} />
-                ))}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-center gap-4">
+          <Link
+            to="/agents"
+            className="p-2 hover:bg-muted rounded-lg transition-colors"
+          >
+            <ArrowLeft className="h-5 w-5 text-muted-foreground" />
+          </Link>
+          <div className="flex items-center gap-3">
+            {agent.avatar_url && !avatarError ? (
+              <img
+                src={agent.avatar_url}
+                alt={agent.name}
+                className="h-12 w-12 rounded-full object-cover"
+                onError={() => setErroredAvatarUrl(agent.avatar_url ?? null)}
+              />
+            ) : (
+              <div className="h-12 w-12 bg-accent rounded-full flex items-center justify-center">
+                <User className="h-6 w-6 text-primary" />
               </div>
             )}
+            <div>
+              <h2 className="text-2xl font-bold text-foreground">{agent.name}</h2>
+              {agent.email && <p className="text-muted-foreground">{agent.email}</p>}
+              {agent.store?.name && <p className="text-sm text-muted-foreground mt-1">Loja: {agent.store.name}</p>}
+            </div>
           </div>
         </div>
+        {canManageAgents && (
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            <button
+              type="button"
+              onClick={() => syncAgentAvatars.mutate(undefined)}
+              disabled={syncAgentAvatars.isPending}
+              className="inline-flex h-10 items-center gap-2 rounded-full border border-border bg-white px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {syncAgentAvatars.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+              Atualizar foto
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/agents')}
+              className="inline-flex h-10 items-center gap-2 rounded-full border border-border bg-white px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-muted"
+            >
+              <Pencil className="h-4 w-4" />
+              Editar atendente
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!whatsappWebhookUrl) {
+                  toast.error('Atendente sem ID Externo. Configure para conectar o WhatsApp.');
+                  return;
+                }
+                navigator.clipboard.writeText(whatsappWebhookUrl).then(() => {
+                  toast.success('URL copiada. Cole no UazAPI para conectar o WhatsApp.');
+                }).catch(() => {
+                  toast.error('Não foi possível copiar a URL.');
+                });
+              }}
+              className="inline-flex h-10 items-center gap-2 rounded-full bg-primary px-4 text-sm font-semibold text-black shadow-sm transition-colors hover:bg-primary/90"
+            >
+              <MessageCircle className="h-4 w-4" />
+              Conectar WhatsApp
+            </button>
+          </div>
+        )}
       </div>
 
-      {badges.length > 0 && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-5 dark:border-amber-500/20 dark:bg-amber-950/10">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h3 className="text-lg font-semibold text-foreground">Badges da semana</h3>
-              <p className="text-sm text-muted-foreground">Reconhecimentos automáticos calculados a partir da operação recente.</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {badges.map((badge) => (
-                <BadgePill key={`${badge.badge_key}-summary`} badge={badge} />
-              ))}
-            </div>
+      {/* Tab navigation */}
+      <div className="border-b border-border rounded-[20px] bg-[#f0f0f0] px-2 pt-2">
+        <nav className="-mb-px flex gap-1">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                'px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap',
+                activeTab === tab.id
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border',
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {/* Tab: Visão Geral */}
+      {activeTab === 'overview' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <MetricCard
+              title="Conversas (30d)"
+              value={String(totalConv)}
+              icon={<MessageSquare className="h-5 w-5 text-primary" />}
+              trend={getPercentDelta(totalConv, previousTotalConv)}
+              trendLabel="vs. 30 dias anteriores"
+            />
+            <MetricCard
+              title="Tempo Primeira Resp."
+              value={formatSeconds(avgFrt)}
+              icon={<Clock className="h-5 w-5 text-primary" />}
+              trend={(() => {
+                const delta = getPercentDelta(avgFrt, previousAvgFrt);
+                return delta == null ? null : delta * -1;
+              })()}
+              trendLabel="mais rapido que o periodo anterior"
+            />
+            <MetricCard
+              title="SLA %"
+              value={formatPercent(avgSla)}
+              icon={<CheckCircle className="h-5 w-5 text-primary" />}
+              trend={getPercentDelta(avgSla, previousAvgSla)}
+              trendLabel="vs. 30 dias anteriores"
+            />
+            <MetricCard
+              title="Receita (30d)"
+              value={formatCurrency(totalRevenue)}
+              icon={<TrendingUp className="h-5 w-5 text-primary" />}
+              trend={getPercentDelta(totalRevenue, previousTotalRevenue)}
+              trendLabel="vs. 30 dias anteriores"
+            />
           </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            {badges.map((badge) => (
-              <div key={`${badge.badge_key}-card`} className="rounded-xl border border-white/60 bg-white/80 p-4 dark:border-white/10 dark:bg-white/5">
-                <p className="text-sm font-semibold text-foreground">{badge.badge_label}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{badge.badge_description}</p>
-                <p className="mt-2 text-sm text-foreground">{badge.award_reason}</p>
+
+          {badges.length > 0 && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-5 dark:border-amber-500/20 dark:bg-amber-950/10">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-foreground">Badges da semana</h3>
+                  <p className="text-sm text-muted-foreground">Reconhecimentos automáticos calculados a partir da operação recente.</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {badges.map((badge) => (
+                    <BadgePill key={`${badge.badge_key}-summary`} badge={badge} />
+                  ))}
+                </div>
               </div>
-            ))}
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {badges.map((badge) => (
+                  <div key={`${badge.badge_key}-card`} className="rounded-xl border border-white/60 bg-white/80 p-4 dark:border-white/10 dark:bg-white/5">
+                    <p className="text-sm font-semibold text-foreground">{badge.badge_label}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{badge.badge_description}</p>
+                    <p className="mt-2 text-sm text-foreground">{badge.award_reason}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="bg-card rounded-2xl border border-border overflow-hidden">
+            <div className="px-6 py-4 border-b border-border">
+              <h3 className="text-lg font-semibold text-foreground">Conversas Recentes</h3>
+            </div>
+            {conversationsData?.data && conversationsData.data.length > 0 ? (
+              <div className="divide-y divide-border">
+                {conversationsData.data.map(conv => (
+                  <Link
+                    key={conv.id}
+                    to={`/conversations/${conv.id}`}
+                    className="px-6 py-4 flex items-center justify-between hover:bg-muted transition-colors"
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        {stripAgentPrefix(conv.customer?.name, agent?.name, conv.customer?.phone)}
+                      </p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-xs text-muted-foreground">{channelLabel(conv.channel)}</span>
+                        <span className={cn(
+                          'text-xs px-1.5 py-0.5 rounded-full',
+                          conv.status === 'active' ? 'bg-accent text-primary' :
+                          conv.status === 'waiting' ? 'bg-accent text-primary' :
+                          'bg-muted text-muted-foreground'
+                        )}>
+                          {conv.status}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-muted-foreground">
+                        {conv.started_at ? formatDateTime(conv.started_at) : '—'}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {conv.message_count_in + conv.message_count_out} msgs
+                      </p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <div className="p-6 text-center text-muted-foreground text-sm">
+                Nenhuma conversa encontrada
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* UazAPI webhook URL */}
-      {(() => {
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-        if (!supabaseUrl || !companyId) return null;
-        if (!agent.external_id) {
-          return (
-            <div className="bg-accent border border-primary/30 rounded-2xl px-6 py-4 flex items-center gap-3">
-              <Link2 className="h-5 w-5 text-primary shrink-0" />
-              <p className="text-sm text-primary">
-                Este atendente não possui um <span className="font-mono font-semibold">ID Externo</span> configurado.
-                Edite o registro no banco para definir um <code className="bg-accent px-1 rounded">external_id</code> e o webhook UazAPI será gerado automaticamente aqui.
-              </p>
-            </div>
-          );
-        }
-        const webhookUrl = `${supabaseUrl}/functions/v1/uazapi-webhook?company_id=${companyId}&agent_id=${agent.external_id}`;
-        return <WebhookCard webhookUrl={webhookUrl} />;
-      })()}
-
-      {/* Metrics cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard
-          title="Conversas (30d)"
-          value={String(totalConv)}
-          icon={<MessageSquare className="h-5 w-5 text-primary" />}
-          trend={getPercentDelta(totalConv, previousTotalConv)}
-          trendLabel="vs. 30 dias anteriores"
-        />
-        <MetricCard
-          title="Tempo Primeira Resp."
-          value={formatSeconds(avgFrt)}
-          icon={<Clock className="h-5 w-5 text-primary" />}
-          trend={(() => {
-            const delta = getPercentDelta(avgFrt, previousAvgFrt);
-            return delta == null ? null : delta * -1;
-          })()}
-          trendLabel="mais rapido que o periodo anterior"
-        />
-        <MetricCard
-          title="SLA %"
-          value={formatPercent(avgSla)}
-          icon={<CheckCircle className="h-5 w-5 text-primary" />}
-          trend={getPercentDelta(avgSla, previousAvgSla)}
-          trendLabel="vs. 30 dias anteriores"
-        />
-        <MetricCard
-          title="Receita (30d)"
-          value={formatCurrency(totalRevenue)}
-          icon={<TrendingUp className="h-5 w-5 text-primary" />}
-          trend={getPercentDelta(totalRevenue, previousTotalRevenue)}
-          trendLabel="vs. 30 dias anteriores"
-        />
-      </div>
-
-      {scoredAnalyses.length > 0 && (
+      {/* Tab: Diagnóstico de Gestão */}
+      {activeTab === 'diagnostics' && scoredAnalyses.length > 0 && (
         <div className="rounded-[30px] border border-border bg-white shadow-[0_18px_50px_rgba(15,23,42,0.05)] overflow-hidden">
+          {/* 1. Cabeçalho */}
           <div className="border-b border-border px-6 py-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="max-w-3xl">
                 <div className="inline-flex items-center rounded-full border border-secondary/10 bg-accent px-3 py-1 text-[11px] font-bold uppercase tracking-[0.22em] text-secondary">
-                  Diagnostico de Gestao
+                  Diagnóstico de Gestão
                 </div>
-                <h3 className="mt-3 text-2xl font-bold tracking-[-0.04em] text-foreground">Leitura critica da performance comercial deste vendedor</h3>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  Relatorio construido a partir das analises do periodo, com foco em impacto operacional, risco de perda e necessidade de intervencao da gestao.
+                <h3 className="mt-3 text-2xl font-bold tracking-[-0.04em] text-foreground">Leitura crítica da performance comercial deste vendedor</h3>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Baseado em {scoredAnalyses.length} análise{scoredAnalyses.length !== 1 ? 's' : ''} de conversa do período (últimos 30 dias).
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-3">
@@ -683,199 +877,298 @@ export default function AgentDetail() {
                 </div>
               </div>
             </div>
+
+            {/* Comparação: este vendedor vs time vs período anterior */}
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              {(() => {
+                const agentScore = avgQuality;
+                const teamScore = teamSummary?.avg_score != null ? Math.round(teamSummary.avg_score) : null;
+                const prevScore = previousAgentSummary?.avg_score != null ? Math.round(previousAgentSummary.avg_score) : null;
+                const teamDelta = agentScore != null && teamScore != null ? agentScore - teamScore : null;
+                const trendDelta = agentScore != null && prevScore != null ? agentScore - prevScore : null;
+                const teamDeltaLabel = teamDelta == null
+                  ? '—'
+                  : teamDelta === 0
+                    ? 'na média do time'
+                    : `${teamDelta > 0 ? '+' : ''}${teamDelta} vs. time`;
+                const trendLabel = trendDelta == null
+                  ? 'sem base anterior'
+                  : trendDelta === 0
+                    ? 'estável vs. 30d antes'
+                    : trendDelta > 0
+                      ? `↑ ${trendDelta} pts vs. 30d antes`
+                      : `↓ ${Math.abs(trendDelta)} pts vs. 30d antes`;
+                return (
+                  <>
+                    <div className="rounded-2xl border border-border bg-card px-4 py-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Score IA · este vendedor</p>
+                      <p className="mt-1 text-xl font-bold tracking-[-0.03em] text-foreground">{agentScore ?? '—'}<span className="text-sm font-medium text-muted-foreground">/100</span></p>
+                      <p className={cn(
+                        'text-xs font-medium mt-0.5',
+                        teamDelta == null ? 'text-muted-foreground'
+                        : teamDelta >= 0 ? 'text-emerald-600' : 'text-red-600',
+                      )}>{teamDeltaLabel}</p>
+                    </div>
+                    <div className="rounded-2xl border border-border bg-card px-4 py-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Média do time</p>
+                      <p className="mt-1 text-xl font-bold tracking-[-0.03em] text-foreground">{teamScore ?? '—'}<span className="text-sm font-medium text-muted-foreground">/100</span></p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {teamSummary?.analyses_total != null ? `${teamSummary.analyses_total} análises do time (30d)` : 'Sem dados do time'}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-border bg-card px-4 py-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Tendência</p>
+                      <p className="mt-1 text-xl font-bold tracking-[-0.03em] text-foreground">{prevScore ?? '—'}<span className="text-sm font-medium text-muted-foreground">/100 antes</span></p>
+                      <p className={cn(
+                        'text-xs font-medium mt-0.5',
+                        trendDelta == null ? 'text-muted-foreground'
+                        : trendDelta > 0 ? 'text-emerald-600'
+                        : trendDelta < 0 ? 'text-red-600' : 'text-muted-foreground',
+                      )}>{trendLabel}</p>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
           </div>
 
-          <div className="grid gap-4 border-b border-border px-6 py-5 md:grid-cols-2 xl:grid-cols-6">
-            <ManagerStat label="Tentativa de fechamento" value={`${Math.round(managerDiagnostics.closeAttemptRate)}%`} tone="lime" />
-            <ManagerStat label="Follow-up estimado" value={`${Math.round(managerDiagnostics.followUpRate)}%`} tone="purple" />
-            <ManagerStat label="Diagnostico real" value={`${Math.round(managerDiagnostics.diagnosisRate)}%`} />
-            <ManagerStat label="Abandono estimado" value={`${Math.round(managerDiagnostics.abandonmentRate)}%`} tone="danger" />
-            <ManagerStat label="Objecao mal tratada" value={`${Math.round(managerDiagnostics.weakObjectionRate)}%`} tone="danger" />
-            <ManagerStat label="Resposta passiva" value={`${Math.round(managerDiagnostics.passiveResponseRate)}%`} tone="danger" />
-          </div>
-
+          {/* 2. Veredito + Perfil + Sem filtro */}
           <div className="grid gap-6 border-b border-border px-6 py-6 lg:grid-cols-[1.15fr_0.85fr]">
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-border bg-card p-5">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Veredito executivo</p>
-                <p className="mt-3 text-base font-semibold leading-7 text-foreground">{managerDiagnostics.unfilteredManagerNote}</p>
-              </div>
-              <div className="rounded-2xl border border-border bg-card p-5">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Padrao real de comportamento</p>
-                <p className="mt-3 text-base font-semibold text-foreground">{managerDiagnostics.behaviorProfile}</p>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">{managerDiagnostics.trainableAssessment}</p>
+            <div className="rounded-2xl border border-border bg-card p-5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Veredito executivo</p>
+              <p className="mt-3 text-base font-semibold leading-7 text-foreground">{managerDiagnostics.unfilteredManagerNote}</p>
+              <div className="mt-5 pt-5 border-t border-border">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Perfil real</p>
+                <p className="mt-2 text-sm font-semibold text-foreground">{managerDiagnostics.behaviorProfile}</p>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">{managerDiagnostics.trainableAssessment}</p>
               </div>
             </div>
 
             <div className="rounded-2xl border border-red-200 bg-red-50 p-5">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-red-600">O gestor precisa saber sem filtro</p>
               <ul className="mt-3 space-y-2">
-                {managerDiagnostics.mainErrors.slice(0, 4).map((item) => (
+                {managerDiagnostics.mainErrors.slice(0, 3).map((item) => (
                   <li key={item} className="text-sm font-medium leading-6 text-red-700">{item}</li>
                 ))}
               </ul>
             </div>
           </div>
 
-          <div className="grid gap-6 border-b border-border px-6 py-6 xl:grid-cols-2">
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Placar por competencia</p>
+          {/* 3. Falhas dominantes (top 3 KPIs piores) */}
+          <div className="border-b border-border px-6 py-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Falhas dominantes</p>
+                <p className="text-xs text-muted-foreground mt-1">Os indicadores onde a operação mais perde dinheiro hoje.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAllStats((v) => !v)}
+                className="text-xs font-semibold text-primary hover:underline"
+              >
+                {showAllStats ? 'Ver só os 3 piores' : 'Ver os 6 indicadores'}
+              </button>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              {(showAllStats ? rankedKpis : rankedKpis.slice(0, 3)).map((kpi) => {
+                const isCritical = kpi.severity > 0;
+                return (
+                  <div
+                    key={kpi.label}
+                    className={cn(
+                      'rounded-2xl border p-4',
+                      isCritical ? 'border-red-200 bg-red-50/60' : 'border-border bg-card',
+                    )}
+                  >
+                    <p className={cn('text-[11px] font-bold uppercase tracking-[0.18em]', isCritical ? 'text-red-600' : 'text-muted-foreground')}>
+                      {kpi.label}
+                    </p>
+                    <p className={cn('mt-2 text-3xl font-bold tracking-[-0.04em]', isCritical ? 'text-red-700' : 'text-foreground')}>
+                      {Math.round(kpi.value)}%
+                    </p>
+                    <p className={cn('mt-1 text-xs', isCritical ? 'text-red-600' : 'text-muted-foreground')}>
+                      {kpi.note}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 4. Placar de competências (top + bottom) */}
+          <div className="border-b border-border px-6 py-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Placar por competência</p>
+                <p className="text-xs text-muted-foreground mt-1">Top 3 fortes vs. top 3 lacunas. Avaliação de 0 a 10 por área.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAllCompetencies((v) => !v)}
+                className="text-xs font-semibold text-primary hover:underline"
+              >
+                {showAllCompetencies ? 'Ver só destaques' : 'Ver todas as 10'}
+              </button>
+            </div>
+            {showAllCompetencies ? (
               <div className="mt-4 grid gap-3 md:grid-cols-2">
-                {managerDiagnostics.scorecard.map((item) => (
+                {sortedScorecard.map((item) => (
                   <div key={item.label} className="rounded-xl border border-border p-3">
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-sm font-medium text-foreground">{item.label}</span>
                       <span className="text-sm font-bold text-foreground">{item.value}/10</span>
                     </div>
-                    <div className="mt-2">
-                      <ScoreBar value={item.value} />
-                    </div>
+                    <div className="mt-2"><ScoreBar value={item.value} /></div>
                   </div>
                 ))}
               </div>
-            </div>
+            ) : (
+              <div className="mt-4 grid gap-6 md:grid-cols-2">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-600">Pontos fortes</p>
+                  <div className="mt-3 grid gap-2">
+                    {sortedScorecard.slice(0, 3).map((item) => (
+                      <div key={item.label} className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-sm font-medium text-foreground">{item.label}</span>
+                          <span className="text-sm font-bold text-foreground">{item.value}/10</span>
+                        </div>
+                        <div className="mt-2"><ScoreBar value={item.value} /></div>
+                      </div>
+                    ))}
+                  </div>
+                  {topStrengths.length > 0 && (
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      Recorrência observada: {topStrengths.slice(0, 2).map(([text, count]) => `${text} (${count}x)`).join(' · ')}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-red-600">Lacunas críticas</p>
+                  <div className="mt-3 grid gap-2">
+                    {[...sortedScorecard].slice(-3).reverse().map((item) => (
+                      <div key={item.label} className="rounded-xl border border-red-100 bg-red-50/50 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-sm font-medium text-foreground">{item.label}</span>
+                          <span className="text-sm font-bold text-foreground">{item.value}/10</span>
+                        </div>
+                        <div className="mt-2"><ScoreBar value={item.value} /></div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
 
-            <div className="grid gap-4">
-              <div className="rounded-2xl border border-border bg-card p-5">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Como ele prejudica a operacao</p>
-                <ul className="mt-4 space-y-2">
-                  {managerDiagnostics.operationalImpact.map((item) => (
+          {/* 5. Impacto operacional */}
+          {managerDiagnostics.operationalImpact.length > 0 && (
+            <div className="border-b border-border px-6 py-6">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Como isso prejudica a operação</p>
+              <ul className="mt-3 space-y-2">
+                {managerDiagnostics.operationalImpact.map((item) => (
+                  <li key={item} className="text-sm leading-6 text-foreground flex gap-2">
+                    <span className="text-red-500 mt-2 shrink-0">•</span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* 6. Plano de ação único */}
+          <div className="border-b border-border px-6 py-6">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Plano de intervenção · próximos 30 dias</p>
+            <div className="mt-4 grid gap-4 md:grid-cols-3">
+              <div className="rounded-2xl border border-red-100 bg-red-50/40 p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-red-600">Parar agora</p>
+                <ul className="mt-3 space-y-2">
+                  {managerDiagnostics.interventionPlan.stopNow.length > 0
+                    ? managerDiagnostics.interventionPlan.stopNow.map((item) => (
+                        <li key={item} className="text-sm leading-6 text-foreground">{item}</li>
+                      ))
+                    : <li className="text-sm leading-6 text-muted-foreground">Sem comportamentos críticos para interromper.</li>}
+                </ul>
+              </div>
+              <div className="rounded-2xl border border-secondary/20 bg-accent/40 p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-secondary">Começar agora</p>
+                <ul className="mt-3 space-y-2">
+                  {managerDiagnostics.interventionPlan.startNow.map((item) => (
                     <li key={item} className="text-sm leading-6 text-foreground">{item}</li>
                   ))}
                 </ul>
               </div>
-              <div className="rounded-2xl border border-border bg-card p-5">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Pontos fortes ainda relevantes</p>
-                <ul className="mt-4 space-y-2">
-                  {topStrengths.length > 0 ? topStrengths.slice(0, 3).map(([text, count]) => (
-                    <li key={text} className="text-sm leading-6 text-foreground">{text} <span className="text-xs text-muted-foreground">({count}x)</span></li>
-                  )) : (
-                    <li className="text-sm leading-6 text-muted-foreground">Nao ha ponto forte recorrente forte o bastante para equilibrar as falhas dominantes.</li>
-                  )}
+              <div className="rounded-2xl border border-border bg-card p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-foreground">Treinar</p>
+                <ul className="mt-3 space-y-2">
+                  {managerDiagnostics.interventionPlan.trainNext30Days.map((item) => (
+                    <li key={item} className="text-sm leading-6 text-foreground">{item}</li>
+                  ))}
                 </ul>
               </div>
             </div>
-          </div>
-
-          <div className="grid gap-6 border-b border-border px-6 py-6 xl:grid-cols-2">
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Falhas por gravidade</p>
-              <div className="mt-4 grid gap-4">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-600">Criticas</p>
-                  <ul className="mt-2 space-y-2">
-                    {(managerDiagnostics.criticalFailures.length > 0 ? managerDiagnostics.criticalFailures : ['Nenhuma falha critica dominante no recorte atual.']).map((item) => (
-                      <li key={`critical-${item}`} className="text-sm leading-6 text-foreground">{item}</li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-orange-600">Altas</p>
-                  <ul className="mt-2 space-y-2">
-                    {(managerDiagnostics.highFailures.length > 0 ? managerDiagnostics.highFailures : ['Sem falhas altas adicionais.']).map((item) => (
-                      <li key={`high-${item}`} className="text-sm leading-6 text-foreground">{item}</li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-600">Medias</p>
-                  <ul className="mt-2 space-y-2">
-                    {(managerDiagnostics.mediumFailures.length > 0 ? managerDiagnostics.mediumFailures : ['Sem falhas medias relevantes.']).map((item) => (
-                      <li key={`medium-${item}`} className="text-sm leading-6 text-foreground">{item}</li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Baixas</p>
-                  <ul className="mt-2 space-y-2">
-                    {(managerDiagnostics.lowFailures.length > 0 ? managerDiagnostics.lowFailures : ['Sem falhas baixas adicionais.']).map((item) => (
-                      <li key={`low-${item}`} className="text-sm leading-6 text-foreground">{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Oportunidades perdidas</p>
-              <div className="mt-4 space-y-4">
-                {managerDiagnostics.lostOpportunities.length > 0 ? managerDiagnostics.lostOpportunities.map((item, index) => (
-                  <div key={`${item.conversationId}-${index}`} className="rounded-xl border border-border p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold text-foreground">Conversa #{item.conversationId.slice(0, 8)}</p>
-                      <span className={cn(
-                        'rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em]',
-                        item.impact === 'high' ? 'bg-red-100 text-red-700' : item.impact === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-muted text-muted-foreground',
-                      )}>
-                        {item.impact}
-                      </span>
-                    </div>
-                    <p className="mt-2 text-sm leading-6 text-foreground">{item.missed_action}</p>
-                    {item.agent_message && (
-                      <p className="mt-2 text-xs leading-5 text-muted-foreground">Mensagem observada: {item.agent_message}</p>
-                    )}
-                  </div>
-                )) : (
-                  <p className="text-sm leading-6 text-muted-foreground">Nao houve oportunidade perdida estruturada o bastante nas analises para entrar como destaque aqui.</p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="grid gap-6 px-6 py-6 xl:grid-cols-2">
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Acao recomendada ao gestor</p>
-              <ul className="mt-4 space-y-2">
-                {managerDiagnostics.managerActions.map((item) => (
-                  <li key={item} className="text-sm leading-6 text-foreground">{item}</li>
+            {managerDiagnostics.topFailureTags.length > 0 && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                <span className="text-xs text-muted-foreground self-center">Padrões recorrentes:</span>
+                {managerDiagnostics.topFailureTags.map(([tag, count]) => (
+                  <span key={tag} className="rounded-full bg-accent px-3 py-1 text-xs font-semibold text-secondary">
+                    {tag.replace(/_/g, ' ')} ({count}x)
+                  </span>
                 ))}
-              </ul>
-              {managerDiagnostics.topFailureTags.length > 0 && (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {managerDiagnostics.topFailureTags.map(([tag, count]) => (
-                    <span key={tag} className="rounded-full bg-accent px-3 py-1 text-xs font-semibold text-secondary">
-                      {tag.replace(/_/g, ' ')} ({count}x)
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Plano de intervencao de 30 dias</p>
-              <div className="mt-4 grid gap-4 md:grid-cols-3">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-red-600">Parar agora</p>
-                  <ul className="mt-2 space-y-2">
-                    {managerDiagnostics.interventionPlan.stopNow.map((item) => (
-                      <li key={item} className="text-sm leading-6 text-foreground">{item}</li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-secondary">Comecar agora</p>
-                  <ul className="mt-2 space-y-2">
-                    {managerDiagnostics.interventionPlan.startNow.map((item) => (
-                      <li key={item} className="text-sm leading-6 text-foreground">{item}</li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-foreground">Treinar</p>
-                  <ul className="mt-2 space-y-2">
-                    {managerDiagnostics.interventionPlan.trainNext30Days.map((item) => (
-                      <li key={item} className="text-sm leading-6 text-foreground">{item}</li>
-                    ))}
-                  </ul>
-                </div>
               </div>
-            </div>
+            )}
+          </div>
+
+          {/* 7. Evidências */}
+          <div className="px-6 py-6">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Evidências · oportunidades perdidas</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {managerDiagnostics.opportunityLossCount > 0
+                ? `${managerDiagnostics.opportunityLossCount} oportunidade${managerDiagnostics.opportunityLossCount !== 1 ? 's' : ''} mapeada${managerDiagnostics.opportunityLossCount !== 1 ? 's' : ''} no período. Mostrando as de maior impacto.`
+                : 'Sem oportunidades perdidas estruturadas neste recorte.'}
+            </p>
+            {managerDiagnostics.lostOpportunities.length > 0 && (
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {managerDiagnostics.lostOpportunities.map((item, index) => {
+                  const customer = conversationCustomerMap.get(item.conversationId);
+                  const customerLabel = stripAgentPrefix(customer?.name, agent?.name, customer?.phone) || customer?.phone || `Conversa #${item.conversationId.slice(0, 8)}`;
+                  return (
+                    <div key={`${item.conversationId}-${index}`} className="rounded-xl border border-border p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-semibold text-foreground truncate">{customerLabel}</p>
+                        <span className={cn(
+                          'rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] shrink-0',
+                          item.impact === 'high' ? 'bg-red-100 text-red-700' : item.impact === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-muted text-muted-foreground',
+                        )}>
+                          {item.impact}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm leading-6 text-foreground">{item.missed_action}</p>
+                      {item.agent_message && (
+                        <p className="mt-2 text-xs leading-5 text-muted-foreground italic">"{item.agent_message}"</p>
+                      )}
+                      <Link
+                        to={`/conversations/${item.conversationId}`}
+                        className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+                      >
+                        Ver conversa →
+                      </Link>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}
+      {activeTab === 'diagnostics' && scoredAnalyses.length === 0 && (
+        <div className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground">
+          Sem dados suficientes para diagnóstico neste período.
+        </div>
+      )}
 
-      {/* AI Analysis section */}
-      {aiAnalyses && aiAnalyses.length > 0 && (
+      {/* Tab: Análise IA */}
+      {activeTab === 'ai' && aiAnalyses && aiAnalyses.length > 0 && (
         <div className="bg-card rounded-2xl border border-border overflow-hidden">
           <div className="px-6 py-4 border-b border-border flex items-center gap-2">
             <Brain className="h-5 w-5 text-primary" />
@@ -884,7 +1177,6 @@ export default function AgentDetail() {
           </div>
 
           <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Left: score summary */}
             <div className="space-y-4">
               <div className="flex items-center gap-3">
                 <div className={cn(
@@ -929,7 +1221,6 @@ export default function AgentDetail() {
               </div>
             </div>
 
-            {/* Right: coaching tips if needed */}
             {needsCoachingList.length > 0 && (
               <div className="bg-accent rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-3">
@@ -957,7 +1248,6 @@ export default function AgentDetail() {
             )}
           </div>
 
-          {/* Aggregated Strengths / Improvements */}
           {(topStrengths.length > 0 || topImprovements.length > 0) && (
             <div className="px-6 pb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
               {topStrengths.length > 0 && (
@@ -991,7 +1281,6 @@ export default function AgentDetail() {
             </div>
           )}
 
-          {/* Recent AI analyses table */}
           <div className="border-t border-border overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -1057,56 +1346,14 @@ export default function AgentDetail() {
           </div>
         </div>
       )}
-
-      {/* Recent conversations */}
-      <div className="bg-card rounded-2xl border border-border overflow-hidden">
-        <div className="px-6 py-4 border-b border-border">
-          <h3 className="text-lg font-semibold text-foreground">Conversas Recentes</h3>
+      {activeTab === 'ai' && (!aiAnalyses || aiAnalyses.length === 0) && (
+        <div className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground">
+          Sem análises de IA disponíveis para este atendente.
         </div>
-        {conversationsData?.data && conversationsData.data.length > 0 ? (
-          <div className="divide-y divide-border">
-            {conversationsData.data.map(conv => (
-              <Link
-                key={conv.id}
-                to={`/conversations/${conv.id}`}
-                className="px-6 py-4 flex items-center justify-between hover:bg-muted transition-colors"
-              >
-                <div>
-                  <p className="text-sm font-medium text-foreground">
-                    {stripAgentPrefix(conv.customer?.name, agent?.name, conv.customer?.phone)}
-                  </p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-xs text-muted-foreground">{channelLabel(conv.channel)}</span>
-                    <span className={cn(
-                      'text-xs px-1.5 py-0.5 rounded-full',
-                      conv.status === 'active' ? 'bg-accent text-primary' :
-                      conv.status === 'waiting' ? 'bg-accent text-primary' :
-                      'bg-muted text-muted-foreground'
-                    )}>
-                      {conv.status}
-                    </span>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs text-muted-foreground">
-                    {conv.started_at ? formatDateTime(conv.started_at) : '—'}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {conv.message_count_in + conv.message_count_out} msgs
-                  </p>
-                </div>
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <div className="p-6 text-center text-muted-foreground text-sm">
-            Nenhuma conversa encontrada
-          </div>
-        )}
-      </div>
+      )}
 
-      {/* Daily metrics table */}
-      {metrics && metrics.length > 0 && (
+      {/* Tab: Métricas Diárias */}
+      {activeTab === 'metrics' && metrics && metrics.length > 0 && (
         <div className="bg-card rounded-2xl border border-border overflow-hidden">
           <div className="px-6 py-4 border-b border-border">
             <h3 className="text-lg font-semibold text-foreground">Metricas Diarias</h3>
@@ -1144,6 +1391,85 @@ export default function AgentDetail() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+      {activeTab === 'metrics' && (!metrics || metrics.length === 0) && (
+        <div className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground">
+          Sem métricas diárias registradas para este atendente.
+        </div>
+      )}
+
+      {/* Tab: Leads */}
+      {activeTab === 'leads' && (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-border bg-card p-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Leads transferíveis (30d)</p>
+            <p className="mt-2 text-3xl font-bold text-foreground">{leadTransferCandidates.length}</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Conversas com 1ª resposta acima do SLA de {formatSeconds(company?.settings?.sla_first_response_sec ?? 0)}.
+            </p>
+          </div>
+
+          {isLoadingLeadTransfers && (
+            <div className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground">
+              Carregando leads transferíveis...
+            </div>
+          )}
+
+          {leadTransferError && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">
+              Não foi possível carregar os dados de leads transferíveis.
+            </div>
+          )}
+
+          {!isLoadingLeadTransfers && !leadTransferError && leadTransferCandidates.length === 0 && (
+            <div className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground">
+              Nenhuma lead transferível encontrada no período.
+            </div>
+          )}
+
+          {!isLoadingLeadTransfers && !leadTransferError && leadTransferCandidates.length > 0 && (
+            <div className="bg-card rounded-2xl border border-border overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-muted text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      <th className="px-6 py-3">Cliente</th>
+                      <th className="px-6 py-3 text-right">1ª resposta</th>
+                      <th className="px-6 py-3 text-right">SLA alvo</th>
+                      <th className="px-6 py-3 text-right">Excesso</th>
+                      <th className="px-6 py-3">Data</th>
+                      <th className="px-6 py-3">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {leadTransferCandidates.map((item) => (
+                      <tr key={item.id} className="hover:bg-muted/50">
+                        <td className="px-6 py-3 text-foreground">{item.customer_name}</td>
+                        <td className="px-6 py-3 text-right text-foreground">{formatSeconds(item.first_response_time_sec)}</td>
+                        <td className="px-6 py-3 text-right text-muted-foreground">{formatSeconds(item.sla_sec)}</td>
+                        <td className="px-6 py-3 text-right font-semibold text-red-600">+{Math.ceil(item.excess_sec / 60)} min</td>
+                        <td className="px-6 py-3 text-muted-foreground">{item.started_at ? formatDateTime(item.started_at) : '—'}</td>
+                        <td className="px-6 py-3 text-muted-foreground">{item.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tab: Plano de ação */}
+      {activeTab === 'action' && (
+        <div className="rounded-2xl border border-border bg-card p-6">
+          <h3 className="text-lg font-semibold text-foreground">Plano de ação</h3>
+          <div className="mt-4 space-y-3 text-sm text-foreground">
+            <p>1. Priorizar follow-up das conversas com maior risco no período.</p>
+            <p>2. Reforçar condução comercial nas abordagens com alto índice de passividade.</p>
+            <p>3. Revisar objeções recorrentes e atualizar script de resposta com o gestor.</p>
           </div>
         </div>
       )}
