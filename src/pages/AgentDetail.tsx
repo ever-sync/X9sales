@@ -55,6 +55,12 @@ function alertLevelFromScore(score: number) {
   return { label: 'Vermelho', className: 'border-red-200 bg-red-50 text-red-700' };
 }
 
+const failedAvatarUrls = new Set<string>();
+const isBlockedAvatarUrl = (value?: string | null) => {
+  if (!value) return true;
+  return value.includes('pps.whatsapp.net');
+};
+
 export default function AgentDetail() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
@@ -573,6 +579,13 @@ export default function AgentDetail() {
   const [erroredAvatarUrl, setErroredAvatarUrl] = useState<string | null>(null);
   const avatarError = !!agent?.avatar_url && erroredAvatarUrl === agent.avatar_url;
 
+  useEffect(() => {
+    if (!agent?.avatar_url) return;
+    if (failedAvatarUrls.has(agent.avatar_url)) {
+      setErroredAvatarUrl(agent.avatar_url);
+    }
+  }, [agent?.avatar_url]);
+
   const [showAllStats, setShowAllStats] = useState(false);
   const [showAllCompetencies, setShowAllCompetencies] = useState(false);
 
@@ -660,12 +673,15 @@ export default function AgentDetail() {
             <ArrowLeft className="h-5 w-5 text-muted-foreground" />
           </Link>
           <div className="flex items-center gap-3">
-            {agent.avatar_url && !avatarError ? (
+            {agent.avatar_url && !isBlockedAvatarUrl(agent.avatar_url) && !avatarError ? (
               <img
                 src={agent.avatar_url}
                 alt={agent.name}
                 className="h-12 w-12 rounded-full object-cover"
-                onError={() => setErroredAvatarUrl(agent.avatar_url ?? null)}
+                onError={() => {
+                  if (agent.avatar_url) failedAvatarUrls.add(agent.avatar_url);
+                  setErroredAvatarUrl(agent.avatar_url ?? null);
+                }}
               />
             ) : (
               <div className="h-12 w-12 bg-accent rounded-full flex items-center justify-center">
@@ -721,18 +737,18 @@ export default function AgentDetail() {
       </div>
 
       {/* Tab navigation */}
-      <div className="border-b border-border rounded-[20px] bg-[#f0f0f0] px-2 pt-2">
-        <nav className="-mb-px flex gap-1">
+      <div className="border-b border-border rounded-[20px] bg-[#f0f0f0] px-2 py-2">
+        <nav className="flex gap-1">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
               className={cn(
-                'px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap',
+                'whitespace-nowrap px-4 py-2.5 text-sm font-medium transition-colors',
                 activeTab === tab.id
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border',
+                  ? 'rounded-[300px] bg-[#5b56fb] text-white'
+                  : 'rounded-[300px] text-muted-foreground hover:bg-white/70 hover:text-foreground',
               )}
             >
               {tab.label}

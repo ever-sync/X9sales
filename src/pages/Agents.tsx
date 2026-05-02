@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
-import { AlertTriangle, Brain, Eye, MapPin, Pencil, Plus, Store, Trash2, User, X } from 'lucide-react';
+import { AlertTriangle, Brain, Check, Eye, KeyRound, Mail, MapPin, Pencil, Phone, Plus, Store, Trash2, User, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../integrations/supabase/client';
 import { useCompany } from '../contexts/CompanyContext';
@@ -9,7 +9,7 @@ import { usePermissions } from '../hooks/usePermissions';
 import type { Agent, AgentRanking, AIConversationAnalysis, Store as AgentStore } from '../types';
 import { CACHE } from '../config/constants';
 import { invokeSyncAgentAvatars } from '../lib/agentAvatarSync';
-import { cn } from '../lib/utils';
+import { cn, normalizePhone } from '../lib/utils';
 
 type AgentForm = { name: string; email: string; phone: string; storeId: string; external_id: string; password?: string };
 const emptyForm: AgentForm = { name: '', email: '', phone: '', storeId: '', external_id: '', password: '' };
@@ -34,6 +34,12 @@ type AgentManagerSnapshot = Pick<
   | 'structured_analysis'
 >;
 
+const failedAvatarUrls = new Set<string>();
+const isBlockedAvatarUrl = (value?: string | null) => {
+  if (!value) return true;
+  return value.includes('pps.whatsapp.net');
+};
+
 function avgNullable(values: Array<number | null | undefined>) {
   const valid = values.filter((value): value is number => value != null);
   if (valid.length === 0) return null;
@@ -52,16 +58,24 @@ function alertMeta(score: number) {
 }
 
 function AgentAvatar({ agent, className }: { agent: Agent; className: string }) {
-  const [imageError, setImageError] = useState(false);
+  const [imageError, setImageError] = useState(() => !!agent.avatar_url && failedAvatarUrls.has(agent.avatar_url));
   const initials = agent.name.split(' ').map((chunk) => chunk[0]).slice(0, 2).join('').toUpperCase();
+  const avatarUrl = agent.avatar_url ?? '';
 
-  if (agent.avatar_url && !imageError) {
+  useEffect(() => {
+    setImageError(!!avatarUrl && failedAvatarUrls.has(avatarUrl));
+  }, [avatarUrl]);
+
+  if (agent.avatar_url && !isBlockedAvatarUrl(agent.avatar_url) && !imageError) {
     return (
       <img
         src={agent.avatar_url}
         alt={agent.name}
         className={className}
-        onError={() => setImageError(true)}
+        onError={() => {
+          failedAvatarUrls.add(agent.avatar_url ?? '');
+          setImageError(true);
+        }}
       />
     );
   }
@@ -82,6 +96,39 @@ function managementTone(label?: ReturnType<typeof alertMeta>['label']) {
   return 'border-secondary/10 bg-secondary/5';
 }
 
+function getPasswordChecks(password?: string) {
+  const value = password ?? '';
+  const checks = [
+    { key: 'length', label: 'Pelo menos 8 caracteres', valid: value.length >= 8 },
+    { key: 'uppercase', label: 'Uma letra maiuscula', valid: /[A-Z]/.test(value) },
+    { key: 'number', label: 'Um numero', valid: /\d/.test(value) },
+    { key: 'special', label: 'Um caractere especial', valid: /[^A-Za-z0-9]/.test(value) },
+  ];
+  return { checks, isStrong: checks.every((item) => item.valid) };
+}
+
+function formatPhoneInput(value: string) {
+  const digits = normalizePhone(value).slice(0, 13);
+  const local = digits.startsWith('55') && digits.length > 11 ? digits.slice(2) : digits;
+
+  if (local.length <= 2) return local ? `(${local}` : '';
+  if (local.length <= 6) return `(${local.slice(0, 2)}) ${local.slice(2)}`;
+  if (local.length <= 10) return `(${local.slice(0, 2)}) ${local.slice(2, 6)}-${local.slice(6)}`;
+  return `(${local.slice(0, 2)}) ${local.slice(2, 7)}-${local.slice(7)}`;
+}
+
+function isValidAgentPhone(value?: string) {
+  const digits = normalizePhone(value);
+  if (!digits) return true;
+  return digits.length >= 10 && digits.length <= 13;
+}
+
+function isValidEmail(value?: string) {
+  const email = (value ?? '').trim();
+  if (!email) return true;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
 export default function Agents() {
   const { companyId } = useCompany();
   const { can } = usePermissions();
@@ -98,6 +145,7 @@ export default function Agents() {
   const [storeName, setStoreName] = useState('');
   const [storeError, setStoreError] = useState<string | null>(null);
   const [storeFilter, setStoreFilter] = useState('');
+  const passwordChecks = useMemo(() => getPasswordChecks(form.password), [form.password]);
 
   const { data: agents = [], isLoading } = useQuery<Agent[]>({
     queryKey: ['agents', companyId],
@@ -346,7 +394,7 @@ export default function Agents() {
   const openCreateModal = useCallback(() => { setEditingAgentId(null); setForm(emptyForm); setFormError(null); setShowModal(true); }, []);
   const openEditModal = useCallback((agent: Agent) => {
     setEditingAgentId(agent.id);
-    setForm({ name: agent.name ?? '', email: agent.email ?? '', phone: agent.phone ?? '', storeId: agent.store_id ?? '', external_id: agent.external_id ?? '', password: '' });
+    setForm({ name: agent.name ?? '', email: agent.email ?? '', phone: formatPhoneInput(agent.phone ?? ''), storeId: agent.store_id ?? '', external_id: agent.external_id ?? '', password: '' });
     setFormError(null);
     setShowModal(true);
   }, []);
@@ -355,13 +403,19 @@ export default function Agents() {
     mutationFn: async (values: AgentForm) => {
       if (!companyId) throw new Error('Empresa não encontrada');
       if (!values.storeId) throw new Error('Selecione a loja do atendente');
+      let { data: authData } = await supabase.auth.getSession();
+      if (!authData.session) {
+        const refreshed = await supabase.auth.refreshSession();
+        authData = refreshed.data;
+      }
+      if (!authData.session) throw new Error('Sessao expirada. Faca login novamente e tente de novo.');
       
       const payload = {
         company_id: companyId,
         name: values.name.trim(),
         email: values.email.trim() || undefined,
         password: values.password?.trim() || undefined,
-        phone: values.phone.trim() || undefined,
+        phone: normalizePhone(values.phone) || undefined,
         store_id: values.storeId,
         external_id: values.external_id.trim() || undefined,
       };
@@ -371,8 +425,9 @@ export default function Agents() {
       });
       
       if (error) {
-        console.error("Functions error:", error);
-        throw new Error("Sessão expirada ou erro. Atualize a página e tente se o erro prosseguir.");
+        const status = (error as any)?.context?.status ?? (error as any)?.status;
+        if (status === 401) throw new Error('Sessao expirada. Faca login novamente e tente de novo.');
+        throw new Error('Falha ao criar atendente. Atualize a pagina e tente novamente.');
       }
       if (data?.error) throw new Error(data.error);
       
@@ -387,6 +442,12 @@ export default function Agents() {
       if (!companyId) throw new Error('Empresa não encontrada');
       if (!editingAgentId) throw new Error('Atendente não encontrado');
       if (!values.storeId) throw new Error('Selecione a loja do atendente');
+      let { data: authData } = await supabase.auth.getSession();
+      if (!authData.session) {
+        const refreshed = await supabase.auth.refreshSession();
+        authData = refreshed.data;
+      }
+      if (!authData.session) throw new Error('Sessao expirada. Faca login novamente e tente de novo.');
       
       const payload = {
         company_id: companyId,
@@ -394,7 +455,7 @@ export default function Agents() {
         name: values.name.trim(),
         email: values.email.trim() || undefined,
         password: values.password?.trim() || undefined,
-        phone: values.phone.trim() || undefined,
+        phone: normalizePhone(values.phone) || undefined,
         store_id: values.storeId,
       };
 
@@ -403,7 +464,6 @@ export default function Agents() {
       });
       
       if (error) {
-        console.error("Functions error:", error);
         throw new Error("Falha no servidor. Se a sessão tiver expirado, por favor Dê F5 para recarregar a página e tentar de novo.");
       }
       if (data?.error) throw new Error(data.error);
@@ -489,11 +549,19 @@ export default function Agents() {
   const handleSubmit = useCallback((event: React.FormEvent) => {
     event.preventDefault();
     setFormError(null);
-    if (!form.name.trim()) return setFormError('Nome é obrigatório');
-    if (!form.storeId) return setFormError('Loja é obrigatória');
+    if (!form.name.trim()) return setFormError('Nome é obrigatório.');
+    if (!form.email.trim()) return setFormError('E-mail é obrigatório.');
+    if (!isValidEmail(form.email)) return setFormError('E-mail inválido. Confira o formato (ex.: nome@empresa.com).');
+    if (!(form.password ?? '').trim()) return setFormError('Senha é obrigatória.');
+    if (!passwordChecks.isStrong) {
+      return setFormError('A senha precisa atender aos critérios de senha forte.');
+    }
+    if (!form.phone.trim()) return setFormError('Telefone é obrigatório.');
+    if (!isValidAgentPhone(form.phone)) return setFormError('Telefone inválido. Use um número com DDD (10 a 13 dígitos).');
+    if (!form.storeId) return setFormError('Loja é obrigatória.');
     if (editingAgentId) return updateAgent.mutate(form);
     return createAgent.mutate(form);
-  }, [createAgent, editingAgentId, form, updateAgent]);
+  }, [createAgent, editingAgentId, form, passwordChecks.isStrong, updateAgent]);
 
   const handleStoreSubmit = useCallback((event: React.FormEvent) => {
     event.preventDefault();
@@ -547,7 +615,6 @@ export default function Agents() {
         const managerSnapshot = managerSnapshots[agent.id];
         return (
           <Link key={agent.id} to={`/agents/${agent.id}`} className="group relative overflow-hidden rounded-[30px] border border-border bg-card p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-lg">
-            <div className="absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,#d3fe18_0%,#b7f200_45%,rgba(211,254,24,0.05)_100%)]" />
             {canManageAgents && (
               <div className="absolute right-5 top-5 flex items-center gap-2">
                 <button
@@ -557,8 +624,7 @@ export default function Agents() {
                     event.stopPropagation();
                     navigate(`/agents/${agent.id}`);
                   }}
-                  className="inline-flex h-8 items-center gap-1 rounded-full px-3 text-xs font-semibold text-black"
-                  style={{ backgroundColor: '#DBF91D' }}
+                  className="inline-flex h-8 items-center gap-1 rounded-full border border-border bg-background/95 px-3 text-xs font-semibold text-foreground hover:bg-muted"
                 >
                   <Eye className="h-3.5 w-3.5" />
                   Ver
@@ -630,7 +696,7 @@ export default function Agents() {
 
       {showStoreModal && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"><div className="w-full max-w-md rounded-2xl bg-card shadow-xl"><div className="flex items-center justify-between border-b border-border px-6 py-4"><h3 className="text-lg font-semibold text-foreground">Cadastrar loja</h3><button type="button" onClick={closeStoreModal} aria-label="Fechar" className="rounded-lg p-1 transition-colors hover:bg-muted"><X className="h-5 w-5 text-muted-foreground" /></button></div><form onSubmit={handleStoreSubmit} className="space-y-4 p-6"><div><label className="mb-1 block text-sm font-medium text-foreground">Nome da loja <span className="text-red-500">*</span></label><input type="text" value={storeName} onChange={(event) => setStoreName(event.target.value)} placeholder="Ex: Loja Centro" className="w-full rounded-xl border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35" /></div>{storeError && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600">{storeError}</p>}<div className="flex gap-3 pt-2"><button type="button" onClick={closeStoreModal} className="flex-1 rounded-xl border border-border py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted">Cancelar</button><button type="submit" disabled={createStore.isPending} className="flex-1 rounded-xl bg-primary py-2 text-sm font-bold text-black transition-colors hover:bg-primary/90 disabled:opacity-60">{createStore.isPending ? 'Salvando...' : 'Salvar loja'}</button></div></form></div></div>}
 
-      {showModal && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"><div className="w-full max-w-md rounded-2xl bg-card shadow-xl"><div className="flex items-center justify-between border-b border-border px-6 py-4"><h3 className="text-lg font-semibold text-foreground">{editingAgentId ? 'Editar Atendente' : 'Novo Atendente'}</h3><button type="button" onClick={closeModal} aria-label="Fechar" className="rounded-lg p-1 transition-colors hover:bg-muted"><X className="h-5 w-5 text-muted-foreground" /></button></div><form onSubmit={handleSubmit} className="space-y-4 p-6"><div><label className="mb-1 block text-sm font-medium text-foreground">Nome <span className="text-red-500">*</span></label><input type="text" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Ex: Ana Lima" className="w-full rounded-xl border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35" /></div><div><label className="mb-1 block text-sm font-medium text-foreground">Email</label><input type="email" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} placeholder="ana@empresa.com" className="w-full rounded-xl border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35" /></div><div><label className="mb-1 block text-sm font-medium text-foreground">Senha de acesso<span className="ml-1 text-xs font-normal text-muted-foreground">{editingAgentId ? '(Deixe em branco para manter a atual)' : '(Obrigatória junto com e-mail)'}</span></label><input type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} placeholder={editingAgentId ? "Nova senha forte" : "Senha do vendedor"} className="w-full rounded-xl border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35" /></div><div><label className="mb-1 block text-sm font-medium text-foreground">Telefone</label><input type="tel" value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} placeholder="5511999999999" className="w-full rounded-xl border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35" /></div><div><div className="mb-1 flex items-center justify-between gap-2"><label className="block text-sm font-medium text-foreground">Loja <span className="text-red-500">*</span></label><button type="button" onClick={() => setShowStoreModal(true)} className="text-xs font-semibold text-primary hover:underline">Cadastrar loja</button></div><select value={form.storeId} onChange={(event) => setForm((current) => ({ ...current, storeId: event.target.value }))} className="w-full rounded-xl border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35"><option value="">Selecione a loja</option>{stores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}</select></div><div><label className="mb-1 block text-sm font-medium text-foreground">ID Externo<span className="ml-1 text-xs font-normal text-muted-foreground">{editingAgentId ? '(não pode ser alterado depois de criado)' : '(deixe em branco para gerar automaticamente)'}</span></label><input type="text" value={form.external_id} onChange={(event) => setForm((current) => ({ ...current, external_id: event.target.value }))} placeholder="ag01, ag02... ou UUID" disabled={!!editingAgentId} className="w-full rounded-xl border border-border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring/35 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground" /><p className="mt-1 text-xs text-muted-foreground">Usado para identificar este atendente nos webhooks do UazAPI.</p></div>{formError && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600">{formError}</p>}<div className="flex gap-3 pt-2"><button type="button" onClick={closeModal} className="flex-1 rounded-xl border border-border py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted">Cancelar</button><button type="submit" disabled={createAgent.isPending || updateAgent.isPending} className="flex-1 rounded-xl bg-primary py-2 text-sm font-bold text-black transition-colors hover:bg-primary/90 disabled:opacity-60">{editingAgentId ? (updateAgent.isPending ? 'Salvando...' : 'Salvar alterações') : (createAgent.isPending ? 'Criando...' : 'Criar Atendente')}</button></div></form></div></div>}
+      {showModal && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"><div className="w-full max-w-md rounded-2xl bg-card shadow-xl"><div className="flex items-center justify-between border-b border-border px-6 py-4"><h3 className="text-lg font-semibold text-foreground">{editingAgentId ? 'Editar Atendente' : 'Novo Atendente'}</h3><button type="button" onClick={closeModal} aria-label="Fechar" className="rounded-lg p-1 transition-colors hover:bg-muted"><X className="h-5 w-5 text-muted-foreground" /></button></div><form onSubmit={handleSubmit} className="space-y-4 p-6"><div><label className="mb-1 block text-sm font-medium text-foreground">Nome <span className="text-red-500">*</span></label><div className="relative"><User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input type="text" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Ex: Ana Lima" className="w-full rounded-xl border border-border py-2 pl-10 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35" /></div></div><div><label className="mb-1 block text-sm font-medium text-foreground">Email <span className="text-red-500">*</span></label><div className="relative"><Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input type="email" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} placeholder="ana@empresa.com" className="w-full rounded-xl border border-border py-2 pl-10 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35" /></div></div><div><label className="mb-1 block text-sm font-medium text-foreground">Senha de acesso <span className="text-red-500">*</span></label><div className="relative"><KeyRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} placeholder={editingAgentId ? "Nova senha forte" : "Senha do vendedor"} className="w-full rounded-xl border border-border py-2 pl-10 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35" /></div><div className="mt-2 rounded-xl border border-border/70 bg-muted/30 px-3 py-2"><p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Senha forte</p><div className="mt-1 grid grid-cols-1 gap-1">{passwordChecks.checks.map((item) => <p key={item.key} className={cn('flex items-center gap-1.5 text-xs', item.valid ? 'text-emerald-700' : 'text-muted-foreground')}><span className={cn('inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border', item.valid ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-border bg-background')}><Check className={cn("h-2.5 w-2.5", item.valid ? "opacity-100" : "opacity-0")} /></span>{item.label}</p>)}</div></div></div><div><label className="mb-1 block text-sm font-medium text-foreground">Telefone <span className="text-red-500">*</span></label><div className="relative"><Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input type="tel" value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: formatPhoneInput(event.target.value) }))} placeholder="(11) 91234-5678" className="w-full rounded-xl border border-border py-2 pl-10 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35" /></div></div><div><div className="mb-1 flex items-center justify-between gap-2"><label className="block text-sm font-medium text-foreground">Loja <span className="text-red-500">*</span></label><button type="button" onClick={() => setShowStoreModal(true)} className="text-xs font-semibold text-primary hover:underline">Cadastrar loja</button></div><div className="relative"><Store className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><select value={form.storeId} onChange={(event) => setForm((current) => ({ ...current, storeId: event.target.value }))} className="w-full rounded-xl border border-border py-2 pl-10 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring/35"><option value="">Selecione a loja</option>{stores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}</select></div></div>{formError && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600">{formError}</p>}<div className="flex gap-3 pt-2"><button type="button" onClick={closeModal} className="flex-1 rounded-xl border border-border py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted">Cancelar</button><button type="submit" disabled={createAgent.isPending || updateAgent.isPending} className="flex-1 rounded-xl bg-primary py-2 text-sm font-bold text-black transition-colors hover:bg-primary/90 disabled:opacity-60">{editingAgentId ? (updateAgent.isPending ? 'Salvando...' : 'Salvar alterações') : (createAgent.isPending ? 'Criando...' : 'Criar Atendente')}</button></div></form></div></div>}
     </div>
   );
 }
