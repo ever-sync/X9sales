@@ -225,6 +225,150 @@ interface ProductSupportSummary {
   top_loss_reasons: CountBucket[];
 }
 
+// ── Product Signals (catalog-normalized) ─────────────────────────────────────
+
+interface ProductSignalRow {
+  conversation_id: string;
+  product_name_normalized: string;
+  is_traffic_driver: boolean;
+  mention_source: string | null;
+  agent_offered: boolean;
+  offer_outcome: string | null;
+  price_objection: boolean;
+  price_objection_type: string | null;
+  value_understood: boolean | null;
+  value_gap: string | null;
+  value_arguments_used: string[];
+  conversion_signal: string | null;
+  loss_reason: string | null;
+}
+
+interface PerProductSignalSummary {
+  produto: string;
+  total_mencoes: number;
+  taxa_trafego_pct: number;
+  agente_ofereceu_pct: number;
+  cliente_iniciou_pct: number;
+  objecao_preco_pct: number;
+  objecao_bloqueante_pct: number;
+  taxa_conversao_pct: number | null;
+  perdeu_por_preco: number;
+  perdeu_por_valor: number;
+  valor_entendido_pct: number | null;
+  top_gaps_valor: string[];
+  top_argumentos_usados: string[];
+}
+
+async function fetchProductSignalRows(
+  companyId: string,
+  conversationIds: string[],
+): Promise<ProductSignalRow[]> {
+  const rows: ProductSignalRow[] = [];
+  for (const chunk of chunkArray(conversationIds, QUERY_CHUNK_SIZE)) {
+    const { data, error } = await supabase
+      .schema('app')
+      .from('product_signals')
+      .select('conversation_id, product_name_normalized, is_traffic_driver, mention_source, agent_offered, offer_outcome, price_objection, price_objection_type, value_understood, value_gap, value_arguments_used, conversion_signal, loss_reason')
+      .eq('company_id', companyId)
+      .in('conversation_id', chunk);
+
+    if (error) {
+      // Non-fatal: table may not exist in older envs
+      console.warn(`[ProductIntelligence] product_signals fetch warning: ${error.message}`);
+      return [];
+    }
+    rows.push(...((data ?? []) as ProductSignalRow[]));
+  }
+  return rows;
+}
+
+function buildPerProductSignals(signals: ProductSignalRow[]): PerProductSignalSummary[] {
+  if (signals.length === 0) return [];
+
+  type Acc = {
+    total: number;
+    trafficCount: number;
+    agentOfferedCount: number;
+    clientInitiatedCount: number;
+    priceObjectionCount: number;
+    priceBlockingCount: number;
+    convertedCount: number;
+    lostCount: number;
+    lostByPrice: number;
+    lostByValue: number;
+    valueUnderstoodCount: number;
+    valueUnderstoodTotal: number;
+    valueGaps: string[];
+    argumentsUsed: string[];
+  };
+
+  const map = new Map<string, Acc>();
+
+  for (const s of signals) {
+    const name = sanitizeText(s.product_name_normalized, 120) || 'desconhecido';
+    if (!map.has(name)) {
+      map.set(name, {
+        total: 0, trafficCount: 0, agentOfferedCount: 0, clientInitiatedCount: 0,
+        priceObjectionCount: 0, priceBlockingCount: 0, convertedCount: 0,
+        lostCount: 0, lostByPrice: 0, lostByValue: 0,
+        valueUnderstoodCount: 0, valueUnderstoodTotal: 0,
+        valueGaps: [], argumentsUsed: [],
+      });
+    }
+    const p = map.get(name)!;
+    p.total++;
+    if (s.is_traffic_driver) p.trafficCount++;
+    if (s.mention_source === 'cliente_iniciou') p.clientInitiatedCount++;
+    if (s.agent_offered) p.agentOfferedCount++;
+    if (s.price_objection) p.priceObjectionCount++;
+    if (s.price_objection_type === 'bloqueante') p.priceBlockingCount++;
+    if (s.conversion_signal === 'converteu') p.convertedCount++;
+    if (s.conversion_signal === 'perdeu') p.lostCount++;
+    if (s.loss_reason === 'preco') p.lostByPrice++;
+    if (s.loss_reason === 'valor') p.lostByValue++;
+    if (s.value_understood !== null) {
+      p.valueUnderstoodTotal++;
+      if (s.value_understood) p.valueUnderstoodCount++;
+    }
+    if (s.value_gap) p.valueGaps.push(sanitizeText(s.value_gap, 100));
+    if (Array.isArray(s.value_arguments_used)) {
+      p.argumentsUsed.push(...s.value_arguments_used.map((a) => sanitizeText(a, 80)).filter(Boolean));
+    }
+  }
+
+  const countTop = (arr: string[], n: number): string[] => {
+    const counts: Record<string, number> = {};
+    for (const item of arr) { counts[item] = (counts[item] ?? 0) + 1; }
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, n).map(([k]) => k);
+  };
+
+  const pct = (num: number, den: number): number =>
+    den === 0 ? 0 : Math.round((num / den) * 100);
+
+  return Array.from(map.entries())
+    .sort((a, b) => b[1].total - a[1].total)
+    .slice(0, 12)
+    .map(([produto, p]): PerProductSignalSummary => ({
+      produto,
+      total_mencoes: p.total,
+      taxa_trafego_pct: pct(p.trafficCount, p.total),
+      agente_ofereceu_pct: pct(p.agentOfferedCount, p.total),
+      cliente_iniciou_pct: pct(p.clientInitiatedCount, p.total),
+      objecao_preco_pct: pct(p.priceObjectionCount, p.total),
+      objecao_bloqueante_pct: pct(p.priceBlockingCount, p.total),
+      taxa_conversao_pct: (p.convertedCount + p.lostCount) > 0
+        ? pct(p.convertedCount, p.convertedCount + p.lostCount)
+        : null,
+      perdeu_por_preco: p.lostByPrice,
+      perdeu_por_valor: p.lostByValue,
+      valor_entendido_pct: p.valueUnderstoodTotal > 0
+        ? pct(p.valueUnderstoodCount, p.valueUnderstoodTotal)
+        : null,
+      top_gaps_valor: countTop(p.valueGaps, 3),
+      top_argumentos_usados: countTop(p.argumentsUsed, 3),
+    }));
+}
+
 function coerceRpcSingleRow<T>(value: unknown): T | null {
   if (!value) return null;
   const row = Array.isArray(value) ? (value[0] ?? null) : value;
@@ -997,6 +1141,7 @@ async function callClaudeForProductIntelligence(
   periodEnd: string,
   supportSummary: ProductSupportSummary,
   memories: ConversationMemory[],
+  perProductSignals: PerProductSignalSummary[],
 ): Promise<{ report: Partial<ProductStrategicReport>; modelUsed: string }> {
   const systemPrompt =
     'Voce e uma IA especialista em analise de produto, inteligencia de mercado, comportamento do cliente e atendimento comercial. ' +
@@ -1005,13 +1150,31 @@ async function callClaudeForProductIntelligence(
     'Sempre diferencie a causa mais provavel entre produto, comunicacao, posicionamento, oferta, atendimento, preco e expectativa. ' +
     'Retorne apenas JSON valido, sem markdown nem texto extra. Responda em portugues.';
 
+  const perProductSection = perProductSignals.length > 0
+    ? `Inteligencia por produto (normalizada pelo catalogo):\n${JSON.stringify(perProductSignals, null, 2)}\n\n` +
+      'Legenda dos campos por produto:\n' +
+      '- taxa_trafego_pct: % das mencoes em que esse produto foi o motivo do contato (trafego gerado)\n' +
+      '- agente_ofereceu_pct: % em que o vendedor ofereceu proativamente\n' +
+      '- cliente_iniciou_pct: % em que foi o cliente que trouxe o produto\n' +
+      '- objecao_preco_pct: % das mencoes com objecao de preco\n' +
+      '- objecao_bloqueante_pct: % onde a objecao de preco foi bloqueante (impediu avancar)\n' +
+      '- taxa_conversao_pct: % de conversas com desfecho positivo (converteu vs perdeu)\n' +
+      '- perdeu_por_preco/valor: numero absoluto de conversas perdidas por esse motivo\n' +
+      '- valor_entendido_pct: % dos clientes que demonstraram entender o valor do produto\n' +
+      '- top_gaps_valor: argumentos de valor que o vendedor nao usou mas deveria\n' +
+      '- top_argumentos_usados: argumentos mais usados pelos vendedores para esse produto\n\n'
+    : '';
+
   const userPrompt =
     `Periodo analisado: ${periodStart} ate ${periodEnd}\n\n` +
     'Objetivo:\n' +
-    '- descobrir como os clientes percebem o produto\n' +
+    '- descobrir como os clientes percebem cada produto do catalogo\n' +
     '- entender o que mais atrai, o que mais trava, o que mais gera duvida e objecao\n' +
+    '- identificar quais produtos geram trafego vs quais convertem\n' +
+    '- detectar onde o vendedor esta falhando em agregar valor ou tratar objecoes\n' +
     '- separar o que parece problema de produto, comunicacao, posicionamento, oferta, atendimento, preco ou expectativa\n' +
     '- transformar conversas em inteligencia pratica para tomada de decisao\n\n' +
+    perProductSection +
     `Resumo agregado do periodo:\n${JSON.stringify(supportSummary, null, 2)}\n\n` +
     `Memorias compactas de evidencia:\n${JSON.stringify(buildPromptMemories(memories), null, 2)}\n\n` +
     'Gere exatamente este JSON:\n' +
@@ -1309,12 +1472,13 @@ async function generateProductIntelligence(
   const conversationIds = conversations.map((conversation) => conversation.conversation_id);
   const rawConversationIds = conversations.map((conversation) => conversation.raw_conversation_id);
 
-  const [productRows, customerRows, signalRows, outcomeRows, externalIdMap] = await Promise.all([
+  const [productRows, customerRows, signalRows, outcomeRows, externalIdMap, productSignalRows] = await Promise.all([
     fetchProductRows(run.company_id, conversationIds),
     fetchCustomerRows(run.company_id, conversationIds),
     fetchSignalRows(run.company_id, conversationIds),
     fetchOutcomeRows(run.company_id, conversationIds),
     fetchRawConversationExternalIds(rawConversationIds),
+    fetchProductSignalRows(run.company_id, conversationIds),
   ]);
 
   const rawMessagesMap = await fetchRawMessages(run.company_id, Array.from(externalIdMap.values()));
@@ -1357,6 +1521,7 @@ async function generateProductIntelligence(
   }
 
   const supportSummary = buildSupportSummary(memories);
+  const perProductSignals = buildPerProductSignals(productSignalRows);
   const fallbackReport = buildFallbackProductReport(supportSummary);
 
   let parsedReport: Partial<ProductStrategicReport> = {};
@@ -1368,6 +1533,7 @@ async function generateProductIntelligence(
       run.period_end,
       supportSummary,
       memories,
+      perProductSignals,
     );
     parsedReport = llm.report;
     modelUsed = llm.modelUsed;

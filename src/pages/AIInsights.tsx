@@ -9,7 +9,6 @@ import {
   FilterX,
   Loader2,
   MessageSquare,
-  PlayCircle,
   RefreshCw,
   Search,
   ShieldAlert,
@@ -38,7 +37,6 @@ import { MetricCard } from '../components/dashboard/MetricCard';
 import { Button } from '../components/ui/button';
 import { IntelligenceTabs } from '../components/layout/IntelligenceTabs';
 import { channelLabel, cn, formatDateTime, formatPercent } from '../lib/utils';
-import { downloadCsv } from '../lib/export';
 import { toast } from 'sonner';
 import { DemoBanner } from '../components/ui/EmptyState';
 
@@ -323,13 +321,12 @@ function isSessionExpiredMessage(message: string | null | undefined): boolean {
 }
 
 export default function AIInsights() {
-  const { companyId, company, role } = useCompany();
+  const { companyId, company } = useCompany();
   const { isBlockedPhone } = useBlockedPhones();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
   const reviewSectionRef = useRef<HTMLDivElement | null>(null);
-  const canRunManualAnalysis = role === 'owner_admin';
   const timezone = company?.settings?.timezone || 'UTC';
   const defaultPeriod = useMemo(() => getDefaultPeriod(), []);
   const periodPresetOptions: Array<{ value: PeriodPreset; label: string; days?: number }> = useMemo(
@@ -586,24 +583,6 @@ export default function AIInsights() {
     navigate(`/login?redirect=${encodeURIComponent(redirect)}`, { replace: true });
   };
 
-  const openModal = () => {
-    if (!canRunManualAnalysis) return;
-    setShowModal(true);
-    setModalStep('form');
-    setFormError(null);
-    setConversationSearch('');
-    setJobId(null);
-    setSubmittedTotalCandidates(0);
-    finishedJobRef.current = null;
-    setModalPeriodPreset('custom');
-    setForm({
-      agentId: selectedAgentId,
-      scope: 'all',
-      periodStart,
-      periodEnd,
-      conversationId: '',
-    });
-  };
   const startManualAnalysisMutation = useMutation<AnyStartResult, Error>({
     mutationFn: async () => {
       if (!companyId) throw new Error('Empresa nao selecionada.');

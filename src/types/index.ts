@@ -1031,3 +1031,20 @@ export interface QAReview {
   comments: string | null;
   created_at: string;
 }
+
+// ============================================================
+// Product Catalog Types
+// ============================================================
+export interface ProductCatalog {
+  id: string;
+  company_id: string;
+  name: string;
+  price: number | null;
+  category: string | null;
+  aliases: string[];
+  key_differentials: string[];
+  common_objections: string[];
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}

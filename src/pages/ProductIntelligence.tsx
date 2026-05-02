@@ -2,45 +2,30 @@ import { useMemo, useState, type ElementType } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Activity,
   BarChart2,
   Brain,
   CalendarRange,
-  Flame,
-  HelpCircle,
+  DollarSign,
   Loader2,
   Package,
   PlayCircle,
   RefreshCw,
   Sparkles,
-  ThumbsDown,
-  TrendingDown,
+  Star,
   TrendingUp,
+  Users,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn, formatDateTime } from '../lib/utils';
 import { useCompany } from '../contexts/CompanyContext';
 import { env } from '../config/env';
 import { supabase, clearStoredSupabaseSession, isInvalidRefreshTokenError } from '../integrations/supabase/client';
-import { useBlockedPhones } from '../hooks/useBlockedPhones';
 import { ProductIntelligenceStrategicPanel } from '../components/reports/ProductIntelligenceStrategicPanel';
 import { IntelligenceTabs } from '../components/layout/IntelligenceTabs';
 import { Button } from '../components/ui/button';
 import type { ProductIntelligenceRun, ProductIntelligenceStrategicReport } from '../types';
 
 type Tab = 'produto' | 'objecoes';
-
-interface PIReport {
-  conversation_id: string;
-  produto_citado: string | null;
-  produto_interesse: string | null;
-  produtos_comparados: string[];
-  motivo_interesse: string | null;
-  dificuldade_entendimento: string | null;
-  barreiras_produto: string[];
-  objecao_tratada: boolean | null;
-  oportunidade_perdida: boolean | null;
-}
 
 interface StartResponse {
   success: boolean;
@@ -52,74 +37,43 @@ interface StartResponse {
   error?: string;
 }
 
-const MOCK_PI_REPORTS: PIReport[] = [
-  {
-    conversation_id: 'mock-conv-001',
-    produto_citado: 'Plano Premium',
-    produto_interesse: 'Plano Premium',
-    produtos_comparados: ['Plano Basico'],
-    motivo_interesse: 'Quer automatizar follow-up sem aumentar equipe',
-    dificuldade_entendimento: 'alto',
-    barreiras_produto: ['Nao entendeu diferenca entre Basico e Premium'],
-    objecao_tratada: false,
-    oportunidade_perdida: true,
-  },
-  {
-    conversation_id: 'mock-conv-002',
-    produto_citado: 'Plano Premium',
-    produto_interesse: 'Plano Premium',
-    produtos_comparados: ['Plano Pro'],
-    motivo_interesse: 'Busca mais controle de funil',
-    dificuldade_entendimento: 'medio',
-    barreiras_produto: ['Preco percebido como alto sem demonstracao de ROI'],
-    objecao_tratada: true,
-    oportunidade_perdida: false,
-  },
-  {
-    conversation_id: 'mock-conv-003',
-    produto_citado: 'Consultoria de Implantacao',
-    produto_interesse: 'Consultoria de Implantacao',
-    produtos_comparados: ['Treinamento interno'],
-    motivo_interesse: 'Precisa colocar o time para rodar rapido',
-    dificuldade_entendimento: 'alto',
-    barreiras_produto: ['Escopo da implantacao nao ficou claro'],
-    objecao_tratada: false,
-    oportunidade_perdida: true,
-  },
-  {
-    conversation_id: 'mock-conv-004',
-    produto_citado: 'Plano Basico',
-    produto_interesse: 'Plano Basico',
-    produtos_comparados: [],
-    motivo_interesse: 'Quer comecar com investimento menor',
-    dificuldade_entendimento: 'baixo',
-    barreiras_produto: ['Sem integracao com CRM legado'],
-    objecao_tratada: true,
-    oportunidade_perdida: false,
-  },
-  {
-    conversation_id: 'mock-conv-005',
-    produto_citado: 'Plano Premium',
-    produto_interesse: 'Plano Premium',
-    produtos_comparados: ['Plano Basico'],
-    motivo_interesse: 'Quer escalar sem perder padrao de atendimento',
-    dificuldade_entendimento: 'alto',
-    barreiras_produto: ['Nao entendeu diferenca entre Basico e Premium'],
-    objecao_tratada: false,
-    oportunidade_perdida: true,
-  },
-  {
-    conversation_id: 'mock-conv-006',
-    produto_citado: 'Plano Pro',
-    produto_interesse: 'Plano Pro',
-    produtos_comparados: ['Plano Premium'],
-    motivo_interesse: 'Equipe comercial com 8 vendedores',
-    dificuldade_entendimento: 'medio',
-    barreiras_produto: ['Falta caso de uso para segmento da empresa'],
-    objecao_tratada: true,
-    oportunidade_perdida: false,
-  },
-];
+interface ProductSignal {
+  conversation_id: string;
+  product_id: string | null;
+  product_name_normalized: string;
+  is_traffic_driver: boolean;
+  mention_source: string | null;
+  agent_offered: boolean;
+  offer_outcome: string | null;
+  price_objection: boolean;
+  price_objection_type: string | null;
+  price_anchor: string | null;
+  value_questions: string[];
+  value_understood: boolean | null;
+  value_gap: string | null;
+  value_arguments_used: string[];
+  conversion_signal: string | null;
+  loss_reason: string | null;
+  sentiment_score: number | null;
+}
+
+interface ProductStats {
+  name: string;
+  total: number;
+  trafficCount: number;
+  clientInitiatedCount: number;
+  agentOfferedCount: number;
+  priceObjectionCount: number;
+  priceBlockingCount: number;
+  convertedCount: number;
+  lostCount: number;
+  lostByPrice: number;
+  valueUnderstoodCount: number;
+  valueUnderstoodTotal: number;
+  topValueGaps: string[];
+  topArguments: string[];
+  avgSentiment: number | null;
+}
 
 const MOCK_STRATEGIC_REPORT: ProductIntelligenceStrategicReport = {
   resumo_executivo:
@@ -440,104 +394,8 @@ function SectionHeader({ icon: Icon, title, sub }: { icon: ElementType; title: s
   );
 }
 
-function PatternTag({ text, tone }: { text: string; tone: 'green' | 'amber' | 'violet' | 'blue' | 'rose' }) {
-  const cls = {
-    green: 'border-[#d3fe18]/50 bg-[#d3fe18]/10 text-[#4a5000]',
-    amber: 'border-amber-200 bg-amber-50 text-amber-900',
-    violet: 'border-violet-200 bg-violet-50 text-violet-900',
-    blue: 'border-blue-200 bg-blue-50 text-blue-900',
-    rose: 'border-rose-200 bg-rose-50 text-rose-900',
-  }[tone];
-
-  return (
-    <div className={cn('flex items-start gap-2 rounded-xl border px-3 py-2.5', cls)}>
-      <TrendingUp className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-      <span className="text-sm leading-snug">{text}</span>
-    </div>
-  );
-}
-
-function Trend({ dir }: { dir: 'up' | 'down' | 'stable' }) {
-  if (dir === 'up') return <TrendingUp className="h-3.5 w-3.5 text-rose-500" />;
-  if (dir === 'down') return <TrendingDown className="h-3.5 w-3.5 text-green-500" />;
-  return <Sparkles className="h-3.5 w-3.5 text-muted-foreground" />;
-}
-
-function ProductRankRow({ rank, name, percentage, badge }: { rank: number; name: string; percentage: number; badge?: string }) {
-  return (
-    <div className="flex items-center gap-3 rounded-xl border border-border px-3 py-2.5">
-      <span className="w-5 text-center text-xs font-bold text-muted-foreground">{rank}</span>
-      <span className="flex-1 text-sm font-medium text-foreground">{name}</span>
-      {badge && <span className="rounded-md bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary">{badge}</span>}
-      <div className="flex items-center gap-1.5 shrink-0">
-        <Trend dir="stable" />
-        <span className="text-sm font-bold text-foreground">{percentage}%</span>
-      </div>
-    </div>
-  );
-}
-
-function ProductIssueItem({
-  product,
-  issue,
-  percentage,
-  icon: Icon,
-  iconClassName,
-}: {
-  product: string;
-  issue: string;
-  percentage: number;
-  icon: ElementType;
-  iconClassName: string;
-}) {
-  return (
-    <div className="flex items-center gap-3 rounded-xl border border-border px-3 py-2.5">
-      <div className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg', iconClassName)}>
-        <Icon className="h-3.5 w-3.5" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-foreground">{product}</p>
-        <p className="text-xs text-muted-foreground">{issue}</p>
-      </div>
-      <span className="shrink-0 text-sm font-bold text-foreground">{percentage}%</span>
-    </div>
-  );
-}
-
-function ObjectionCard({ text, percentage, count }: { text: string; percentage: number; count: number }) {
-  const impact = percentage >= 25 ? 'alto' : percentage >= 12 ? 'medio' : 'baixo';
-  const impactClassName = {
-    alto: 'bg-rose-100 text-rose-700',
-    medio: 'bg-amber-100 text-amber-700',
-    baixo: 'bg-green-100 text-green-700',
-  }[impact];
-
-  return (
-    <div className="space-y-2 rounded-xl border border-border bg-muted/30 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-sm font-semibold text-foreground">{text}</p>
-        <div className="flex items-center gap-1.5 shrink-0">
-          <Trend dir="stable" />
-          <span className="text-sm font-bold text-foreground">{percentage}%</span>
-        </div>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <span className={cn('rounded-md px-2 py-0.5 text-xs font-semibold', impactClassName)}>impacto {impact}</span>
-        <span className="rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-          Identificada em {count} conversa{count !== 1 ? 's' : ''}
-        </span>
-      </div>
-      <p className="text-xs leading-relaxed text-muted-foreground">
-        <span className="font-medium text-primary">Sugestao: </span>
-        Rever a forma como o produto e apresentado quando essa objecao aparece.
-      </p>
-    </div>
-  );
-}
-
 export default function ProductIntelligence() {
   const { companyId, role } = useCompany();
-  const { isBlockedConversationId } = useBlockedPhones();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
@@ -581,83 +439,6 @@ export default function ProductIntelligence() {
     },
   });
 
-  const rawReportsQuery = useQuery<PIReport[]>({
-    queryKey: ['product-intelligence', companyId, periodStart, periodEnd],
-    queryFn: async () => {
-      if (!companyId) return [];
-      const { data, error } = await supabase
-        .from('product_intelligence_reports')
-        .select('conversation_id, produto_citado, produto_interesse, produtos_comparados, motivo_interesse, dificuldade_entendimento, barreiras_produto, objecao_tratada, oportunidade_perdida')
-        .eq('company_id', companyId)
-        .gte('analyzed_at', `${periodStart}T00:00:00Z`)
-        .lte('analyzed_at', `${periodEnd}T23:59:59Z`);
-
-      if (error) throw error;
-      return ((data ?? []) as PIReport[]).filter((report) => !isBlockedConversationId(report.conversation_id));
-    },
-    enabled: filtersReady,
-    staleTime: 1000 * 60 * 5,
-  });
-
-  const effectiveReports = useMemo(() => {
-    const data = rawReportsQuery.data ?? [];
-    if (data.length > 0) return data;
-    if (shouldUseDemoData) return MOCK_PI_REPORTS;
-    return [];
-  }, [rawReportsQuery.data, shouldUseDemoData]);
-
-  const agg = useMemo(() => {
-    const rawReports = effectiveReports;
-    const total = rawReports.length;
-    if (total === 0) return null;
-
-    const interestCounts = countOcc(rawReports.map((report) => report.produto_interesse));
-    const topInterest = topN(interestCounts, 5);
-    const highDiffReports = rawReports.filter((report) => report.dificuldade_entendimento === 'alto');
-    const highDiffCounts = countOcc(highDiffReports.map((report) => report.produto_citado));
-    const topHighDiff = topN(highDiffCounts, 4);
-    const lostReports = rawReports.filter((report) => report.oportunidade_perdida === true);
-    const lostCounts = countOcc(lostReports.map((report) => report.produto_citado));
-    const topLost = topN(lostCounts, 4);
-
-    const productStats: Record<string, { total: number; lost: number }> = {};
-    rawReports.forEach((report) => {
-      const product = report.produto_citado ?? report.produto_interesse;
-      if (!product) return;
-      if (!productStats[product]) productStats[product] = { total: 0, lost: 0 };
-      productStats[product].total += 1;
-      if (report.oportunidade_perdida) productStats[product].lost += 1;
-    });
-
-    const losingTraction = Object.entries(productStats)
-      .filter(([, stats]) => stats.total >= 3 && stats.lost / stats.total > 0.4)
-      .sort((a, b) => b[1].lost / b[1].total - a[1].lost / a[1].total)
-      .slice(0, 3);
-
-    const allBarriers = rawReports.flatMap((report) => report.barreiras_produto ?? []);
-    const topBarriers = topN(countOcc(allBarriers), 5);
-    const reasonByProduct: Record<string, string> = {};
-
-    rawReports.forEach((report) => {
-      const product = report.produto_citado ?? report.produto_interesse;
-      if (product && report.motivo_interesse && !reasonByProduct[product]) {
-        reasonByProduct[product] = report.motivo_interesse;
-      }
-    });
-
-    return {
-      total,
-      topInterest,
-      topHighDiff,
-      topLost,
-      losingTraction,
-      topBarriers,
-      reasonByProduct,
-      highDiffTotal: highDiffReports.length,
-      lostTotal: lostReports.length,
-    };
-  }, [effectiveReports]);
-
   const redirectToLogin = (message?: string) => {
     toast.error(message || 'Sessao expirada. Faca login novamente.');
     const redirect = `${location.pathname}${location.search}${location.hash}`;
@@ -687,6 +468,74 @@ export default function ProductIntelligence() {
       toast.error(error.message);
     },
   });
+
+  type SignalsTab = 'overview' | 'traffic' | 'offer' | 'price' | 'value';
+  const [signalsTab, setSignalsTab] = useState<SignalsTab>('overview');
+
+  const signalsQuery = useQuery<ProductSignal[]>({
+    queryKey: ['product-signals', companyId, periodStart, periodEnd],
+    queryFn: async () => {
+      if (!companyId) return [];
+      const { data, error } = await supabase
+        .from('product_signals')
+        .select('conversation_id, product_id, product_name_normalized, is_traffic_driver, mention_source, agent_offered, offer_outcome, price_objection, price_objection_type, price_anchor, value_questions, value_understood, value_gap, value_arguments_used, conversion_signal, loss_reason, sentiment_score')
+        .eq('company_id', companyId)
+        .gte('analyzed_at', `${periodStart}T00:00:00Z`)
+        .lte('analyzed_at', `${periodEnd}T23:59:59Z`);
+      if (error) throw error;
+      return (data ?? []) as ProductSignal[];
+    },
+    enabled: filtersReady,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const productStats = useMemo((): ProductStats[] => {
+    const signals = signalsQuery.data ?? [];
+    if (signals.length === 0) return [];
+
+    const map = new Map<string, ProductStats>();
+
+    for (const s of signals) {
+      const name = s.product_name_normalized || 'Produto desconhecido';
+      if (!map.has(name)) {
+        map.set(name, {
+          name,
+          total: 0,
+          trafficCount: 0,
+          clientInitiatedCount: 0,
+          agentOfferedCount: 0,
+          priceObjectionCount: 0,
+          priceBlockingCount: 0,
+          convertedCount: 0,
+          lostCount: 0,
+          lostByPrice: 0,
+          valueUnderstoodCount: 0,
+          valueUnderstoodTotal: 0,
+          topValueGaps: [],
+          topArguments: [],
+          avgSentiment: null,
+        });
+      }
+      const p = map.get(name)!;
+      p.total++;
+      if (s.is_traffic_driver) p.trafficCount++;
+      if (s.mention_source === 'cliente_iniciou') p.clientInitiatedCount++;
+      if (s.agent_offered) p.agentOfferedCount++;
+      if (s.price_objection) p.priceObjectionCount++;
+      if (s.price_objection_type === 'bloqueante') p.priceBlockingCount++;
+      if (s.conversion_signal === 'converteu') p.convertedCount++;
+      if (s.conversion_signal === 'perdeu') p.lostCount++;
+      if (s.loss_reason === 'preco') p.lostByPrice++;
+      if (s.value_understood !== null) {
+        p.valueUnderstoodTotal++;
+        if (s.value_understood) p.valueUnderstoodCount++;
+      }
+      if (s.value_gap) p.topValueGaps.push(s.value_gap);
+      if (s.value_arguments_used) p.topArguments.push(...s.value_arguments_used);
+    }
+
+    return Array.from(map.values()).sort((a, b) => b.total - a.total);
+  }, [signalsQuery.data]);
 
   const strategicRun = strategicRunQuery.data;
   const strategicReport = strategicRun?.report_json ?? (shouldUseDemoData ? MOCK_STRATEGIC_REPORT : null);
@@ -807,116 +656,406 @@ export default function ProductIntelligence() {
       </div>
 
       <div className="space-y-4 rounded-[28px] border border-border bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between">
+        {/* Header + tab selector */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
           <div>
-            <h2 className="text-lg font-semibold text-foreground">Leitura complementar por conversa</h2>
-            <p className="text-sm text-muted-foreground">
-              Apoio tatico a partir das extracoes de produto ja existentes ({tab === 'produto' ? 'aba Produto' : 'aba Objecoes'}).
-            </p>
+            <h2 className="text-lg font-semibold text-foreground">Inteligencia de Produto por Produto</h2>
+            <p className="text-sm text-muted-foreground">Dados extraidos e normalizados pelo catalogo de produtos.</p>
+          </div>
+          <div className="flex gap-1 rounded-2xl border border-border bg-muted/40 p-1">
+            {(
+              [
+                { id: 'overview', label: 'Visao Geral' },
+                { id: 'traffic', label: 'Trafego' },
+                { id: 'offer', label: 'Oferta' },
+                { id: 'price', label: 'Preco' },
+                { id: 'value', label: 'Valor' },
+              ] as Array<{ id: SignalsTab; label: string }>
+            ).map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setSignalsTab(item.id)}
+                className={cn(
+                  'rounded-xl px-4 py-1.5 text-sm font-medium transition-all',
+                  signalsTab === item.id
+                    ? 'bg-card text-foreground shadow-sm ring-1 ring-primary/20'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {item.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        {rawReportsQuery.isLoading && !shouldUseDemoData ? (
+        {/* Loading state */}
+        {signalsQuery.isLoading ? (
           <div className="flex items-center justify-center rounded-2xl border border-border bg-card p-12">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
-        ) : !agg ? (
-          <div className="rounded-2xl border border-dashed border-border bg-card p-8 text-center">
-            <BarChart2 className="mx-auto h-8 w-8 text-muted-foreground" />
-            <h3 className="mt-3 text-lg font-semibold text-foreground">Nenhum apoio complementar carregado</h3>
-            <p className="mt-2 text-sm text-muted-foreground">A leitura estrategica acima pode existir mesmo sem estas extrações auxiliares por conversa.</p>
+        ) : productStats.length === 0 ? (
+          /* Empty state */
+          <div className="rounded-2xl border border-dashed border-border bg-card p-10 text-center">
+            <BarChart2 className="mx-auto h-9 w-9 text-muted-foreground" />
+            <h3 className="mt-3 text-base font-semibold text-foreground">Nenhum sinal de produto encontrado</h3>
+            <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
+              Os sinais de produto sao preenchidos ao rodar o relatorio de inteligencia com um catalogo de produtos configurado.
+              Execute a analise estrategica acima para popular estes dados.
+            </p>
           </div>
         ) : (
           <>
-            {tab === 'produto' && (
+            {/* ── TAB: VISAO GERAL ── */}
+            {signalsTab === 'overview' && (
               <div className="space-y-6">
+                {/* KPI cards */}
                 <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-                  <MetricCard label="Produto mais buscado" value={agg.topInterest[0]?.[0] ?? '—'} icon={Flame} sub={agg.topInterest[0] ? `${pct(agg.topInterest[0][1], agg.total)}% das conversas` : undefined} accent />
-                  <MetricCard label="Produto com mais duvidas" value={agg.topHighDiff[0]?.[0] ?? '—'} icon={HelpCircle} sub={agg.highDiffTotal > 0 ? `${pct(agg.highDiffTotal, agg.total)}% com dificuldade alta` : undefined} />
-                  <MetricCard label="Mais oportunidades perdidas" value={agg.topLost[0]?.[0] ?? '—'} icon={ThumbsDown} sub={agg.lostTotal > 0 ? `${pct(agg.lostTotal, agg.total)}% das conversas` : undefined} />
-                  <MetricCard label="Conversas analisadas" value={String(agg.total)} icon={TrendingUp} sub="apoio complementar do periodo" />
+                  <MetricCard
+                    label="Produtos identificados"
+                    value={String(productStats.length)}
+                    icon={Package}
+                    sub="no catalogo normalizado"
+                  />
+                  <MetricCard
+                    label="Maior trafego"
+                    value={
+                      productStats.reduce((best, p) => (p.trafficCount > best.trafficCount ? p : best), productStats[0]).name
+                    }
+                    icon={Users}
+                    sub={`${productStats.reduce((best, p) => (p.trafficCount > best.trafficCount ? p : best), productStats[0]).trafficCount} mencoes como driver`}
+                    accent
+                  />
+                  <MetricCard
+                    label="Maior pressao de preco"
+                    value={
+                      productStats.reduce((best, p) => (p.priceObjectionCount > best.priceObjectionCount ? p : best), productStats[0]).name
+                    }
+                    icon={DollarSign}
+                    sub={(() => {
+                      const worst = productStats.reduce((best, p) => (p.priceObjectionCount > best.priceObjectionCount ? p : best), productStats[0]);
+                      return `${pct(worst.priceObjectionCount, worst.total)}% de objecao`;
+                    })()}
+                  />
+                  <MetricCard
+                    label="Melhor conversao"
+                    value={(() => {
+                      const best = productStats
+                        .filter((p) => p.convertedCount + p.lostCount > 0)
+                        .reduce(
+                          (b, p) =>
+                            p.convertedCount / (p.convertedCount + p.lostCount) >
+                            b.convertedCount / (b.convertedCount + b.lostCount)
+                              ? p
+                              : b,
+                          productStats.find((p) => p.convertedCount + p.lostCount > 0) ?? productStats[0],
+                        );
+                      return best.name;
+                    })()}
+                    icon={TrendingUp}
+                    sub={(() => {
+                      const best = productStats
+                        .filter((p) => p.convertedCount + p.lostCount > 0)
+                        .reduce(
+                          (b, p) =>
+                            p.convertedCount / (p.convertedCount + p.lostCount) >
+                            b.convertedCount / (b.convertedCount + b.lostCount)
+                              ? p
+                              : b,
+                          productStats.find((p) => p.convertedCount + p.lostCount > 0) ?? productStats[0],
+                        );
+                      const total = best.convertedCount + best.lostCount;
+                      return total > 0 ? `${pct(best.convertedCount, total)}% taxa de conversao` : 'sem dados de resultado';
+                    })()}
+                  />
                 </div>
 
-                {agg.topInterest.length > 0 && (
-                  <div className="rounded-2xl border border-border bg-card p-5">
-                    <SectionHeader icon={Flame} title="Produtos mais buscados" sub="por presenca nas conversas" />
-                    <div className="space-y-2">
-                      {agg.topInterest.map(([name, count], index) => (
-                        <ProductRankRow key={name} rank={index + 1} name={name} percentage={pct(count, agg.total)} badge={index === 0 ? 'mais buscado' : undefined} />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {agg.topHighDiff.length > 0 && (
-                  <div className="rounded-2xl border border-border bg-card p-5">
-                    <SectionHeader icon={HelpCircle} title="Produtos com mais duvidas" sub="dificuldade de entendimento alta" />
-                    <div className="space-y-2">
-                      {agg.topHighDiff.map(([product, count]) => (
-                        <ProductIssueItem key={product} product={product} issue={agg.reasonByProduct[product] ?? 'Dificuldade de entendimento identificada'} percentage={pct(count, agg.total)} icon={HelpCircle} iconClassName="bg-blue-100 text-blue-600" />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {agg.topLost.length > 0 && (
-                  <div className="rounded-2xl border border-border bg-card p-5">
-                    <SectionHeader icon={ThumbsDown} title="Produtos com mais objecoes" sub="oportunidades perdidas por produto" />
-                    <div className="space-y-2">
-                      {agg.topLost.map(([product, count]) => (
-                        <ProductIssueItem key={product} product={product} issue="Objecao nao tratada e oportunidade perdida" percentage={pct(count, agg.total)} icon={ThumbsDown} iconClassName="bg-rose-100 text-rose-600" />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
+                {/* Portfolio matrix */}
                 <div className="rounded-2xl border border-border bg-card p-5">
-                  <SectionHeader icon={Activity} title="Produtos que mais perdem tracao" sub="taxa de perda acima de 40%" />
-                  {agg.losingTraction.length > 0 ? (
-                    <div className="space-y-2">
-                      {agg.losingTraction.map(([product, stats]) => (
-                        <ProductIssueItem key={product} product={product} issue={`${Math.round((stats.lost / stats.total) * 100)}% das conversas resultam em perda`} percentage={pct(stats.lost, stats.total)} icon={TrendingDown} iconClassName="bg-amber-100 text-amber-600" />
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">Nenhum produto com queda significativa neste periodo.</p>
-                  )}
-                </div>
-
-                <div className="rounded-2xl border border-border bg-card p-5">
-                  <SectionHeader icon={Brain} title="Padroes identificados" />
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {agg.topInterest[0] && <PatternTag text={`${agg.topInterest[0][0]} e o produto mais buscado neste recorte.`} tone="rose" />}
-                    {agg.highDiffTotal > 0 && <PatternTag text={`${pct(agg.highDiffTotal, agg.total)}% das conversas mostram dificuldade alta de entendimento.`} tone="violet" />}
-                    {agg.lostTotal > 0 && <PatternTag text={`${pct(agg.lostTotal, agg.total)}% das conversas viraram oportunidade perdida.`} tone="amber" />}
-                    {agg.topBarriers[0] && <PatternTag text={`Barreira mais comum: "${agg.topBarriers[0][0]}".`} tone="blue" />}
+                  <SectionHeader icon={Star} title="Matriz de portfolio" sub="trafego × conversao" />
+                  <div className="grid grid-cols-2 gap-3">
+                    {(
+                      [
+                        { label: '⭐ Estrela', highTraffic: true, highConv: true, bgCls: 'bg-primary/5 border-primary/20', textCls: 'text-primary' },
+                        { label: '💎 Joia Oculta', highTraffic: false, highConv: true, bgCls: 'bg-violet-50 border-violet-200', textCls: 'text-violet-800' },
+                        { label: '🔧 Oportunidade', highTraffic: true, highConv: false, bgCls: 'bg-amber-50 border-amber-200', textCls: 'text-amber-800' },
+                        { label: '⚠️ Revisar', highTraffic: false, highConv: false, bgCls: 'bg-rose-50 border-rose-200', textCls: 'text-rose-800' },
+                      ] as const
+                    ).map((quadrant) => {
+                      const products = productStats.filter((p) => {
+                        const trafficRate = p.trafficCount / p.total;
+                        const convTotal = p.convertedCount + p.lostCount;
+                        const convRate = convTotal > 0 ? p.convertedCount / convTotal : 0;
+                        const isHighTraffic = trafficRate > 0.5;
+                        const isHighConv = convRate > 0.4;
+                        return isHighTraffic === quadrant.highTraffic && isHighConv === quadrant.highConv;
+                      });
+                      return (
+                        <div key={quadrant.label} className={cn('rounded-xl border p-4', quadrant.bgCls)}>
+                          <p className={cn('mb-2 text-xs font-semibold', quadrant.textCls)}>{quadrant.label}</p>
+                          {products.length === 0 ? (
+                            <p className="text-xs text-muted-foreground">Nenhum produto</p>
+                          ) : (
+                            <div className="flex flex-wrap gap-1.5">
+                              {products.map((p) => (
+                                <span
+                                  key={p.name}
+                                  className={cn('rounded-lg border px-2 py-0.5 text-xs font-medium', quadrant.bgCls, quadrant.textCls)}
+                                >
+                                  {p.name}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
             )}
 
-            {tab === 'objecoes' && (
-              <div className="space-y-6">
-                <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
-                  <MetricCard label="Objecao mais frequente" value={agg.topBarriers[0]?.[0] ?? '—'} icon={ThumbsDown} sub={agg.topBarriers[0] ? `${pct(agg.topBarriers[0][1], agg.total)}% das conversas` : undefined} accent />
-                  <MetricCard label="Oportunidades perdidas" value={`${pct(agg.lostTotal, agg.total)}%`} icon={TrendingDown} sub={`${agg.lostTotal} de ${agg.total} conversas`} />
-                  <MetricCard label="Conversas analisadas" value={String(agg.total)} icon={Activity} sub="apoio complementar do periodo" />
-                </div>
+            {/* ── TAB: TRAFEGO ── */}
+            {signalsTab === 'traffic' && (
+              <div className="space-y-4">
+                {(() => {
+                  const sorted = [...productStats].sort((a, b) => b.trafficCount - a.trafficCount);
+                  const opportunityGap = sorted.find((p) => {
+                    const hasOutcome = p.convertedCount + p.lostCount > 0;
+                    const highTraffic = p.trafficCount / p.total > 0.4;
+                    const lowConv = hasOutcome && p.convertedCount / (p.convertedCount + p.lostCount) < 0.3;
+                    return highTraffic && lowConv;
+                  });
+                  return (
+                    <>
+                      {opportunityGap && (
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                          <span className="font-semibold">Gap de oportunidade: </span>
+                          <span>
+                            {opportunityGap.name} gera muito trafego ({pct(opportunityGap.trafficCount, opportunityGap.total)}%) mas converte pouco (
+                            {pct(opportunityGap.convertedCount, opportunityGap.convertedCount + opportunityGap.lostCount)}%). Revise o processo de oferta.
+                          </span>
+                        </div>
+                      )}
+                      <div className="overflow-auto rounded-2xl border border-border">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-border bg-muted/40">
+                              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Produto</th>
+                              <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total mencoes</th>
+                              <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">% Trafego</th>
+                              <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Taxa conversao</th>
+                              <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sentimento</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sorted.map((p, i) => {
+                              const convTotal = p.convertedCount + p.lostCount;
+                              const convRate = convTotal > 0 ? pct(p.convertedCount, convTotal) : null;
+                              return (
+                                <tr key={p.name} className={cn('border-b border-border last:border-0', i % 2 === 0 ? 'bg-white' : 'bg-muted/20')}>
+                                  <td className="px-4 py-3 font-medium text-foreground">{p.name}</td>
+                                  <td className="px-4 py-3 text-right text-muted-foreground">{p.total}</td>
+                                  <td className="px-4 py-3 text-right">
+                                    <span className={cn('font-semibold', p.trafficCount / p.total > 0.5 ? 'text-primary' : 'text-foreground')}>
+                                      {pct(p.trafficCount, p.total)}%
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 text-right">
+                                    {convRate !== null ? (
+                                      <span className={cn('font-semibold', convRate >= 50 ? 'text-green-600' : convRate >= 30 ? 'text-amber-600' : 'text-rose-600')}>
+                                        {convRate}%
+                                      </span>
+                                    ) : (
+                                      <span className="text-muted-foreground">—</span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3 text-right text-muted-foreground">
+                                    {p.avgSentiment !== null ? p.avgSentiment.toFixed(1) : '—'}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            )}
 
-                {agg.topBarriers.length > 0 ? (
-                  <div className="rounded-2xl border border-border bg-card p-5">
-                    <SectionHeader icon={ThumbsDown} title="Principais barreiras de produto" sub="identificadas nas extrações por conversa" />
-                    <div className="space-y-3">
-                      {agg.topBarriers.map(([text, count]) => (
-                        <ObjectionCard key={text} text={text} percentage={pct(count, agg.total)} count={count} />
-                      ))}
+            {/* ── TAB: OFERTA ── */}
+            {signalsTab === 'offer' && (
+              <div className="space-y-3">
+                {[...productStats]
+                  .map((p) => ({
+                    ...p,
+                    clientPct: pct(p.clientInitiatedCount, p.total),
+                    agentPct: pct(p.agentOfferedCount, p.total),
+                    gap: pct(p.clientInitiatedCount, p.total) - pct(p.agentOfferedCount, p.total),
+                  }))
+                  .sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap))
+                  .map((p) => (
+                    <div key={p.name} className="rounded-2xl border border-border bg-card p-4">
+                      <div className="mb-3 flex items-center justify-between">
+                        <p className="text-sm font-semibold text-foreground">{p.name}</p>
+                        {Math.abs(p.gap) > 15 && (
+                          <span className={cn('rounded-lg px-2 py-0.5 text-xs font-semibold', p.gap > 0 ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700')}>
+                            {p.gap > 0 ? `⚠️ Gap +${p.gap}%` : `Gap ${p.gap}%`}
+                          </span>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <div>
+                          <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+                            <span>Cliente pediu</span>
+                            <span className="font-medium text-foreground">{p.clientPct}%</span>
+                          </div>
+                          <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                            <div className="h-full rounded-full bg-primary/70" style={{ width: `${p.clientPct}%` }} />
+                          </div>
+                        </div>
+                        <div>
+                          <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+                            <span>Agente ofereceu</span>
+                            <span className="font-medium text-foreground">{p.agentPct}%</span>
+                          </div>
+                          <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                            <div className="h-full rounded-full bg-violet-400" style={{ width: `${p.agentPct}%` }} />
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  <div className="rounded-2xl border border-dashed border-border bg-card p-8 text-center text-sm text-muted-foreground">
-                    Nenhuma barreira consolidada nas extrações complementares.
-                  </div>
-                )}
+                  ))}
+              </div>
+            )}
+
+            {/* ── TAB: PRECO ── */}
+            {signalsTab === 'price' && (
+              <div className="space-y-3">
+                {[...productStats].sort((a, b) => b.priceObjectionCount - a.priceObjectionCount).map((p) => {
+                  const objPct = pct(p.priceObjectionCount, p.total);
+                  const blockPct = p.priceObjectionCount > 0 ? pct(p.priceBlockingCount, p.priceObjectionCount) : 0;
+                  return (
+                    <div key={p.name} className="rounded-2xl border border-border bg-card p-4">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-foreground">{p.name}</p>
+                        <div className="flex gap-2">
+                          {p.lostByPrice > 0 && (
+                            <span className="rounded-lg bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">
+                              {p.lostByPrice} perda{p.lostByPrice !== 1 ? 's' : ''} por preco
+                            </span>
+                          )}
+                          {p.priceBlockingCount > 0 && (
+                            <span className="rounded-lg bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                              {blockPct}% bloqueante
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+                          <span>Objecao de preco</span>
+                          <span className="font-medium text-foreground">{objPct}%</span>
+                        </div>
+                        <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                          <div
+                            className={cn('h-full rounded-full', objPct >= 40 ? 'bg-rose-500' : objPct >= 20 ? 'bg-amber-400' : 'bg-green-400')}
+                            style={{ width: `${objPct}%` }}
+                          />
+                        </div>
+                        {p.priceObjectionCount > 0 && (
+                          <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                            <div className="h-full rounded-full bg-rose-700/60" style={{ width: `${blockPct}%` }} />
+                          </div>
+                        )}
+                        {p.priceObjectionCount > 0 && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {p.priceObjectionCount} mencoes — {blockPct}% classificadas como bloqueantes
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* ── TAB: VALOR ── */}
+            {signalsTab === 'value' && (
+              <div className="space-y-3">
+                {[...productStats]
+                  .sort((a, b) => {
+                    const rateA = a.valueUnderstoodTotal > 0 ? a.valueUnderstoodCount / a.valueUnderstoodTotal : 1;
+                    const rateB = b.valueUnderstoodTotal > 0 ? b.valueUnderstoodCount / b.valueUnderstoodTotal : 1;
+                    return rateA - rateB;
+                  })
+                  .map((p) => {
+                    const understoodRate = p.valueUnderstoodTotal > 0 ? pct(p.valueUnderstoodCount, p.valueUnderstoodTotal) : null;
+                    const gapCounts = countOcc(p.topValueGaps);
+                    const argCounts = countOcc(p.topArguments);
+                    const top3Gaps = topN(gapCounts, 3);
+                    const top3Args = topN(argCounts, 3);
+                    return (
+                      <div key={p.name} className="rounded-2xl border border-border bg-card p-4 space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-sm font-semibold text-foreground">{p.name}</p>
+                          {understoodRate !== null && (
+                            <span
+                              className={cn(
+                                'rounded-lg px-2 py-0.5 text-xs font-semibold',
+                                understoodRate >= 70 ? 'bg-green-100 text-green-700' : understoodRate >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700',
+                              )}
+                            >
+                              {understoodRate}% valor compreendido
+                            </span>
+                          )}
+                        </div>
+                        {understoodRate !== null && (
+                          <div>
+                            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                              <div
+                                className={cn(
+                                  'h-full rounded-full',
+                                  understoodRate >= 70 ? 'bg-green-500' : understoodRate >= 40 ? 'bg-amber-400' : 'bg-rose-500',
+                                )}
+                                style={{ width: `${understoodRate}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          {top3Gaps.length > 0 && (
+                            <div>
+                              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Principais gaps de valor</p>
+                              <div className="space-y-1">
+                                {top3Gaps.map(([gap, count]) => (
+                                  <div key={gap} className="flex items-start justify-between gap-2 text-xs">
+                                    <span className="text-foreground leading-snug">{gap}</span>
+                                    <span className="shrink-0 rounded bg-rose-100 px-1.5 py-0.5 text-rose-700 font-medium">{count}×</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {top3Args.length > 0 && (
+                            <div>
+                              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Argumentos mais usados</p>
+                              <div className="space-y-1">
+                                {top3Args.map(([arg, count]) => (
+                                  <div key={arg} className="flex items-start justify-between gap-2 text-xs">
+                                    <span className="text-foreground leading-snug">{arg}</span>
+                                    <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-primary font-medium">{count}×</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
               </div>
             )}
           </>

@@ -9,7 +9,9 @@ import {
   CreditCard,
   Globe2,
   ImagePlus,
+  Package,
   PencilLine,
+  Plus,
   Save,
   Settings as SettingsIcon,
   ShieldAlert,
@@ -37,7 +39,7 @@ import { Input } from '../components/ui/input';
 import { supabase } from '../integrations/supabase/client';
 import { env } from '../config/env';
 import { getRoleBadgeLabel } from '../config/rbac';
-import type { AIProviderConfig, AIProviderKind, BillingInvoice, BillingSubscription, BlockedAnalysisCustomer, Company, CompanyInvite, CompanySettings, NotificationJobSummary } from '../types';
+import type { AIProviderConfig, AIProviderKind, BillingInvoice, BillingSubscription, BlockedAnalysisCustomer, Company, CompanyInvite, CompanySettings, NotificationJobSummary, ProductCatalog } from '../types';
 import { cn, formatCurrency, formatDate, formatDateTime, formatSeconds } from '../lib/utils';
 import { areBrowserAlertsEnabled, requestBrowserAlertPermission, setBrowserAlertsEnabled } from '../lib/browserNotifications';
 import Coach from './Coach';
@@ -162,7 +164,7 @@ const weekdayLabels: Record<string, string> = {
   sunday: 'Domingo',
 };
 
-const settingsTabs = ['account', 'company', 'billing', 'notifications', 'blocking', 'users', 'coach', 'integrations'] as const;
+const settingsTabs = ['account', 'company', 'billing', 'notifications', 'blocking', 'users', 'coach', 'integrations', 'products'] as const;
 type SettingsTab = (typeof settingsTabs)[number];
 
 function resolveSettingsTab(value: string | null): SettingsTab {
@@ -1156,6 +1158,9 @@ export default function Settings() {
           </TabsTrigger>
           <TabsTrigger value="integrations" className="rounded-xl px-4 py-2.5">
             Integracoes
+          </TabsTrigger>
+          <TabsTrigger value="products" className="rounded-xl px-4 py-2.5">
+            Produtos
           </TabsTrigger>
         </TabsList>
 
@@ -2210,6 +2215,10 @@ export default function Settings() {
             isSavingAiProviders={updateSettingsMutation.isPending}
           />
         </TabsContent>
+
+        <TabsContent value="products" className="mt-0">
+          {company?.id ? <ProductCatalogTab companyId={company.id} /> : null}
+        </TabsContent>
       </Tabs>
     </div>
   );
@@ -2571,6 +2580,496 @@ function IntegrationsTab({
           <li>Verifique se a instancia UazAPI esta ativa e o WhatsApp conectado (QR lido).</li>
           <li>Aguarde ate 1 minuto apos enviar a mensagem de teste e recarregue esta pagina.</li>
         </ul>
+      </div>
+    </div>
+  );
+}
+
+// ── aba de catálogo de produtos ───────────────────────────────────────────────
+
+type ProductForm = {
+  name: string;
+  price: string;
+  category: string;
+  aliasesRaw: string;
+  differentialsRaw: string;
+  objectionsRaw: string;
+};
+
+const emptyProductForm: ProductForm = {
+  name: '',
+  price: '',
+  category: '',
+  aliasesRaw: '',
+  differentialsRaw: '',
+  objectionsRaw: '',
+};
+
+function parseTagList(raw: string): string[] {
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function toProductForm(p: ProductCatalog): ProductForm {
+  return {
+    name: p.name,
+    price: p.price !== null ? String(p.price) : '',
+    category: p.category ?? '',
+    aliasesRaw: p.aliases.join(', '),
+    differentialsRaw: p.key_differentials.join(', '),
+    objectionsRaw: p.common_objections.join(', '),
+  };
+}
+
+function TagList({ items }: { items: string[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1.5">
+      {items.map((item) => (
+        <span
+          key={item}
+          className="inline-flex rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
+        >
+          {item}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function ProductCatalogTab({ companyId }: { companyId: string }) {
+  const queryClient = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<ProductForm>(emptyProductForm);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const { data: products = [], isLoading } = useQuery<ProductCatalog[]>({
+    queryKey: ['product-catalog', companyId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('product_catalog')
+        .select('*')
+        .eq('company_id', companyId)
+        .order('name');
+      if (error) throw error;
+      return data as ProductCatalog[];
+    },
+    enabled: !!companyId,
+  });
+
+  const upsertMutation = useMutation({
+    mutationFn: async (payload: Omit<ProductCatalog, 'id' | 'created_at' | 'updated_at'> & { id?: string }) => {
+      if (payload.id) {
+        const { error } = await supabase
+          .from('product_catalog')
+          .update({
+            name: payload.name,
+            price: payload.price,
+            category: payload.category,
+            aliases: payload.aliases,
+            key_differentials: payload.key_differentials,
+            common_objections: payload.common_objections,
+            active: payload.active,
+          })
+          .eq('id', payload.id)
+          .eq('company_id', companyId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('product_catalog').insert({
+          company_id: companyId,
+          name: payload.name,
+          price: payload.price,
+          category: payload.category,
+          aliases: payload.aliases,
+          key_differentials: payload.key_differentials,
+          common_objections: payload.common_objections,
+          active: true,
+        });
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['product-catalog', companyId] });
+      toast.success(editingId ? 'Produto atualizado' : 'Produto adicionado');
+      setShowForm(false);
+      setEditingId(null);
+      setForm(emptyProductForm);
+    },
+    onError: () => toast.error('Erro ao salvar produto'),
+  });
+
+  const toggleActiveMutation = useMutation({
+    mutationFn: async ({ id, active }: { id: string; active: boolean }) => {
+      const { error } = await supabase
+        .from('product_catalog')
+        .update({ active })
+        .eq('id', id)
+        .eq('company_id', companyId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['product-catalog', companyId] });
+    },
+    onError: () => toast.error('Erro ao atualizar status'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from('product_catalog')
+        .delete()
+        .eq('id', id)
+        .eq('company_id', companyId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['product-catalog', companyId] });
+      toast.success('Produto removido');
+      setConfirmDeleteId(null);
+    },
+    onError: () => toast.error('Erro ao remover produto'),
+  });
+
+  function openAdd() {
+    setEditingId(null);
+    setForm(emptyProductForm);
+    setShowForm(true);
+  }
+
+  function openEdit(product: ProductCatalog) {
+    setEditingId(product.id);
+    setForm(toProductForm(product));
+    setShowForm(true);
+  }
+
+  function handleSave() {
+    if (!form.name.trim()) {
+      toast.error('Nome do produto é obrigatório');
+      return;
+    }
+    upsertMutation.mutate({
+      id: editingId ?? undefined,
+      company_id: companyId,
+      name: form.name.trim(),
+      price: form.price ? parseFloat(form.price) : null,
+      category: form.category.trim() || null,
+      aliases: parseTagList(form.aliasesRaw),
+      key_differentials: parseTagList(form.differentialsRaw),
+      common_objections: parseTagList(form.objectionsRaw),
+      active: true,
+    });
+  }
+
+  const activeCount = products.filter((p) => p.active).length;
+
+  return (
+    <div className="space-y-6 rounded-3xl border border-border bg-card p-6">
+      {/* header */}
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-5">
+        <div className="flex items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+            <Package className="h-6 w-6" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-foreground">Catálogo de Produtos</h3>
+            <p className="text-sm text-muted-foreground">
+              Cadastre seus produtos para que a IA identifique e analise menções nas conversas.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={openAdd}
+          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-black transition-opacity hover:opacity-90"
+        >
+          <Plus className="h-4 w-4" />
+          Adicionar produto
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_280px]">
+        {/* list + form */}
+        <div className="space-y-4">
+          {/* inline form */}
+          {showForm && (
+            <div className="rounded-2xl border border-primary/30 bg-background p-5">
+              <div className="mb-4 flex items-center justify-between">
+                <h4 className="font-semibold text-foreground">
+                  {editingId ? 'Editar produto' : 'Novo produto'}
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => { setShowForm(false); setEditingId(null); setForm(emptyProductForm); }}
+                  className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="md:col-span-2">
+                  <label className="mb-1.5 block text-sm font-medium text-foreground">
+                    Nome do produto <span className="text-destructive">*</span>
+                  </label>
+                  <Input
+                    value={form.name}
+                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                    placeholder="ex: iPhone 15 Pro Max 256GB"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-foreground">Preço (R$)</label>
+                  <Input
+                    type="number"
+                    value={form.price}
+                    onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
+                    placeholder="ex: 8499"
+                    min={0}
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-foreground">Categoria</label>
+                  <Input
+                    value={form.category}
+                    onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+                    placeholder="ex: smartphone, plano, serviço"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="mb-1.5 block text-sm font-medium text-foreground">
+                    Aliases (como o cliente se refere ao produto)
+                  </label>
+                  <Input
+                    value={form.aliasesRaw}
+                    onChange={(e) => setForm((f) => ({ ...f, aliasesRaw: e.target.value }))}
+                    placeholder="ex: pro max, o mais caro, o grande — separados por vírgula"
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    A IA usa esses termos para normalizar menções informais nas conversas.
+                  </p>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="mb-1.5 block text-sm font-medium text-foreground">Diferenciais do produto</label>
+                  <Input
+                    value={form.differentialsRaw}
+                    onChange={(e) => setForm((f) => ({ ...f, differentialsRaw: e.target.value }))}
+                    placeholder="ex: câmera profissional, chip A17, titânio — separados por vírgula"
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Ajuda a IA a detectar quando o vendedor argumentou valor corretamente.
+                  </p>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="mb-1.5 block text-sm font-medium text-foreground">Objeções comuns</label>
+                  <Input
+                    value={form.objectionsRaw}
+                    onChange={(e) => setForm((f) => ({ ...f, objectionsRaw: e.target.value }))}
+                    placeholder="ex: preço alto, sem carregador, prefere Android — separados por vírgula"
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Permite à IA categorizar objeções com mais precisão.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={upsertMutation.isPending}
+                  className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Save className="h-4 w-4" />
+                  {upsertMutation.isPending ? 'Salvando...' : 'Salvar produto'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowForm(false); setEditingId(null); setForm(emptyProductForm); }}
+                  className="rounded-xl border border-border px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* product list */}
+          {isLoading ? (
+            <div className="space-y-3">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="h-20 animate-pulse rounded-2xl bg-muted" />
+              ))}
+            </div>
+          ) : products.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-border p-8 text-center">
+              <Package className="mx-auto mb-3 h-8 w-8 text-muted-foreground/40" />
+              <p className="text-sm font-medium text-foreground">Nenhum produto cadastrado</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Adicione seus produtos para que a IA consiga identificá-los nas conversas.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {products.map((product) => (
+                <div
+                  key={product.id}
+                  className={cn(
+                    'rounded-2xl border bg-background p-4 transition-colors',
+                    product.active ? 'border-border' : 'border-border/50 opacity-60',
+                  )}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold text-foreground">{product.name}</p>
+                        {product.category && (
+                          <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
+                            {product.category}
+                          </span>
+                        )}
+                        {product.price !== null && (
+                          <span className="text-sm font-medium text-foreground">
+                            {product.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </span>
+                        )}
+                        {!product.active && (
+                          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Inativo
+                          </span>
+                        )}
+                      </div>
+
+                      {product.aliases.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Aliases</p>
+                          <TagList items={product.aliases} />
+                        </div>
+                      )}
+
+                      {product.key_differentials.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Diferenciais</p>
+                          <TagList items={product.key_differentials} />
+                        </div>
+                      )}
+
+                      {product.common_objections.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Objeções comuns</p>
+                          <TagList items={product.common_objections} />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openEdit(product)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                      >
+                        <PencilLine className="h-3.5 w-3.5" />
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          toggleActiveMutation.mutate({ id: product.id, active: !product.active })
+                        }
+                        disabled={toggleActiveMutation.isPending}
+                        className="inline-flex rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                      >
+                        {product.active ? 'Desativar' : 'Ativar'}
+                      </button>
+                      {confirmDeleteId === product.id ? (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => deleteMutation.mutate(product.id)}
+                            disabled={deleteMutation.isPending}
+                            className="inline-flex rounded-lg bg-destructive/10 px-3 py-1.5 text-xs font-semibold text-destructive transition-colors hover:bg-destructive/20 disabled:opacity-50"
+                          >
+                            Confirmar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="inline-flex rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteId(product.id)}
+                          className="inline-flex rounded-lg border border-border p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* sidebar summary */}
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-border bg-background p-5">
+            <h4 className="font-semibold text-foreground">Resumo</h4>
+            <div className="mt-4 grid grid-cols-1 gap-3">
+              <div className="rounded-2xl bg-muted/40 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  Produtos cadastrados
+                </p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{products.length}</p>
+              </div>
+              <div className="rounded-2xl bg-muted/40 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  Ativos
+                </p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{activeCount}</p>
+              </div>
+              {products.length > 0 && (
+                <div className="rounded-2xl bg-muted/40 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    Com aliases
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">
+                    {products.filter((p) => p.aliases.length > 0).length}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-border bg-background p-5 text-sm text-muted-foreground space-y-3">
+            <p className="font-semibold text-foreground">Por que cadastrar?</p>
+            <p>
+              A IA usa o catálogo para normalizar menções informais. Quando o cliente diz "o mais caro" ou
+              "o pro max", a IA sabe que está falando do iPhone 15 Pro Max e registra corretamente.
+            </p>
+            <p>
+              Sem catálogo, o mesmo produto aparece com nomes diferentes nos relatórios, quebrando a
+              agregação de objeções, tráfego e conversão.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-dashed border-border bg-background p-4 text-xs text-muted-foreground">
+            Produtos <strong>inativos</strong> continuam no histórico mas a IA para de identificá-los
+            em conversas novas.
+          </div>
+        </div>
       </div>
     </div>
   );

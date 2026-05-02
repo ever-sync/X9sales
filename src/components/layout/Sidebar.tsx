@@ -94,7 +94,7 @@ export function Sidebar({
         className={cn(
           'fixed inset-y-0 left-0 z-50 flex h-screen flex-col border-r border-white/6 bg-black text-white shadow-[0_24px_80px_rgba(0,0,0,0.35)] transition-all duration-300 rounded-r-[22px] lg:static lg:z-auto lg:shadow-none lg:translate-x-0',
           isOpen ? 'translate-x-0' : '-translate-x-full',
-          collapsed ? 'w-[68px]' : 'w-[272px]',
+          'w-[200px]',
         )}
       >
         {/* header: logo + close/collapse */}
@@ -159,7 +159,7 @@ export function Sidebar({
                           'group relative flex items-center rounded-2xl transition-all duration-200 border',
                           collapsed ? 'justify-center px-0 py-3' : 'gap-3 px-4 py-3 text-[14px] font-medium',
                           isActive
-                            ? 'border-primary/30 bg-primary text-primary-foreground font-bold shadow-[0_12px_30px_rgba(220,254,27,0.18)]'
+                            ? 'border-primary/30 bg-primary text-primary-foreground font-bold shadow-[0_12px_30px_rgba(220,254,27,0.18)] rounded-l-none rounded-r-[12px]'
                             : 'border-transparent text-white/65 hover:border-white/10 hover:text-white hover:bg-white/5',
                         )
                       }

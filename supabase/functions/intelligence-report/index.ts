@@ -86,6 +86,44 @@ interface AnalysisResult {
   product: ProductIntelligence;
 }
 
+// ── Product Signals types ─────────────────────────────────────────────────────
+
+interface CatalogProduct {
+  id: string;
+  name: string;
+  price: number | null;
+  category: string | null;
+  aliases: string[];
+  key_differentials: string[];
+  common_objections: string[];
+}
+
+interface RawProductSignal {
+  nome_raw: string;
+  nome_normalizado: string;
+  product_id: string | null;
+  is_driver_de_trafego: boolean;
+  origem_mencao: "cliente_iniciou" | "agente_ofereceu" | "comparacao" | null;
+  agente_ofereceu: boolean;
+  timing_oferta: "inicio" | "meio" | "fechamento" | null;
+  resultado_oferta: "aceitou" | "recusou" | "pendente" | null;
+  objecao_preco: boolean;
+  tipo_objecao_preco: "bloqueante" | "leve" | "nenhuma" | null;
+  ancora_preco: string | null;
+  duvidas_sobre_valor: string[];
+  valor_entendido: boolean | null;
+  gap_de_valor: string | null;
+  argumentos_usados: string[];
+  sinal_conversao: "converteu" | "perdeu" | "pendente" | null;
+  motivo_perda: "preco" | "valor" | "concorrente" | "timing" | "outro" | null;
+  sentimento: number | null;
+  observacao: string | null;
+}
+
+interface ProductSignalsResult {
+  produtos: RawProductSignal[];
+}
+
 type AIProviderKind = "anthropic" | "openai" | "gemini" | "grok" | "deepseek" | "custom";
 
 interface CompanyAIProvider {
@@ -342,6 +380,232 @@ function coerceStr(value: unknown): string | null {
   return null;
 }
 
+// ── Product Signals extraction ────────────────────────────────────────────────
+
+function buildCatalogContext(catalog: CatalogProduct[]): string {
+  if (catalog.length === 0) return "Nenhum produto cadastrado.";
+  return catalog
+    .map((p) => {
+      const parts = [`- ID: ${p.id} | Nome: ${p.name}`];
+      if (p.price !== null) parts.push(`  Preço: R$ ${p.price}`);
+      if (p.category) parts.push(`  Categoria: ${p.category}`);
+      if (p.aliases.length > 0) parts.push(`  Aliases (como clientes se referem): ${p.aliases.join(", ")}`);
+      if (p.key_differentials.length > 0) parts.push(`  Diferenciais: ${p.key_differentials.join(", ")}`);
+      if (p.common_objections.length > 0) parts.push(`  Objeções comuns: ${p.common_objections.join(", ")}`);
+      return parts.join("\n");
+    })
+    .join("\n\n");
+}
+
+function buildProductSignalsPrompt(conversationText: string, catalog: CatalogProduct[]): string {
+  const catalogContext = buildCatalogContext(catalog);
+  const hasCatalog = catalog.length > 0;
+
+  return `Você é um analista de vendas especialista. Analise a conversa de WhatsApp abaixo e extraia sinais comerciais para cada produto mencionado.
+
+${hasCatalog ? `CATÁLOGO DE PRODUTOS DA EMPRESA:
+${catalogContext}
+
+REGRAS DE NORMALIZAÇÃO:
+- Normalize nome_normalizado para o nome oficial do catálogo usando o ID correspondente
+- Aliases como "o mais caro", "o pro", "o grande" devem ser normalizados ao produto do catálogo
+- Se não houver correspondência no catálogo, use o nome extraído da conversa e product_id: null` : ""}
+
+CONVERSA:
+${conversationText}
+
+Retorne APENAS este JSON válido (sem texto extra):
+{
+  "produtos": [
+    {
+      "nome_raw": "como foi mencionado na conversa",
+      "nome_normalizado": "nome oficial do catálogo ou melhor identificação",
+      "product_id": "${hasCatalog ? "uuid do catálogo correspondente ou null" : "null"}",
+      "is_driver_de_trafego": true,
+      "origem_mencao": "cliente_iniciou|agente_ofereceu|comparacao",
+      "agente_ofereceu": false,
+      "timing_oferta": "inicio|meio|fechamento ou null",
+      "resultado_oferta": "aceitou|recusou|pendente ou null",
+      "objecao_preco": false,
+      "tipo_objecao_preco": "bloqueante|leve|nenhuma",
+      "ancora_preco": "valor que o cliente mencionou ou esperava, ou null",
+      "duvidas_sobre_valor": ["dúvida sobre benefício ou valor do produto"],
+      "valor_entendido": true,
+      "gap_de_valor": "argumento de valor que o vendedor não usou, ou null",
+      "argumentos_usados": ["argumento usado pelo vendedor"],
+      "sinal_conversao": "converteu|perdeu|pendente",
+      "motivo_perda": "preco|valor|concorrente|timing|outro ou null",
+      "sentimento": 0.5,
+      "observacao": "insight breve e objetivo"
+    }
+  ]
+}
+
+REGRAS:
+- Inclua apenas produtos que realmente aparecem na conversa
+- Se nenhum produto foi mencionado, retorne {"produtos": []}
+- Máximo 5 produtos por conversa
+- Use null para campos que não podem ser determinados
+- sentimento: -1.0 (muito negativo) a 1.0 (muito positivo) sobre o produto
+- is_driver_de_trafego: true se o cliente entrou em contato POR CAUSA desse produto`;
+}
+
+async function loadProductCatalog(
+  supabase: ReturnType<typeof createClient>,
+  companyId: string,
+): Promise<CatalogProduct[]> {
+  const { data, error } = await supabase
+    .schema("app")
+    .from("product_catalog")
+    .select("id, name, price, category, aliases, key_differentials, common_objections")
+    .eq("company_id", companyId)
+    .eq("active", true)
+    .order("name");
+
+  if (error) {
+    // Non-fatal: if table doesn't exist yet, return empty
+    console.warn(`product_catalog load warning: ${error.message}`);
+    return [];
+  }
+
+  return (data ?? []) as CatalogProduct[];
+}
+
+async function extractProductSignals(
+  provider: CompanyAIProvider,
+  conversationText: string,
+  catalog: CatalogProduct[],
+): Promise<RawProductSignal[]> {
+  const prompt = buildProductSignalsPrompt(conversationText, catalog);
+
+  const response = provider.provider === "anthropic"
+    ? await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": provider.apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: provider.model || DEFAULT_MODELS.anthropic,
+        max_tokens: 1500,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    })
+    : await fetch(
+      `${(provider.baseUrl || DEFAULT_BASE_URLS.openai || "https://api.openai.com/v1").replace(/\/+$/, "")}/chat/completions`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${provider.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: provider.model || DEFAULT_MODELS[provider.provider],
+          max_tokens: 1500,
+          temperature: 0,
+          response_format: { type: "json_object" },
+          messages: [
+            { role: "system", content: "Responda apenas JSON valido." },
+            { role: "user", content: prompt },
+          ],
+        }),
+      },
+    );
+
+  if (!response.ok) return [];
+
+  const data = await response.json();
+  const text = provider.provider === "anthropic"
+    ? data?.content?.[0]?.text
+    : extractOpenAIContentText(data?.choices?.[0]?.message?.content);
+  if (typeof text !== "string") return [];
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) return [];
+    try { parsed = JSON.parse(match[0]); } catch { return []; }
+  }
+
+  if (!isRecord(parsed) || !Array.isArray(parsed.produtos)) return [];
+  return (parsed as ProductSignalsResult).produtos.slice(0, 5);
+}
+
+async function saveProductSignals(
+  supabase: ReturnType<typeof createClient>,
+  companyId: string,
+  conversationId: string,
+  agentId: string | null,
+  signals: RawProductSignal[],
+  catalog: CatalogProduct[],
+): Promise<void> {
+  if (signals.length === 0) return;
+
+  const catalogById = new Map(catalog.map((p) => [p.id, p]));
+  const catalogByName = new Map(catalog.map((p) => [p.name.toLowerCase(), p]));
+
+  const rows = signals.map((s) => {
+    // Resolve product_id: trust AI if it's in catalog, otherwise try name match
+    let resolvedProductId: string | null = s.product_id ?? null;
+    if (resolvedProductId && !catalogById.has(resolvedProductId)) {
+      resolvedProductId = null;
+    }
+    if (!resolvedProductId) {
+      const nameMatch = catalogByName.get(s.nome_normalizado.toLowerCase());
+      if (nameMatch) resolvedProductId = nameMatch.id;
+    }
+
+    return {
+      company_id: companyId,
+      conversation_id: conversationId,
+      agent_id: agentId,
+      product_id: resolvedProductId,
+      product_name_normalized: (s.nome_normalizado || s.nome_raw).slice(0, 200),
+      product_name_raw: (s.nome_raw || "").slice(0, 200),
+      is_traffic_driver: s.is_driver_de_trafego === true,
+      mention_source: coerceEnumStatic(s.origem_mencao, ["cliente_iniciou", "agente_ofereceu", "comparacao"]),
+      agent_offered: s.agente_ofereceu === true,
+      offer_timing: coerceEnumStatic(s.timing_oferta, ["inicio", "meio", "fechamento"]),
+      offer_outcome: coerceEnumStatic(s.resultado_oferta, ["aceitou", "recusou", "pendente"]),
+      price_objection: s.objecao_preco === true,
+      price_objection_type: coerceEnumStatic(s.tipo_objecao_preco, ["bloqueante", "leve", "nenhuma"]),
+      price_anchor: coerceStr(s.ancora_preco),
+      value_questions: coerceStringArray(s.duvidas_sobre_valor),
+      value_understood: typeof s.valor_entendido === "boolean" ? s.valor_entendido : null,
+      value_gap: coerceStr(s.gap_de_valor),
+      value_arguments_used: coerceStringArray(s.argumentos_usados),
+      conversion_signal: coerceEnumStatic(s.sinal_conversao, ["converteu", "perdeu", "pendente"]),
+      loss_reason: coerceEnumStatic(s.motivo_perda, ["preco", "valor", "concorrente", "timing", "outro"]),
+      sentiment_score: typeof s.sentimento === "number" && s.sentimento >= -1 && s.sentimento <= 1
+        ? Math.round(s.sentimento * 1000) / 1000
+        : null,
+      observation: coerceStr(s.observacao),
+      prompt_version: "v1-product-signals",
+      analyzed_at: new Date().toISOString(),
+    };
+  });
+
+  // Delete existing signals for this conversation (re-extraction = replace)
+  await supabase
+    .schema("app")
+    .from("product_signals")
+    .delete()
+    .eq("company_id", companyId)
+    .eq("conversation_id", conversationId);
+
+  if (rows.length > 0) {
+    await supabase.schema("app").from("product_signals").insert(rows);
+  }
+}
+
+function coerceEnumStatic<T extends string>(value: unknown, allowed: T[]): T | null {
+  if (typeof value === "string" && allowed.includes(value as T)) return value as T;
+  return null;
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 serve(async (req) => {
@@ -436,6 +700,9 @@ serve(async (req) => {
       });
     }
 
+    // Load product catalog once for the whole run (non-fatal if empty)
+    const productCatalog = await loadProductCatalog(supabase, companyId);
+
     // Process each conversation
     let processed = 0;
     let failed = 0;
@@ -463,7 +730,12 @@ serve(async (req) => {
           continue;
         }
 
-        const result = await extractIntelligence(aiProvider, conversationText);
+        // Run both extractions in parallel for performance
+        const [result, productSignals] = await Promise.all([
+          extractIntelligence(aiProvider, conversationText),
+          extractProductSignals(aiProvider, conversationText, productCatalog),
+        ]);
+
         if (!result) {
           failed++;
           continue;
@@ -494,7 +766,7 @@ serve(async (req) => {
           oportunidade_perdida: coerceBool(ci.oportunidade_perdida),
         }, { onConflict: "conversation_id" });
 
-        // Upsert product intelligence
+        // Upsert product intelligence (legacy — keeps existing reports working)
         await supabase.schema("app").from("product_intelligence_reports").upsert({
           company_id: companyId,
           conversation_id: conv.id,
@@ -511,6 +783,16 @@ serve(async (req) => {
           objecao_tratada: coerceBool(pi.objecao_tratada),
           oportunidade_perdida: coerceBool(pi.oportunidade_perdida),
         }, { onConflict: "conversation_id" });
+
+        // Save granular per-product signals (new — catalog-normalized)
+        await saveProductSignals(
+          supabase,
+          companyId,
+          conv.id,
+          conv.agent_id ?? null,
+          productSignals,
+          productCatalog,
+        );
 
         processed++;
       } catch {
